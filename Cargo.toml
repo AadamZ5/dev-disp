@@ -1,0 +1,3 @@
+[workspace]
+members = ["apps/dev-disp-server", "libs/dev-disp-core"]
+resolver = "3"
