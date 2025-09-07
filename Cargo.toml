@@ -1,3 +1,7 @@
 [workspace]
-members = ["apps/dev-disp-server", "libs/dev-disp-core"]
+members = [
+  "apps/dev-disp-server",
+  "libs/dev-disp-core",
+  "libs/dev-disp-flutter-bindgen",
+]
 resolver = "3"

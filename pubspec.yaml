@@ -5,5 +5,17 @@ environment:
 
 workspace:
   - apps/dev-disp-android
+  - apps/flutter_boundgen
 dev_dependencies:
   melos: ^7.1.0
+
+melos:
+  scripts:
+    build:android_pub:
+      run: |
+        melos exec -c 6 --fail-fast -- \
+          "flutter build apk"
+      description: Build Android.
+      packageFilters:
+        dirExists:
+          - android
