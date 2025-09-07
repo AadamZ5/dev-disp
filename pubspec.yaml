@@ -1,0 +1,9 @@
+name: dev_disp
+publish_to: none
+environment:
+  sdk: ^3.9.0
+
+workspace:
+  - apps/dev-disp-android
+dev_dependencies:
+  melos: ^7.1.0

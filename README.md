@@ -1,6 +1,6 @@
 # dev-disp
 
-I have a device with a screen, why can't I use it as another display for my laptop?!? `dev-disp` is a utility to use your Android device as a screen for your Linux laptop, **without** latent tech like VNC or RDP.
+I have an Android device with a screen, why can't I use it as another display for my laptop?!? `dev-disp` is a utility to use your Android device as a screen for your Linux laptop, **without** latent tech like VNC or RDP.
 
 ## Goal
 

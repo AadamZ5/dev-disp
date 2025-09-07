@@ -1,0 +1,14 @@
+{
+  "folders": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../evdi-rs"
+    },
+    {
+      "path": "../evdi"
+    }
+  ],
+  "settings": {}
+}
