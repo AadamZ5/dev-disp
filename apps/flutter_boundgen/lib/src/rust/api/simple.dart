@@ -8,3 +8,24 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 String greet({required String name}) =>
     RustLib.instance.api.crateApiSimpleGreet(name: name);
+
+Future<TestStruct> createTestStruct({required int a, required String b}) =>
+    RustLib.instance.api.crateApiSimpleCreateTestStruct(a: a, b: b);
+
+class TestStruct {
+  final int a;
+  final String b;
+
+  const TestStruct({required this.a, required this.b});
+
+  @override
+  int get hashCode => a.hashCode ^ b.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TestStruct &&
+          runtimeType == other.runtimeType &&
+          a == other.a &&
+          b == other.b;
+}

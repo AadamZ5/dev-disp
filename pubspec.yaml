@@ -15,7 +15,28 @@ melos:
       run: |
         melos exec -c 6 --fail-fast -- \
           "flutter build apk"
-      description: Build Android.
+      description: Build All Android.
       packageFilters:
         dirExists:
           - android
+
+    dev-disp-android:
+      description: Run Android.
+      run: cd apps/dev-disp-android && flutter run -d chrome
+
+    flutter_boundgen:
+      description: Run Flutter Boundgen.
+      run: |
+        cd apps/flutter_boundgen
+        flutter_rust_bridge_codegen generate
+        flutter_rust_bridge_codegen build-web --rust-root ../../libs/dev-disp-flutter-bindgen
+        flutter run -d chrome \
+          --web-header=Cross-Origin-Opener-Policy=same-origin \
+          --web-header=Cross-Origin-Embedder-Policy=require-corp
+
+    flutter_boundgen:gen:
+      description: Do Flutter Boundgen code generation.
+      run: |
+        cd apps/flutter_boundgen
+        flutter_rust_bridge_codegen generate
+        flutter_rust_bridge_codegen build-web --rust-root ../../libs/dev-disp-flutter-bindgen

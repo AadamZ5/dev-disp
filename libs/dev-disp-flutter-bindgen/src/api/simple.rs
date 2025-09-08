@@ -1,6 +1,15 @@
 #[flutter_rust_bridge::frb(sync)] // Synchronous mode for simplicity of the demo
 pub fn greet(name: String) -> String {
-    format!("Hello, {name}!")
+    format!("Hello, {name}, howreyoudoing???!")
+}
+
+pub struct TestStruct {
+    pub a: i32,
+    pub b: String,
+}
+
+pub fn create_test_struct(a: i32, b: String) -> TestStruct {
+    TestStruct { a, b }
 }
 
 #[flutter_rust_bridge::frb(init)]
