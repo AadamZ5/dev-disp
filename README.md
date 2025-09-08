@@ -60,8 +60,13 @@ I don't know if this will work, but this is the plan so far
 1. The user connects the Android device to the Linux computer
 2. On the linux host, the user selects the device (WIP currently via terminal dev-disp-server) and the Linux host puts the device in accessory mode
 3. Android platform code needs created (Kotlin) for the flutter app to call (when?) that will request user permission to open a USB Accessory device, then pass off the USB device to Flutter.
-4. Flutter can pass the USB device to the Rust bindings via a file descriptor
+4. Flutter can pass the USB device to the Rust bindings via a file descriptor (parcelManager / UsbManager.openAccessory)
 5. Rust can bang around with the file descriptor
 6. Rust MUST close the file descriptor!
+
+Notes for steps 2 - 4:
+
+- https://nvlad1.medium.com/implementing-android-open-accessory-protocol-66cfc59ed240
+- https://developer.android.com/reference/android/hardware/usb/UsbAccessory
 
 The backup plan is using network to transfer the data stream, which could maybe still be fast enough.
