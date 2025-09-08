@@ -9,3 +9,5 @@ evdi = "0.8.0"
 log = "0.4.28"
 tokio = "1.47.1"
 dev-disp-core = { path = "../../libs/dev-disp-core" }
+dev-disp-comm-usb = { path = "../../libs/dev-disp-comm-usb" }
+dev-disp-provider-evdi = { path = "../../libs/dev-disp-provider-evdi" }

@@ -1,0 +1,12 @@
+[package]
+name = "dev-disp-comm-usb"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.28"
+dev-disp-core = { path = "../../libs/dev-disp-core" }
+nusb = { version = "0.2.0", features = ["tokio"] }
+thiserror = "2.0.16"
+portable_async_sleep = "0.1.1"
+futures-util = { version = "0.3.31", features = ["sink"] }

@@ -1,10 +1,11 @@
 [package]
-name = "dev-disp-core"
+name = "dev-disp-provider-evdi"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-futures-core = "0.3.31"
+evdi = "0.7.3"
+dev-disp-core = { path = "../dev-disp-core" }
 futures-util = { version = "0.3.31", features = ["sink"] }
 log = "0.4.28"
 thiserror = "2.0.16"

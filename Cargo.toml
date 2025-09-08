@@ -1,7 +1,9 @@
 [workspace]
 members = [
   "apps/dev-disp-server",
+  "libs/dev-disp-comm-usb",
   "libs/dev-disp-core",
   "libs/dev-disp-flutter-bindgen",
+  "libs/dev-disp-provider-evdi",
 ]
 resolver = "3"
