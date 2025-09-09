@@ -1,13 +1,13 @@
 mod error;
 mod strategies;
 
-use std::future;
+use std::{future, pin::Pin};
 
 use crate::{
     error::UsbConnectionError,
     strategies::android_accessory::{self, connect_usb_android_accessory},
 };
-use dev_disp_core::client::{DisplayHostInfo, ScreenTransport};
+use dev_disp_core::client::{DisplayHostInfo, ScreenTransport, TransportError};
 use futures_util::{FutureExt, Sink};
 use nusb::{Device, DeviceInfo};
 
@@ -48,6 +48,10 @@ impl UsbScreenHostTransport {
     pub fn into_device(self) -> Device {
         self.dev
     }
+
+    pub fn device_info(&self) -> &DeviceInfo {
+        &self.dev_info
+    }
 }
 
 // TODO: Not sure if we will use this implementation or not
@@ -81,15 +85,15 @@ impl Sink<&'static [u8]> for UsbScreenHostTransport {
 }
 
 impl ScreenTransport for UsbScreenHostTransport {
-    fn get_display_config(&self) -> impl Future<Output = dev_disp_core::client::DisplayHostInfo> {
-        future::ready(DisplayHostInfo::new(1920, 1080, vec![]))
+    fn get_display_config(&self) -> Pin<Box<dyn Future<Output = DisplayHostInfo> + Send>> {
+        future::ready(DisplayHostInfo::new(1920, 1080, vec![])).boxed()
     }
 
-    fn close(&mut self) -> impl Future<Output = Result<(), Self::Error>> {
-        self.dev.reset().into_future().map(|_| Ok(()))
+    fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send>> {
+        self.dev.reset().into_future().map(|_| Ok(())).boxed()
     }
 
-    fn send_screen_data<'a>(&mut self, data: &'a [u8]) -> Result<(), Self::Error> {
+    fn send_screen_data<'a>(&mut self, data: &'a [u8]) -> Result<(), TransportError> {
         // TODO: Implement the sending data!
         Ok(())
     }

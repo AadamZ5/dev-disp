@@ -1,9 +1,12 @@
 use dev_disp_comm_usb::{UsbConnectionStrategy, connect_usb};
-use dev_disp_core::{client::DisplayHost, host::ScreenProvider};
+use dev_disp_core::{
+    client::{DisplayHost, SomeScreenTransport},
+    host::ScreenProvider,
+};
 use dev_disp_provider_evdi::EvdiScreenProvider;
-use log::{LevelFilter, debug, error, info};
+use log::{LevelFilter, error};
 
-use std::{process::exit, thread, time::Duration};
+use std::process::exit;
 
 const USB_SAMSUNG_VENDOR_ID: u16 = 0x04E8;
 const USB_SAMSUNG_PRODUCT_ID: u16 = 0x6860;
@@ -22,7 +25,21 @@ async fn main() {
     .await
     .expect("Couldn't get the sammy device in accessory mode");
 
-    let display = DisplayHost::new(1, "Samsung Galaxy S9+".to_string(), sammy_accessory);
+    let dev_title = sammy_accessory
+        .device_info()
+        .product_string()
+        .unwrap_or("Unknown");
+    let dev_serial = sammy_accessory
+        .device_info()
+        .serial_number()
+        .unwrap_or("Unknown");
+
+    let dev_string = format!("{} ({})", dev_title, dev_serial);
+
+    // Example dynamic transport
+    let dyn_sammy = SomeScreenTransport::new(Box::new(sammy_accessory));
+
+    let display = DisplayHost::new(1, dev_string, dyn_sammy);
 
     let evdi_provider = EvdiScreenProvider {};
     let handled = evdi_provider.handle_display_host(display).await;
@@ -31,13 +48,4 @@ async fn main() {
         error!("Error handling display host: {}", e);
         exit(1);
     }
-
-    handled
-        .unwrap()
-        .into_transport()
-        .into_device()
-        .reset()
-        .await
-        .expect("Failed to reset device");
-    info!("Device reset successfully, exiting...");
 }
