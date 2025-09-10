@@ -1,4 +1,8 @@
-use std::{fmt::Display, time::Duration};
+use std::{
+    fmt::Display,
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
+};
 
 use dev_disp_core::{
     client::{DisplayHost, ScreenTransport},
@@ -31,7 +35,23 @@ pub enum HandleClientError {
     EvdiRequestUpdateError(RequestUpdateError),
 }
 
-pub struct EvdiScreenProvider {}
+#[derive(Debug, Clone)]
+pub struct EvdiScreenProvider {
+    stop_flag: Arc<AtomicBool>,
+}
+
+impl EvdiScreenProvider {
+    pub fn new() -> Self {
+        Self {
+            stop_flag: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn stop(&self) {
+        self.stop_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 impl ScreenProvider for EvdiScreenProvider {
     fn handle_display_host<T>(
@@ -109,6 +129,12 @@ impl ScreenProvider for EvdiScreenProvider {
             let max_drop_count = 100;
 
             loop {
+                if self.stop_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    info!("Stop flag set, exiting");
+                    close_dev(&mut host).await;
+                    break;
+                }
+
                 if let Err(e) = handle
                     .request_update(buffer_id, UPDATE_BUFFER_TIMEOUT)
                     .await
@@ -119,7 +145,7 @@ impl ScreenProvider for EvdiScreenProvider {
                 let buf = handle.get_buffer(buffer_id).expect("Buffer exists");
                 // Do something with the bytes
                 let _bytes = buf.bytes();
-                if let Err(_) = host.send_screen_data(_bytes) {
+                if let Err(_) = host.send_screen_data(_bytes).await {
                     error!("Dropped some screen data to host");
                     drop_count += 1;
                 } else {
@@ -128,6 +154,7 @@ impl ScreenProvider for EvdiScreenProvider {
 
                 if drop_count >= max_drop_count {
                     error!("Too many dropped frames, exiting");
+                    close_dev(&mut host).await;
                     break;
                 }
             }

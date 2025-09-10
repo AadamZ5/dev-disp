@@ -1,5 +1,10 @@
 package com.example.flutter_boundgen
 
+import android.content.Context
+import android.hardware.display.DisplayManager
+import android.os.Build
+import android.view.Display
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -54,8 +59,8 @@ class MainActivity : FlutterActivity() {
           result.error("NO_DEVICES", "No USB devices found.", null)
         }
       } else if (call.method == "listAccessories") {
-      val usbHelper = UsbHelper(this@MainActivity)
-      val accessories = usbHelper.listAccessories()
+        val usbHelper = UsbHelper(this@MainActivity)
+        val accessories = usbHelper.listAccessories()
         if (accessories.isNotEmpty()) {
           val accessoryList = accessories.map { accessory ->
             mapOf(
@@ -68,9 +73,31 @@ class MainActivity : FlutterActivity() {
         } else {
           result.error("NO_ACCESSORIES", "No USB accessories found.", null)
         }
+      } else if (call.method == "edid") {
+
       } else {
         result.notImplemented()
       }
     }
+  }
+
+  fun getDisplayInfo() {
+
+    // Get display refresh rate
+    val displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager;
+    val display = displayManager.getDisplay(Display.DEFAULT_DISPLAY);
+
+    val refreshRate = display.refreshRate;
+
+    val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager;
+    val windowMetrics = windowManager.currentWindowMetrics;
+
+    // TODO: Later query insets and determine if we should fit differently
+    val currentBounds = mapOf<String, Int>(
+      "width" to windowMetrics.bounds.width(),
+      "height" to windowMetrics.bounds.height(),
+      "refreshRate" to refreshRate.toInt()
+    )
+
   }
 }

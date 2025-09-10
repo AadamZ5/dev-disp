@@ -4,11 +4,17 @@ use dev_disp_core::client::ScreenTransport;
 use futures_util::Sink;
 use log::{debug, info};
 use nusb::{
-    Device, DeviceInfo, list_devices,
-    transfer::{ControlIn, ControlOut, ControlType, Recipient, TransferError},
+    Device, DeviceInfo, Interface,
+    descriptors::TransferType,
+    list_devices,
+    transfer::{
+        Bulk, ControlIn, ControlOut, ControlType, Direction, In, Out, Recipient, TransferError,
+    },
 };
 
-use crate::error::UsbConnectionError;
+use crate::{
+    error::UsbConnectionError, strategies::android_aoa::transport::AndroidAoaScreenHostTransport,
+};
 
 pub const USB_ACCESSORY_VENDOR_ID: u16 = 0x18D1;
 pub const USB_ACCESSORY_DEVICE_ID: u16 = 0x2D00;
@@ -22,27 +28,19 @@ pub const DEV_DISP_MANUFACTURER: &str = "Device Display";
 pub const DEV_DISP_MODEL: &str = "Screen Provider";
 
 pub async fn connect_usb_android_accessory(
-    vendor_id: u16,
-    product_id: u16,
-) -> Result<(Device, DeviceInfo), UsbConnectionError> {
+    target_device_info: DeviceInfo,
+) -> Result<AndroidAoaScreenHostTransport, UsbConnectionError> {
     // Specific implementation for connecting via Android Accessory protocol
     // This would involve sending the appropriate control transfers
     // and managing the USB connection lifecycle.
 
-    // Use nusb to list devices and pick our hard-coded samsung phone via the vendor and device ID
-    let target_device_info = list_devices()
-        .await
-        .map_err(|_| UsbConnectionError::ConnectionFailed)?
-        .find(|device| device.vendor_id() == vendor_id && device.product_id() == product_id)
-        .ok_or(UsbConnectionError::DeviceNotFound)?;
-
-    info!("Found target device: {:?}", target_device_info);
+    info!("Using target device: {:?}", target_device_info);
 
     // Connect to the device
     let target_device = target_device_info
         .open()
         .await
-        .map_err(|e| UsbConnectionError::ConnectionFailed)?;
+        .map_err(|_| UsbConnectionError::ConnectionFailed)?;
     info!("Opened device: {:?}", target_device);
 
     let target_device_serial = target_device_info.serial_number();
@@ -133,6 +131,9 @@ pub async fn connect_usb_android_accessory(
     let mut retries_left = 5;
     let wait_time = Duration::from_secs(1);
     let wait_str = format!("{}s", wait_time.as_secs());
+
+    let mut target_device: Option<(Device, DeviceInfo)> = None;
+
     while retries_left > 0 {
         retries_left -= 1;
 
@@ -165,11 +166,80 @@ pub async fn connect_usb_android_accessory(
                 .open()
                 .await
                 .map_err(|_| UsbConnectionError::ConnectionFailed)?;
-            return Ok((accessory_handle, device));
+
+            target_device = Some((accessory_handle, device));
+            break;
         }
 
         retries_left -= 1;
     }
 
-    Err(UsbConnectionError::StrategyFailed)
+    let (target_device, target_device_info) = target_device.ok_or_else(|| {
+        eprintln!("Could not find device in accessory mode after retries");
+        UsbConnectionError::StrategyFailed
+    })?;
+
+    // Claim the interface
+    let ifc = target_device
+        .claim_interface(0)
+        .await
+        .map_err(|_| UsbConnectionError::StrategyFailed)?;
+    debug!("Claimed interface: {:?}", ifc);
+
+    let (bulk_out_ep, bulk_in_ep) = find_bulk_endpoints(&ifc).ok_or_else(|| {
+        eprintln!("Could not find bulk endpoints on interface");
+        UsbConnectionError::StrategyFailed
+    })?;
+
+    let bulk_out = ifc
+        .endpoint::<Bulk, Out>(bulk_out_ep)
+        .map_err(|_| UsbConnectionError::StrategyFailed)?;
+
+    let bulk_in = ifc
+        .endpoint::<Bulk, In>(bulk_in_ep)
+        .map_err(|_| UsbConnectionError::StrategyFailed)?;
+
+    Ok(AndroidAoaScreenHostTransport::new(
+        target_device,
+        target_device_info,
+        ifc,
+        bulk_in,
+        bulk_out,
+    ))
 }
+
+/// Helper function to find the first bulk IN and OUT endpoints on an interface.
+fn find_bulk_endpoints(interface: &Interface) -> Option<(u8, u8)> {
+    let mut out_endpoint = None;
+    let mut in_endpoint = None;
+
+    // The interface descriptor contains information about the endpoints.
+    let current_setting = if let Some(desc) = interface.descriptor() {
+        desc
+    } else {
+        return None;
+    };
+
+    for ep in current_setting.endpoints() {
+        match (ep.transfer_type(), ep.direction()) {
+            // Endpoint direction is from the perspective of the host.
+            // OUT is for Host -> Device communication.
+            (TransferType::Bulk, Direction::Out) => {
+                out_endpoint = Some(ep.address());
+            }
+            // IN is for Device -> Host communication.
+            (TransferType::Bulk, Direction::In) => {
+                in_endpoint = Some(ep.address());
+            }
+            _ => {}
+        }
+    }
+
+    if let (Some(out_ep), Some(in_ep)) = (out_endpoint, in_endpoint) {
+        Some((out_ep, in_ep))
+    } else {
+        None
+    }
+}
+
+pub fn android_ifc_fd_to_transport(dev: Device, dev_info: DeviceInfo, ifc: Interface) {}

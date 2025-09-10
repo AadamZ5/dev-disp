@@ -1,8 +1,11 @@
-use std::fmt::Display;
+use std::{fmt::Display, pin::Pin};
 
 use futures_util::FutureExt;
 
-use crate::client::{DisplayHostInfo, ScreenTransport, TransportError};
+use crate::{
+    client::{DisplayHostInfo, ScreenTransport, SomeScreenTransport, TransportError},
+    util::PinnedFuture,
+};
 
 /// The display host is the device that is hosting the screen, not
 /// the device producing the screen data. The display host consumes
@@ -40,7 +43,10 @@ where
         self.transport
     }
 
-    pub fn send_screen_data<'a>(&mut self, data: &'a [u8]) -> Result<(), TransportError> {
+    pub fn send_screen_data<'s, 'a>(
+        &'s mut self,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>> {
         self.transport.send_screen_data(data)
     }
 
@@ -48,11 +54,14 @@ where
         self.transport.close().boxed_local().await
     }
 
-    pub fn boxed(self) -> DisplayHost<Box<T>> {
+    pub fn to_some_transport(self) -> DisplayHost<SomeScreenTransport>
+    where
+        T: 'static,
+    {
         DisplayHost {
             client_id: self.client_id,
             name: self.name,
-            transport: Box::new(self.transport),
+            transport: SomeScreenTransport::new_boxed(Box::new(self.transport)),
         }
     }
 }

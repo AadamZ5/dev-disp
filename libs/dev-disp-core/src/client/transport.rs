@@ -1,11 +1,12 @@
 use std::{
     fmt::{Debug, Display},
     future,
+    pin::Pin,
 };
 
 use thiserror::Error;
 
-type PinnedFuture<T> = std::pin::Pin<Box<dyn Future<Output = T> + Send>>;
+use crate::util::PinnedFuture;
 
 /// Information about the screen provided by the client.
 #[derive(Debug, Clone)]
@@ -57,7 +58,10 @@ pub trait ScreenTransport {
         Box::pin(future::ready(Ok(())))
     }
 
-    fn send_screen_data<'a>(&mut self, data: &'a [u8]) -> Result<(), TransportError>;
+    fn send_screen_data<'s, 'a>(
+        &'s mut self,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>>;
 }
 
 pub struct SomeScreenTransport {
@@ -65,7 +69,16 @@ pub struct SomeScreenTransport {
 }
 
 impl SomeScreenTransport {
-    pub fn new(inner: Box<dyn ScreenTransport>) -> Self {
+    pub fn new<T>(inner: T) -> Self
+    where
+        T: ScreenTransport + 'static,
+    {
+        Self {
+            inner: Box::new(inner),
+        }
+    }
+
+    pub fn new_boxed(inner: Box<dyn ScreenTransport>) -> Self {
         Self { inner }
     }
 }
@@ -75,7 +88,10 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.get_display_config()
     }
 
-    fn send_screen_data<'a>(&mut self, data: &'a [u8]) -> Result<(), TransportError> {
+    fn send_screen_data<'s, 'a>(
+        &'s mut self,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>> {
         self.inner.send_screen_data(data)
     }
 
@@ -86,6 +102,6 @@ impl ScreenTransport for SomeScreenTransport {
 
 impl From<Box<dyn ScreenTransport>> for SomeScreenTransport {
     fn from(value: Box<dyn ScreenTransport>) -> Self {
-        Self::new(value)
+        Self::new_boxed(value)
     }
 }
