@@ -16,55 +16,7 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  final _usbService = UsbService();
-  String _usbResult = 'Press the button to request USB permission.';
-  String _devices = 'Press the button to list USB devices.';
-  String _accessories = 'Press the button to list USB accessories.';
-
-  Future<void> _requestPermission() async {
-    try {
-      // TODO: Replace with your device's VID and PID
-      final fd = await _usbService.requestUsbPermission(
-        vid: 0x1234,
-        pid: 0x5678,
-      );
-      setState(() {
-        _usbResult = 'Success! File descriptor: $fd';
-      });
-    } catch (e) {
-      setState(() {
-        _usbResult = 'Error: $e';
-      });
-    }
-  }
-
-  Future<void> _listDevices() async {
-    try {
-      final devices = await _usbService.listDevices();
-      setState(() {
-        _devices =
-            'Available USB devices:\n${devices.map((d) => d.toString()).join('\n')}';
-      });
-    } catch (e) {
-      setState(() {
-        _devices = 'Error: $e';
-      });
-    }
-  }
-
-  Future<void> _listAccessories() async {
-    try {
-      final accessories = await _usbService.listAccessories();
-      setState(() {
-        _accessories =
-            'Available USB accessories:\n${accessories.map((a) => a.toString()).join('\n')}';
-      });
-    } catch (e) {
-      setState(() {
-        _accessories = 'Error: $e';
-      });
-    }
-  }
+  final usbService = UsbService();
 
   @override
   Widget build(BuildContext context) {
@@ -79,34 +31,83 @@ class _MyAppState extends State<MyApp> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                'Action: Call Rust `greet("Tom")`\nResult: `${greet(name: "Tom")}`',
+              StreamBuilder(
+                stream: UsbService.accessory,
+                builder: (context, snapshot) =>
+                    _buildAccessoryTree(context, snapshot),
               ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _requestPermission,
-                child: const Text('Request USB Permission'),
-              ),
-              const SizedBox(height: 20),
-              Text(_usbResult),
-              const SizedBox(height: 40),
-              ElevatedButton(
-                onPressed: _listDevices,
-                child: const Text('List USB devices'),
-              ),
-              const SizedBox(height: 20),
-              Text(_devices),
-              const SizedBox(height: 40),
-              ElevatedButton(
-                onPressed: _listAccessories,
-                child: const Text('List USB accessories'),
-              ),
-              const SizedBox(height: 20),
-              Text(_accessories),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildAccessoryTree(
+    BuildContext context,
+    AsyncSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    if (snapshot.hasError) {
+      return Text('Accessory Stream Error: ${snapshot.error}');
+    }
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Text('Waiting for accessory events...');
+    }
+    if (snapshot.hasData) {
+      final data = snapshot.data;
+      if (data is Map<String, dynamic>) {
+        if (data['event'] == 'connect') {
+          return _buildAccessoryConnected(context, data);
+        } else if (data['event'] == 'disconnect') {
+          return _buildAccessoryDisconnected(context);
+        } else {
+          return Text('Unknown event type: ${data['event']}');
+        }
+      } else {
+        return Text('Unexpected data type: ${data.runtimeType}');
+      }
+    }
+    return const Text('No accessory events yet.');
+  }
+
+  Widget _buildAccessoryConnected(
+    BuildContext ctx,
+    Map<String, dynamic> accessoryData,
+  ) {
+    final event = accessoryData['event'];
+    if (event != 'connect') {
+      return const Text('No accessory connected.');
+    }
+
+    final fd = accessoryData['fd'];
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text('Accessory connected'),
+        SizedBox(height: 20),
+        TextButton(
+          onPressed: () => _initialize(fd),
+          child: Text("Initialize $fd"),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccessoryDisconnected(BuildContext ctx) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [Text('Accessory disconnected')],
+    );
+  }
+
+  void _initialize(int fd) async {
+    try {
+      final bytes = await initialize(fd: fd);
+      print('Initialized and closed fd: $fd');
+      print('Received ${bytes.$2.length} bytes: $bytes');
+      print('Decoded ${bytes.$1.length} messages: ${bytes.$1}');
+    } catch (e) {
+      print('Error during initialization: $e');
+    }
   }
 }

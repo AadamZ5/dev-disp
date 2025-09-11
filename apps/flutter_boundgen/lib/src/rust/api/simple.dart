@@ -5,27 +5,20 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+part 'simple.freezed.dart';
 
-String greet({required String name}) =>
-    RustLib.instance.api.crateApiSimpleGreet(name: name);
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
 
-Future<TestStruct> createTestStruct({required int a, required String b}) =>
-    RustLib.instance.api.crateApiSimpleCreateTestStruct(a: a, b: b);
+Future<(List<IncomingMessage>, Uint8List)> initialize({required int fd}) =>
+    RustLib.instance.api.crateApiSimpleInitialize(fd: fd);
 
-class TestStruct {
-  final int a;
-  final String b;
+@freezed
+sealed class IncomingMessage with _$IncomingMessage {
+  const IncomingMessage._();
 
-  const TestStruct({required this.a, required this.b});
-
-  @override
-  int get hashCode => a.hashCode ^ b.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is TestStruct &&
-          runtimeType == other.runtimeType &&
-          a == other.a &&
-          b == other.b;
+  const factory IncomingMessage.screenUpdate(Uint8List field0) =
+      IncomingMessage_ScreenUpdate;
+  const factory IncomingMessage.getScreenInfo() = IncomingMessage_GetScreenInfo;
+  const factory IncomingMessage.quit() = IncomingMessage_Quit;
 }

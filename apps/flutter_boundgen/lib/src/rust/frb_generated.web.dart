@@ -27,10 +27,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
+  IncomingMessage dco_decode_incoming_message(dynamic raw);
+
+  @protected
+  List<IncomingMessage> dco_decode_list_incoming_message(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
-  TestStruct dco_decode_test_struct(dynamic raw);
+  (List<IncomingMessage>, Uint8List)
+  dco_decode_record_list_incoming_message_list_prim_u_8_strict(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -45,10 +52,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
+  IncomingMessage sse_decode_incoming_message(SseDeserializer deserializer);
+
+  @protected
+  List<IncomingMessage> sse_decode_list_incoming_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
-  TestStruct sse_decode_test_struct(SseDeserializer deserializer);
+  (List<IncomingMessage>, Uint8List)
+  sse_decode_record_list_incoming_message_list_prim_u_8_strict(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -66,13 +84,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_incoming_message(
+    IncomingMessage self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_incoming_message(
+    List<IncomingMessage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_test_struct(TestStruct self, SseSerializer serializer);
+  void sse_encode_record_list_incoming_message_list_prim_u_8_strict(
+    (List<IncomingMessage>, Uint8List) self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);

@@ -1,9 +1,25 @@
 import 'package:flutter/services.dart';
+import 'dart:async';
+
+final accessoryTransformer =
+    StreamTransformer<dynamic, Map<String, dynamic>>.fromHandlers(
+      handleData: (dynamic data, EventSink<Map<String, dynamic>> sink) {
+        if (data is Map) {
+          sink.add(Map<String, dynamic>.from(data));
+        } else {
+          sink.addError('Invalid data type: ${data.runtimeType}');
+        }
+      },
+    );
 
 class UsbService {
   static const MethodChannel _channel = MethodChannel(
     'com.example.flutter_boundgen/usb',
   );
+
+  static Stream<Map<String, dynamic>> accessory = EventChannel(
+    'com.example.flutter_boundgen/accessory',
+  ).receiveBroadcastStream().transform(accessoryTransformer);
 
   Future<int> requestUsbPermission({required int vid, required int pid}) async {
     try {
@@ -43,6 +59,20 @@ class UsbService {
       return accessories;
     } on PlatformException catch (e) {
       throw Exception('Failed to list USB accessories: ${e.message}');
+    }
+  }
+
+  Future<Map<String, int>> displayInfo() async {
+    try {
+      final Map<dynamic, dynamic>? info = await _channel.invokeMethod(
+        'displayInfo',
+      );
+      if (info == null) {
+        throw Exception('Failed to get display info.');
+      }
+      return info.cast<String, int>();
+    } on PlatformException catch (e) {
+      throw Exception('Failed to get display info: ${e.message}');
     }
   }
 }

@@ -20,6 +20,9 @@ use thiserror::Error;
 
 const RECEIVE_INITIAL_MODE_TIMEOUT: Duration = Duration::from_secs(10);
 const UPDATE_BUFFER_TIMEOUT: Duration = Duration::from_secs(5);
+const BUFFER_NOT_AVAIL_DELAY: Duration = Duration::from_millis(750);
+const SEND_BUFFER_TIMEOUT: Duration = Duration::from_millis(1000);
+const SEND_BUFFER_TIMEOUT_MAX_COUNT: usize = 20;
 
 #[derive(Error, Debug)]
 pub enum HandleClientError {
@@ -66,7 +69,7 @@ impl ScreenProvider for EvdiScreenProvider {
             info!("Handling display-host: {host}");
 
             async fn close_dev(host: &mut DisplayHost<impl ScreenTransport>) {
-                if let Err(e) = host.close().await {
+                if let Err(_) = host.close().await {
                     error!("Error closing display host");
                 }
             }
@@ -79,7 +82,17 @@ impl ScreenProvider for EvdiScreenProvider {
                     return Err(HandleClientError::EvdiNoDevice(e));
                 }
             };
-            debug!("Using device: {device:?}");
+            debug!("Using EVDI device: {device:?}");
+
+            debug!("Initializing with transport...");
+            // Initialize the transport
+            let init_result = host.initialize().await;
+            if let Err(e) = init_result {
+                error!("Failed to initialize transport: {}", e);
+                close_dev(&mut host).await;
+                return Err(HandleClientError::Unknown);
+            }
+            debug!("Initialized transport");
 
             // TODO: Get display parameters from client
             let device_config = host.get_display_config().await;
@@ -100,23 +113,23 @@ impl ScreenProvider for EvdiScreenProvider {
                     return Err(HandleClientError::EvdiDeviceOpenFailed(e));
                 }
             };
-            debug!("Opened device");
+            debug!("Opened EVDI device");
 
             let mut handle = unconnected_handle.connect(&device_config);
-            debug!("Connected to device");
+            debug!("Connected to EVDI device");
 
             // For simplicity don't handle the mode changing after we start
             // TODO: Handle mode changes
             let mode = match handle.events.await_mode(RECEIVE_INITIAL_MODE_TIMEOUT).await {
                 Ok(mode) => mode,
                 Err(e) => {
-                    error!("Failed to receive initial mode: {}", e);
+                    error!("Failed to receive initial EVDI device mode: {}", e);
                     close_dev(&mut host).await;
                     return Err(HandleClientError::EvdiModeChangeError(e));
                 }
             };
 
-            info!("Received initial mode: {mode:?}");
+            info!("Received initial EVDI device mode: {mode:?}");
 
             // Redundant, but left here so you know this is default behavior
             // handle.enable_cursor_events(false);
@@ -126,7 +139,6 @@ impl ScreenProvider for EvdiScreenProvider {
             let buffer_id = handle.new_buffer(&mode);
 
             let mut drop_count = 0;
-            let max_drop_count = 100;
 
             loop {
                 if self.stop_flag.load(std::sync::atomic::Ordering::SeqCst) {
@@ -139,20 +151,36 @@ impl ScreenProvider for EvdiScreenProvider {
                     .request_update(buffer_id, UPDATE_BUFFER_TIMEOUT)
                     .await
                 {
-                    warn!("Failed to request buffer update: {}", e);
+                    warn!("Failed to request buffer update from EVDI: {}", e);
                     continue;
                 }
-                let buf = handle.get_buffer(buffer_id).expect("Buffer exists");
+                let buf = match handle.get_buffer(buffer_id) {
+                    Some(buf) => buf,
+                    None => {
+                        warn!("EVDI buffer not available yet");
+                        futures_timer::Delay::new(BUFFER_NOT_AVAIL_DELAY).await;
+                        continue;
+                    }
+                };
                 // Do something with the bytes
                 let _bytes = buf.bytes();
-                if let Err(_) = host.send_screen_data(_bytes).await {
-                    error!("Dropped some screen data to host");
-                    drop_count += 1;
-                } else {
-                    drop_count = 0;
+
+                futures_util::select_biased! {
+                    res = host.send_screen_data(_bytes).fuse() => {
+                        if let Err(_) = res {
+                            error!("Dropped some screen data to host");
+                            drop_count += 1;
+                        } else {
+                            drop_count = 0;
+                        }
+                    },
+                    _ = futures_timer::Delay::new(SEND_BUFFER_TIMEOUT).fuse() => {
+                        warn!("Timed out sending screen data to host");
+                        drop_count += 1;
+                    },
                 }
 
-                if drop_count >= max_drop_count {
+                if drop_count >= SEND_BUFFER_TIMEOUT_MAX_COUNT {
                     error!("Too many dropped frames, exiting");
                     close_dev(&mut host).await;
                     break;

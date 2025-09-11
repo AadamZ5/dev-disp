@@ -1,7 +1,5 @@
-use std::{future, time::Duration};
+use std::time::Duration;
 
-use dev_disp_core::client::ScreenTransport;
-use futures_util::Sink;
 use log::{debug, info};
 use nusb::{
     Device, DeviceInfo, Interface,
@@ -140,7 +138,7 @@ pub async fn connect_usb_android_accessory(
         debug!(
             "Waiting {wait_str} for device to re-enumerate in accessory mode... ({retries_left} retries left)"
         );
-        portable_async_sleep::async_sleep(wait_time).await;
+        futures_timer::Delay::new(wait_time).await;
 
         let accessory_device_info = list_devices().await.ok().and_then(|mut dev_list| {
             dev_list.find(|device_info| {

@@ -1,6 +1,9 @@
 use std::pin::Pin;
 
-use dev_disp_core::client::{DisplayHostInfo, ScreenTransport, TransportError};
+use dev_disp_core::{
+    client::{DisplayHostInfo, ScreenTransport, TransportError},
+    util::PinnedFuture,
+};
 use futures_util::{FutureExt, future};
 use log::debug;
 use nusb::{Device, DeviceInfo, Interface};
@@ -31,12 +34,16 @@ impl UsbScreenHostTransport {
 }
 
 impl ScreenTransport for UsbScreenHostTransport {
-    fn get_display_config(&self) -> Pin<Box<dyn Future<Output = DisplayHostInfo> + Send>> {
+    fn initialize<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>> {
+        todo!()
+    }
+
+    fn get_display_config(&mut self) -> PinnedFuture<'_, Result<DisplayHostInfo, TransportError>> {
         let ifc = self.ifc.clone();
 
         async move {};
 
-        future::ready(DisplayHostInfo::new(1920, 1080, vec![])).boxed()
+        future::ready(Ok(DisplayHostInfo::new(1920, 1080, vec![]))).boxed()
     }
 
     fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send>> {

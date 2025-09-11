@@ -1,5 +1,5 @@
 [package]
-name = "rust_lib_flutter_boundgen"
+name = "dev-disp-flutter-bindgen"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,6 +8,12 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
+dev-disp-usb-proto-android = { path = "../dev-disp-usb-proto-android" }
+anyhow = "1.0"
+log = "0.4"
+
+# [dev-dependencies]
+# freezd = ">=1.0.0"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

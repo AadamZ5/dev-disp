@@ -35,7 +35,11 @@ where
         }
     }
 
-    pub async fn get_display_config(&self) -> DisplayHostInfo {
+    pub async fn initialize(&mut self) -> Result<(), TransportError> {
+        self.transport.initialize().boxed_local().await
+    }
+
+    pub async fn get_display_config(&mut self) -> Result<DisplayHostInfo, TransportError> {
         self.transport.get_display_config().await
     }
 

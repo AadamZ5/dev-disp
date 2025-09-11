@@ -6,8 +6,13 @@ edition = "2024"
 [dependencies]
 log = "0.4.28"
 dev-disp-core = { path = "../../libs/dev-disp-core" }
+dev-disp-usb-proto-android = { path = "../../libs/dev-disp-usb-proto-android" }
 nusb = { version = "0.2.0", features = ["tokio"] }
 thiserror = "2.0.16"
-portable_async_sleep = "0.1.1"
 futures-util = { version = "0.3.31", features = ["sink"] }
+futures-timer = "3.0.3"
 bincode = { version = "2.0.1" }
+
+[features]
+default = ["host"]
+host = []

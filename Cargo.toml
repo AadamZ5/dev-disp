@@ -4,6 +4,6 @@ members = [
   "libs/dev-disp-comm-usb",
   "libs/dev-disp-core",
   "libs/dev-disp-flutter-bindgen",
-  "libs/dev-disp-provider-evdi",
+  "libs/dev-disp-provider-evdi", "libs/dev-disp-usb-proto-android",
 ]
 resolver = "3"

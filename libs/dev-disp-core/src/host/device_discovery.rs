@@ -20,7 +20,10 @@ pub trait ConnectableDevice {
 
     fn connect(
         self,
-    ) -> PinnedFuture<Result<DisplayHost<Self::Transport>, Box<dyn std::error::Error + Send + Sync>>>;
+    ) -> PinnedFuture<
+        'static,
+        Result<DisplayHost<Self::Transport>, Box<dyn std::error::Error + Send + Sync>>,
+    >;
 
     fn get_info(&self) -> ConnectableDeviceInfo;
 }
@@ -28,7 +31,7 @@ pub trait ConnectableDevice {
 pub trait DeviceDiscovery {
     type DeviceFacade: ConnectableDevice;
 
-    fn discover_devices(&self) -> PinnedFuture<Vec<Self::DeviceFacade>>;
+    fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceFacade>>;
 }
 
 pub trait StreamingDeviceDiscovery: DeviceDiscovery {
@@ -78,6 +81,8 @@ where
 {
     fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceFacade>> + Send>> {
         let initial = self.inner.discover_devices();
+
+        todo!();
 
         let poll_stream = unfold(self, |this| async move {
             (this.sleep_factory)(this.interval).await;

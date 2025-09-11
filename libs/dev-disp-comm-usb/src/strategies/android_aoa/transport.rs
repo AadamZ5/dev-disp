@@ -1,4 +1,4 @@
-use std::pin::Pin;
+use std::{pin::Pin, time::Duration};
 
 use dev_disp_core::{
     client::{DisplayHostInfo, ScreenTransport, TransportError},
@@ -10,6 +10,8 @@ use nusb::{
     Device, DeviceInfo, Endpoint, Interface,
     transfer::{Buffer, Bulk, In, Out},
 };
+
+const USB_TIMEOUT: Duration = Duration::from_millis(200);
 
 pub struct AndroidAoaScreenHostTransport {
     dev_info: DeviceInfo,
@@ -48,10 +50,33 @@ impl AndroidAoaScreenHostTransport {
 }
 
 impl ScreenTransport for AndroidAoaScreenHostTransport {
-    fn get_display_config(&self) -> Pin<Box<dyn Future<Output = DisplayHostInfo> + Send>> {
-        async move {};
+    fn initialize<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>> {
+        let data = "test-data".as_bytes();
 
-        future::ready(DisplayHostInfo::new(1920, 1080, vec![])).boxed()
+        let mut out_buffer = Buffer::new(data.len());
+        out_buffer
+            .extend_fill(data.len(), 0)
+            .copy_from_slice(&data[..data.len()]);
+
+        debug!(
+            "Sending {} bytes of screen data to USB device (buffer size {})",
+            data.len(),
+            out_buffer.capacity()
+        );
+
+        async move {
+            self.bulk_out.submit(out_buffer);
+            let completion = self.bulk_out.next_complete().await;
+            self.out_buffer.replace(completion.buffer);
+            completion
+                .status
+                .map_err(|e| TransportError::Other(Box::new(e)))
+        }
+        .boxed()
+    }
+
+    fn get_display_config(&mut self) -> PinnedFuture<'_, Result<DisplayHostInfo, TransportError>> {
+        future::ready(Ok(DisplayHostInfo::new(1920, 1080, vec![]))).boxed()
     }
 
     fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send>> {
@@ -62,9 +87,9 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         &'s mut self,
         data: &'a [u8],
     ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>> {
-        //return async { Ok(()) }.boxed();
-
         // TODO: Don't do this below, use compression!
+        // Use test data for now
+        let data = "test-data".as_bytes();
 
         let mut out_buffer = self
             .out_buffer
@@ -76,15 +101,13 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
                     None
                 }
             })
-            .unwrap_or_else(|| {
-                let mut buffer = self.bulk_out.allocate(data.len());
-                buffer.fill(0);
-                buffer
-            });
+            .unwrap_or_else(|| self.bulk_out.allocate(data.len()));
+        out_buffer.clear();
 
         debug!(
-            "Sending {} bytes of screen data to USB device (buffer size {})",
+            "Sending {} bytes of screen data to USB device (buffer size {}/{})",
             data.len(),
+            out_buffer.len(),
             out_buffer.capacity()
         );
         out_buffer

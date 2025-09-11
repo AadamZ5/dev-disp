@@ -52,16 +52,20 @@ impl Display for TransportError {
 /// The transport needs to be a sink that sends the screen data to the
 /// client via whatever means possible.
 pub trait ScreenTransport {
-    fn get_display_config(&self) -> PinnedFuture<DisplayHostInfo>;
+    fn initialize<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>>;
 
-    fn close(&mut self) -> PinnedFuture<Result<(), TransportError>> {
+    fn get_display_config<'s>(
+        &'s mut self,
+    ) -> PinnedFuture<'s, Result<DisplayHostInfo, TransportError>>;
+
+    fn close<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>> {
         Box::pin(future::ready(Ok(())))
     }
 
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>>;
+    ) -> PinnedFuture<'s, Result<(), TransportError>>;
 }
 
 pub struct SomeScreenTransport {
@@ -84,7 +88,11 @@ impl SomeScreenTransport {
 }
 
 impl ScreenTransport for SomeScreenTransport {
-    fn get_display_config(&self) -> PinnedFuture<DisplayHostInfo> {
+    fn initialize(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
+        self.inner.initialize()
+    }
+
+    fn get_display_config(&mut self) -> PinnedFuture<'_, Result<DisplayHostInfo, TransportError>> {
         self.inner.get_display_config()
     }
 
@@ -95,7 +103,7 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.send_screen_data(data)
     }
 
-    fn close(&mut self) -> PinnedFuture<Result<(), TransportError>> {
+    fn close(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
         self.inner.close()
     }
 }

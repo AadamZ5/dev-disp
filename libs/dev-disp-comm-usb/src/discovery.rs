@@ -6,8 +6,26 @@ use dev_disp_core::{
     util::PinnedFuture,
 };
 use futures_util::{FutureExt, Stream, StreamExt};
+use nusb::DeviceInfo;
 
-use crate::{UsbScreenHostTransport, connect_usb};
+use crate::{
+    UsbConnectionStrategy, error::UsbConnectionError,
+    strategies::android_aoa::android_accessory::connect_usb_android_accessory,
+};
+
+/// Connect to a USB device using the specified strategy and return a transport
+pub async fn connect_usb(
+    device_info: DeviceInfo,
+    strategy: UsbConnectionStrategy,
+) -> Result<SomeScreenTransport, UsbConnectionError> {
+    let transport = match strategy {
+        UsbConnectionStrategy::AndroidAccessory => connect_usb_android_accessory(device_info)
+            .await
+            .map(SomeScreenTransport::new),
+    }?;
+
+    Ok(transport)
+}
 
 /// This guy represents a USB device that we *can* connect to, but
 /// have not yet.
@@ -20,8 +38,10 @@ impl ConnectableDevice for UsbDeviceSentinel {
 
     fn connect(
         self,
-    ) -> PinnedFuture<Result<DisplayHost<Self::Transport>, Box<dyn std::error::Error + Send + Sync>>>
-    {
+    ) -> PinnedFuture<
+        'static,
+        Result<DisplayHost<Self::Transport>, Box<dyn std::error::Error + Send + Sync>>,
+    > {
         async move {
             let device_name = self.device_info.product_string().unwrap_or("Unknown");
             let device_serial = self.device_info.serial_number().unwrap_or("Unknown");

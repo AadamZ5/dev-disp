@@ -11,3 +11,4 @@ tokio = { version = "1.47.1", features = ["full", "signal"] }
 dev-disp-core = { path = "../../libs/dev-disp-core" }
 dev-disp-comm-usb = { path = "../../libs/dev-disp-comm-usb" }
 dev-disp-provider-evdi = { path = "../../libs/dev-disp-provider-evdi" }
+futures-util = "0.3.31"
