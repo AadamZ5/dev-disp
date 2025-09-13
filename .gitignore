@@ -1,2 +1,3 @@
 /target
 .flutter-plugins-dependencies
+**/.dart_tool
