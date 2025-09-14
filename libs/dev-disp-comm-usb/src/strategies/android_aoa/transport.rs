@@ -4,13 +4,14 @@ use dev_disp_core::{
     client::{DisplayHostInfo, ScreenTransport, TransportError},
     util::PinnedFuture,
 };
-use dev_disp_usb_proto_android::{Message, MessageToAndroid};
 use futures_util::{FutureExt, future};
 use log::debug;
 use nusb::{
     Device, DeviceInfo, Endpoint, Interface,
     transfer::{Buffer, Bulk, In, Out},
 };
+
+use crate::strategies::android_aoa::protocol::{Message, MessageToAndroid};
 
 const USB_TIMEOUT: Duration = Duration::from_millis(200);
 

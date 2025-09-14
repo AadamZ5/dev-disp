@@ -327,7 +327,6 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "dev-disp-core",
- "dev-disp-usb-proto-android",
  "futures-timer",
  "futures-util",
  "log",
@@ -371,14 +370,6 @@ dependencies = [
  "futures-util",
  "log",
  "tokio",
-]
-
-[[package]]
-name = "dev-disp-usb-proto-android"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "once_cell",
 ]
 
 [[package]]
@@ -1052,7 +1043,7 @@ name = "rust_lib_flutter_boundgen"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dev-disp-usb-proto-android",
+ "dev-disp-comm-usb",
  "flutter_rust_bridge",
  "log",
  "once_cell",

@@ -1,6 +1,6 @@
 use std::{fs::File, io::Read, os::fd::FromRawFd, sync::Mutex, thread};
 
-use dev_disp_usb_proto_android::MessageToAndroid;
+use dev_disp_comm_usb::strategies::android_aoa::protocol::MessageToAndroid;
 use log::{info, warn};
 use once_cell::sync::Lazy;
 
