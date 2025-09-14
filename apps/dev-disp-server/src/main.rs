@@ -1,12 +1,7 @@
 use std::process::exit;
 
-use dev_disp_comm_usb::{UsbConnectionStrategy, connect_usb, discovery::UsbDiscovery};
-use dev_disp_core::{
-    client::{DisplayHost, SomeScreenTransport},
-    host::ConnectableDevice,
-    host::DeviceDiscovery,
-    host::ScreenProvider,
-};
+use dev_disp_comm_usb::discovery::UsbDiscovery;
+use dev_disp_core::{host::ConnectableDevice, host::DeviceDiscovery, host::ScreenProvider};
 use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::FutureExt;
 use log::{LevelFilter, error, info, warn};

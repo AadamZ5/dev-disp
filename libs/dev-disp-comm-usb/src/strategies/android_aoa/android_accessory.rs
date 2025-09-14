@@ -21,6 +21,8 @@ pub const USB_ACCESSORY_DEVICE_ID_ADB_DEBUG: u16 = 0x2D01;
 pub const ACCESSORY_GET_PROTOCOL: u8 = 0x33;
 pub const ACCESSORY_START: u8 = 0x35;
 
+pub const ACCESSORY_RE_ENUMERATE_RETRY_COUNT: u32 = 10;
+
 pub const DEV_DISP_DESCRIPTION: &str = "Device Display Host";
 pub const DEV_DISP_MANUFACTURER: &str = "Device Display";
 pub const DEV_DISP_MODEL: &str = "Screen Provider";
@@ -126,7 +128,7 @@ pub async fn connect_usb_android_accessory(
     // to trigger immediate connection events with a timeout, rather than a blind sleep
     // and retry.
 
-    let mut retries_left = 5;
+    let mut retries_left = ACCESSORY_RE_ENUMERATE_RETRY_COUNT;
     let wait_time = Duration::from_secs(1);
     let wait_str = format!("{}s", wait_time.as_secs());
 
@@ -168,8 +170,6 @@ pub async fn connect_usb_android_accessory(
             target_device = Some((accessory_handle, device));
             break;
         }
-
-        retries_left -= 1;
     }
 
     let (target_device, target_device_info) = target_device.ok_or_else(|| {

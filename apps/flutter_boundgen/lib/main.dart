@@ -17,6 +17,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final usbService = UsbService();
+  Stream<MessageToDart>? updateStream;
 
   @override
   Widget build(BuildContext context) {
@@ -30,16 +31,45 @@ class _MyAppState extends State<MyApp> {
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              StreamBuilder(
-                stream: UsbService.accessory,
-                builder: (context, snapshot) =>
-                    _buildAccessoryTree(context, snapshot),
-              ),
-            ],
+            children: [_buildConnectOrUpdateTree()],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildConnectOrUpdateTree() {
+    if (updateStream == null) {
+      return _buildConnectTree();
+    } else {
+      return _buildUpdateTree(updateStream!);
+    }
+  }
+
+  Widget _buildUpdateTree(Stream<MessageToDart> getScreenStream) {
+    return StreamBuilder(
+      stream: getScreenStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Text('Screen Stream Error: ${snapshot.error}');
+        }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Text('Waiting for screen data...');
+        }
+        if (snapshot.hasData) {
+          return Text(
+            'Screen Info Screen request received ${snapshot.data} at ${DateTime.now()}',
+          );
+        }
+        return const Text('No update data yet.');
+      },
+    );
+  }
+
+  Widget _buildConnectTree() {
+    return StreamBuilder(
+      stream: UsbService.accessory,
+      builder: (context, snapshot) => _buildAccessoryTree(context, snapshot),
     );
   }
 
@@ -101,13 +131,8 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _initialize(int fd) async {
-    try {
-      final bytes = await initialize(fd: fd);
-      print('Initialized and closed fd: $fd');
-      print('Received ${bytes.$2.length} bytes: $bytes');
-      print('Decoded ${bytes.$1.length} messages: ${bytes.$1}');
-    } catch (e) {
-      print('Error during initialization: $e');
-    }
+    updateStream = initializeStreaming(fd: fd);
+    setState(() {});
+    print('fd has been given to rust: $fd');
   }
 }

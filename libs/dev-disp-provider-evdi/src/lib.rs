@@ -21,7 +21,7 @@ use thiserror::Error;
 const RECEIVE_INITIAL_MODE_TIMEOUT: Duration = Duration::from_secs(10);
 const UPDATE_BUFFER_TIMEOUT: Duration = Duration::from_secs(5);
 const BUFFER_NOT_AVAIL_DELAY: Duration = Duration::from_millis(750);
-const SEND_BUFFER_TIMEOUT: Duration = Duration::from_millis(1000);
+const SEND_BUFFER_TIMEOUT: Duration = Duration::from_millis(20000);
 const SEND_BUFFER_TIMEOUT_MAX_COUNT: usize = 20;
 
 #[derive(Error, Debug)]

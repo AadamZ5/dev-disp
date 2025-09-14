@@ -8,17 +8,23 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'simple.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
+// These functions are ignored because they are not marked as `pub`: `handle_message`, `process_buffer`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `try_from`
 
-Future<(List<IncomingMessage>, Uint8List)> initialize({required int fd}) =>
+Stream<bool> listenGetScreen() =>
+    RustLib.instance.api.crateApiSimpleListenGetScreen();
+
+Future<void> initialize({required int fd}) =>
     RustLib.instance.api.crateApiSimpleInitialize(fd: fd);
 
-@freezed
-sealed class IncomingMessage with _$IncomingMessage {
-  const IncomingMessage._();
+Stream<MessageToDart> initializeStreaming({required int fd}) =>
+    RustLib.instance.api.crateApiSimpleInitializeStreaming(fd: fd);
 
-  const factory IncomingMessage.screenUpdate(Uint8List field0) =
-      IncomingMessage_ScreenUpdate;
-  const factory IncomingMessage.getScreenInfo() = IncomingMessage_GetScreenInfo;
-  const factory IncomingMessage.quit() = IncomingMessage_Quit;
+@freezed
+sealed class MessageToDart with _$MessageToDart {
+  const MessageToDart._();
+
+  const factory MessageToDart.getScreenInfo() = MessageToDart_GetScreenInfo;
+  const factory MessageToDart.screenUpdate(Uint8List field0) =
+      MessageToDart_ScreenUpdate;
 }

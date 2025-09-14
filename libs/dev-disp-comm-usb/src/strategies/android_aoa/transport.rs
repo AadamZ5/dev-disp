@@ -4,6 +4,7 @@ use dev_disp_core::{
     client::{DisplayHostInfo, ScreenTransport, TransportError},
     util::PinnedFuture,
 };
+use dev_disp_usb_proto_android::{Message, MessageToAndroid};
 use futures_util::{FutureExt, future};
 use log::debug;
 use nusb::{
@@ -51,12 +52,18 @@ impl AndroidAoaScreenHostTransport {
 
 impl ScreenTransport for AndroidAoaScreenHostTransport {
     fn initialize<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>> {
-        let data = "test-data".as_bytes();
+        let mut data = [0u8; 512];
+        let data_size = match MessageToAndroid::GetScreenInfo(Message { id: 0, payload: () })
+            .serialize_into(&mut data)
+        {
+            Ok(size) => size,
+            Err(e) => return future::err(TransportError::Other(Box::new(e))).boxed(),
+        };
 
         let mut out_buffer = Buffer::new(data.len());
         out_buffer
-            .extend_fill(data.len(), 0)
-            .copy_from_slice(&data[..data.len()]);
+            .extend_fill(data_size, 0)
+            .copy_from_slice(&data[..data_size]);
 
         debug!(
             "Sending {} bytes of screen data to USB device (buffer size {})",
@@ -88,35 +95,53 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         data: &'a [u8],
     ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>> {
         // TODO: Don't do this below, use compression!
-        // Use test data for now
-        let data = "test-data".as_bytes();
+        let screen_update = MessageToAndroid::ScreenUpdate(Message {
+            id: 0,
+            payload: data.to_vec(),
+        });
+        let heaped_data = match screen_update.serialize() {
+            Ok(vec) => vec,
+            Err(e) => return future::err(TransportError::Other(Box::new(e))).boxed(),
+        };
 
         let mut out_buffer = self
             .out_buffer
             .take()
             .and_then(|buffer| {
-                if buffer.len() >= data.len() {
+                if buffer.len() >= heaped_data.len() {
                     Some(buffer)
                 } else {
                     None
                 }
             })
-            .unwrap_or_else(|| self.bulk_out.allocate(data.len()));
+            .unwrap_or_else(|| self.bulk_out.allocate(heaped_data.len()));
         out_buffer.clear();
+
+        out_buffer
+            .extend_fill(heaped_data.len(), 0)
+            .copy_from_slice(&heaped_data[..heaped_data.len()]);
 
         debug!(
             "Sending {} bytes of screen data to USB device (buffer size {}/{})",
-            data.len(),
+            heaped_data.len(),
             out_buffer.len(),
             out_buffer.capacity()
         );
-        out_buffer
-            .extend_fill(data.len(), 0)
-            .copy_from_slice(&data[..data.len()]);
+
+        let data_len = heaped_data.len();
 
         async move {
+            let now = std::time::Instant::now();
             self.bulk_out.submit(out_buffer);
             let completion = self.bulk_out.next_complete().await;
+            let elapsed = now.elapsed();
+            let kb_s = (data_len as f64 / 1024.0) / (elapsed.as_secs_f64());
+            debug!(
+                "Sent {} bytes of screen data to USB device in {}ms ({}kb/s)",
+                data_len,
+                elapsed.as_millis(),
+                kb_s
+            );
             self.out_buffer.replace(completion.buffer);
             completion
                 .status
