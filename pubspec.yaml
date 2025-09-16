@@ -4,8 +4,7 @@ environment:
   sdk: ^3.9.0
 
 workspace:
-  - apps/dev-disp-android
-  - apps/flutter_boundgen
+  - apps/dev_disp_client
 dev_dependencies:
   melos: ^7.1.0
 
