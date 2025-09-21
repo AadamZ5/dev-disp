@@ -322,17 +322,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dev-disp-client-lib"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dev-disp-comm-usb",
- "flutter_rust_bridge",
- "log",
- "once_cell",
-]
-
-[[package]]
 name = "dev-disp-comm-usb"
 version = "0.1.0"
 dependencies = [
@@ -381,6 +370,17 @@ dependencies = [
  "futures-util",
  "log",
  "tokio",
+]
+
+[[package]]
+name = "dev_disp_client_lib"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dev-disp-comm-usb",
+ "flutter_rust_bridge",
+ "log",
+ "once_cell",
 ]
 
 [[package]]

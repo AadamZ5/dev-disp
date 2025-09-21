@@ -28,7 +28,7 @@ melos:
       run: |
         cd apps/flutter_boundgen
         flutter_rust_bridge_codegen generate
-        flutter_rust_bridge_codegen build-web --rust-root ../../libs/dev-disp-flutter-bindgen
+        flutter_rust_bridge_codegen build-web --rust-root ../../libs/dev-disp-client-lib
         flutter run -d chrome \
           --web-header=Cross-Origin-Opener-Policy=same-origin \
           --web-header=Cross-Origin-Embedder-Policy=require-corp
@@ -38,4 +38,4 @@ melos:
       run: |
         cd apps/flutter_boundgen
         flutter_rust_bridge_codegen generate
-        flutter_rust_bridge_codegen build-web --rust-root ../../libs/dev-disp-flutter-bindgen
+        flutter_rust_bridge_codegen build-web --rust-root ../../libs/dev-disp-client-lib

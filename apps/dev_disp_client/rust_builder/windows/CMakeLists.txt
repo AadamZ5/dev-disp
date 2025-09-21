@@ -9,7 +9,7 @@ set(PROJECT_NAME "rust_lib_flutter_boundgen")
 project(${PROJECT_NAME} LANGUAGES CXX)
 
 include("../cargokit/cmake/cargokit.cmake")
-apply_cargokit(${PROJECT_NAME} ../../../../../../../../libs/dev-disp-flutter-bindgen rust_lib_flutter_boundgen "")
+apply_cargokit(${PROJECT_NAME} ../../../../../../../../libs/dev-disp-client-lib rust_lib_flutter_boundgen "")
 
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
