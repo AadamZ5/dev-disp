@@ -1,0 +1,41 @@
+name: dev_disp
+publish_to: none
+environment:
+  sdk: ^3.9.0
+
+workspace:
+  - apps/dev_disp_client
+dev_dependencies:
+  melos: ^7.1.0
+
+melos:
+  scripts:
+    build:android_pub:
+      run: |
+        melos exec -c 6 --fail-fast -- \
+          "flutter build apk"
+      description: Build All Android.
+      packageFilters:
+        dirExists:
+          - android
+
+    dev-disp-android:
+      description: Run Android.
+      run: cd apps/dev-disp-android && flutter run -d chrome
+
+    flutter_boundgen:
+      description: Run Flutter Boundgen.
+      run: |
+        cd apps/flutter_boundgen
+        flutter_rust_bridge_codegen generate
+        flutter_rust_bridge_codegen build-web --rust-root ../../libs/dev-disp-client-lib
+        flutter run -d chrome \
+          --web-header=Cross-Origin-Opener-Policy=same-origin \
+          --web-header=Cross-Origin-Embedder-Policy=require-corp
+
+    flutter_boundgen:gen:
+      description: Do Flutter Boundgen code generation.
+      run: |
+        cd apps/flutter_boundgen
+        flutter_rust_bridge_codegen generate
+        flutter_rust_bridge_codegen build-web --rust-root ../../libs/dev-disp-client-lib

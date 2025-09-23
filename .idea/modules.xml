@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+<module fileurl="file://$PROJECT_DIR$/apps/dev-disp-android/melos_flutter_app_test.iml" filepath="$PROJECT_DIR$/apps/dev-disp-android/melos_flutter_app_test.iml" />
+<module fileurl="file://$PROJECT_DIR$/apps/flutter_boundgen/melos_flutter_boundgen.iml" filepath="$PROJECT_DIR$/apps/flutter_boundgen/melos_flutter_boundgen.iml" />
+<module fileurl="file://$PROJECT_DIR$/melos_dev_disp.iml" filepath="$PROJECT_DIR$/melos_dev_disp.iml" />
+    </modules>
+  </component>
+</project>

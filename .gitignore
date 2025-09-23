@@ -1,1 +1,4 @@
 /target
+.flutter-plugins-dependencies
+**/.dart_tool
+dev-disp.code-workspace

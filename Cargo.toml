@@ -1,3 +1,9 @@
 [workspace]
-members = ["apps/dev-disp-server", "libs/dev-disp-core"]
+members = [
+  "apps/dev-disp-server",
+  "libs/dev-disp-comm-usb",
+  "libs/dev-disp-core",
+  "libs/dev-disp-client-lib",
+  "libs/dev-disp-provider-evdi",
+]
 resolver = "3"

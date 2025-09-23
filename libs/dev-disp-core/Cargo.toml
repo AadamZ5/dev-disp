@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-evdi = "0.7.3"
 futures-core = "0.3.31"
+futures-util = { version = "0.3.31", features = ["sink"] }
 log = "0.4.28"
 thiserror = "2.0.16"
