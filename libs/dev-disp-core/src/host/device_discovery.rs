@@ -15,7 +15,7 @@ pub struct ConnectableDeviceInfo {
     pub id: String,
 }
 
-pub trait ConnectableDevice {
+pub trait ConnectableDevice: Sized {
     type Transport: ScreenTransport;
 
     fn connect(
@@ -70,7 +70,7 @@ where
 {
     type DeviceFacade = D::DeviceFacade;
 
-    fn discover_devices(&self) -> PinnedFuture<Vec<Self::DeviceFacade>> {
+    fn discover_devices(&'_ self) -> PinnedFuture<'_, Vec<Self::DeviceFacade>> {
         self.inner.discover_devices()
     }
 }
@@ -78,22 +78,53 @@ where
 impl<D> StreamingDeviceDiscovery for PollingDeviceDiscovery<D>
 where
     D: DeviceDiscovery + Send + 'static,
+    <D as DeviceDiscovery>::DeviceFacade: Send + 'static,
 {
     fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceFacade>> + Send>> {
-        let initial = self.inner.discover_devices();
+        let discovery_stream = async move {
+            let initial_discovery = self.inner.discover_devices().await;
 
-        todo!();
+            let poll_stream = unfold(self, |this| async move {
+                (this.sleep_factory)(this.interval).await;
+                let devices = this.inner.discover_devices().await;
+                Some((devices, this))
+            });
 
-        let poll_stream = unfold(self, |this| async move {
-            (this.sleep_factory)(this.interval).await;
-            let devices = this.inner.discover_devices().await;
-            Some((devices, this))
-        })
-        .boxed();
+            futures_util::stream::once(async move { initial_discovery }).chain(poll_stream)
+        }
+        .flatten_stream();
 
-        // Compose the initial result with the polling stream
-        let composed = initial.into_stream().chain(poll_stream);
-
-        Box::pin(composed)
+        Box::pin(discovery_stream)
     }
 }
+
+// pub struct GenericDeviceDiscovery {
+//     inner: Box<dyn StreamingDeviceDiscovery<DeviceFacade = GenericDeviceFacade>>,
+// }
+
+// pub struct GenericDeviceFacade {
+//     inner: Box<dyn ConnectableDevice<Transport = SomeScreenTransport>>,
+// }
+
+// impl ConnectableDevice for GenericDeviceFacade {
+//     type Transport = SomeScreenTransport;
+
+//     fn connect(
+//         self,
+//     ) -> PinnedFuture<
+//         'static,
+//         Result<DisplayHost<Self::Transport>, Box<dyn std::error::Error + Send + Sync>>,
+//     > {
+//         (self.inner).connect()
+//     }
+
+//     fn get_info(&self) -> ConnectableDeviceInfo {
+//         self.inner.get_info()
+//     }
+// }
+
+// impl DeviceDiscovery for GenericDeviceDiscovery {
+//     type DeviceFacade = GenericDeviceFacade;
+
+//     fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceFacade>> {}
+// }

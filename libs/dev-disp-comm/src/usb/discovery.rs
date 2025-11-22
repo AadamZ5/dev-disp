@@ -8,7 +8,7 @@ use dev_disp_core::{
 use futures_util::{FutureExt, Stream, StreamExt};
 use nusb::DeviceInfo;
 
-use crate::{
+use crate::usb::{
     UsbConnectionStrategy, error::UsbConnectionError,
     strategies::android_aoa::android_accessory::connect_usb_android_accessory,
 };
@@ -48,7 +48,7 @@ impl ConnectableDevice for UsbDeviceSentinel {
 
             let transport = connect_usb(
                 self.device_info.clone(),
-                crate::UsbConnectionStrategy::AndroidAccessory,
+                crate::usb::UsbConnectionStrategy::AndroidAccessory,
             )
             .await?;
             Ok(dev_disp_core::client::DisplayHost::new(

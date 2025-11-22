@@ -11,7 +11,7 @@ use nusb::{
     transfer::{Buffer, Bulk, In, Out},
 };
 
-use crate::strategies::android_aoa::protocol::{Message, MessageToAndroid};
+use crate::usb::strategies::android_aoa::protocol::{Message, MessageToAndroid};
 
 const USB_TIMEOUT: Duration = Duration::from_millis(200);
 

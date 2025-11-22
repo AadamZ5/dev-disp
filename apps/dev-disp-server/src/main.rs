@@ -1,6 +1,8 @@
+mod device_recruiter;
+
 use std::process::exit;
 
-use dev_disp_comm_usb::discovery::UsbDiscovery;
+use dev_disp_comm::usb::discovery::UsbDiscovery;
 use dev_disp_core::{host::ConnectableDevice, host::DeviceDiscovery, host::ScreenProvider};
 use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::FutureExt;
@@ -39,13 +41,16 @@ async fn main() {
             let display = display.to_some_transport();
 
             let evdi_provider = evdi_provider_1;
-            let handle_result = evdi_provider.handle_display_host(display).await;
 
-            if let Err(e) = handle_result {
-                error!("Error handling display host: {}", e);
-            } else {
-                info!("Display host handling completed successfully");
-            }
+            tokio::task::spawn_local(async move {
+                let handle_result = evdi_provider.handle_display_host(display).await;
+
+                if let Err(e) = handle_result {
+                    error!("Error handling display host: {}", e);
+                } else {
+                    info!("Display host handling completed successfully");
+                }
+            })
         });
 
         let ctrl_c_listener = tokio::task::spawn_local(async move {

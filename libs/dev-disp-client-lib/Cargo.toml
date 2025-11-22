@@ -8,7 +8,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
-dev-disp-comm-usb = { path = "../dev-disp-comm-usb", default-features = false }
+dev-disp-comm = { path = "../dev-disp-comm", default-features = false }
 anyhow = "1.0"
 log = "0.4"
 once_cell = "1.21.3"
