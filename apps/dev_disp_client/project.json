@@ -1,0 +1,35 @@
+{
+  "name": "dev_disp_client",
+  "root": "apps/dev_disp_client",
+  "sourceRoot": "apps/dev_disp_client/lib/src",
+  "projectType": "application",
+  "targets": {
+    "generate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/dev_disp_client",
+        "commands": [
+          {
+            "command": "flutter_rust_bridge_codegen generate --rust-root ../../libs/dev-disp-client-lib",
+            "description": "Generate Rust bindings"
+          }
+        ],
+        "parallel": false
+      }
+    },
+    "build": {
+      "dependsOn": ["generate"],
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/dev_disp_client",
+        "commands": [
+          {
+            "command": "flutter build web --release",
+            "description": "Build Flutter web application"
+          }
+        ],
+        "parallel": false
+      }
+    }
+  }
+}

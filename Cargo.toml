@@ -4,6 +4,11 @@ members = [
   "libs/dev-disp-comm",
   "libs/dev-disp-core",
   "libs/dev-disp-client-lib",
-  "libs/dev-disp-provider-evdi", "libs/pender",
+  "libs/dev-disp-provider-evdi",
 ]
 resolver = "3"
+
+[dev-dependencies]
+# TODO: When Cargo allows running dev dependencies on the command-line, we need
+# to specify this here:
+# flutter_rust_bridge_codegen = { git = "https://github.com/fzyzcjy/flutter_rust_bridge.git", rev = "98ad35b5955424e16671382d69608ddafc7988db" }

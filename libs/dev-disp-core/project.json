@@ -1,0 +1,11 @@
+{
+  "name": "dev-disp-core",
+  "root": "libs/dev-disp-core",
+  "sourceRoot": "libs/dev-disp-core/src",
+  "projectType": "library",
+  "targets": {
+    "lint": {
+      "executor": "@monodon/rust:lint"
+    }
+  }
+}
