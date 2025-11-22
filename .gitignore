@@ -12,3 +12,6 @@ dev-disp.code-workspace
 .github/instructions/nx.instructions.md
 
 node_modules
+.angular
+
+vitest.config.*.timestamp*
