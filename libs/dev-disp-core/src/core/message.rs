@@ -1,10 +1,13 @@
-use crate::client::DisplayHostInfo;
+use crate::host::DisplayParameters;
+use serde::{Deserialize, Serialize};
 
-pub enum DevDispHostMessage<'a> {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum DevDispMessageFromHost<'a> {
     GetDisplayConfig,
     ScreenData(&'a [u8]),
 }
 
-pub enum DevDispClientMessage {
-    UpdateDisplayConfig(DisplayHostInfo),
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum DevDispMessageFromClient {
+    UpdateDisplayConfig(DisplayParameters),
 }

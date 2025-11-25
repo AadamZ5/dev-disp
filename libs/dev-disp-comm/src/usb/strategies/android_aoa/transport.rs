@@ -1,7 +1,8 @@
 use std::{pin::Pin, time::Duration};
 
 use dev_disp_core::{
-    client::{DisplayHostInfo, ScreenTransport, TransportError},
+    client::{ScreenTransport, TransportError},
+    host::DisplayParameters,
     util::PinnedFuture,
 };
 use futures_util::{FutureExt, future};
@@ -83,8 +84,18 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         .boxed()
     }
 
-    fn get_display_config(&mut self) -> PinnedFuture<'_, Result<DisplayHostInfo, TransportError>> {
-        future::ready(Ok(DisplayHostInfo::new(1920, 1080, vec![]))).boxed()
+    fn get_display_config(
+        &mut self,
+    ) -> PinnedFuture<'_, Result<DisplayParameters, TransportError>> {
+        future::ready(Ok(DisplayParameters {
+            host_dev_name: self
+                .dev_info
+                .serial_number()
+                .unwrap_or("Unknown")
+                .to_string(),
+            resolution: (1920, 1080),
+        }))
+        .boxed()
     }
 
     fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send>> {

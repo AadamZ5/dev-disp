@@ -4,31 +4,10 @@ use std::{
     pin::Pin,
 };
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::util::PinnedFuture;
-
-/// Information about the screen provided by the client.
-#[derive(Debug, Clone)]
-pub struct DisplayHostInfo {
-    pub width_px: u32,
-    pub height_px: u32,
-    edid: Vec<u8>,
-}
-
-impl DisplayHostInfo {
-    pub fn new(width_px: u32, height_px: u32, edid: Vec<u8>) -> Self {
-        Self {
-            width_px,
-            height_px,
-            edid,
-        }
-    }
-
-    pub fn get_edid(&self) -> &[u8] {
-        &self.edid
-    }
-}
+use crate::{host::DisplayParameters, util::PinnedFuture};
 
 #[derive(Debug, Error)]
 pub enum TransportError {
@@ -56,7 +35,7 @@ pub trait ScreenTransport {
 
     fn get_display_config<'s>(
         &'s mut self,
-    ) -> PinnedFuture<'s, Result<DisplayHostInfo, TransportError>>;
+    ) -> PinnedFuture<'s, Result<DisplayParameters, TransportError>>;
 
     fn close<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>> {
         Box::pin(future::ready(Ok(())))
@@ -92,7 +71,9 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.initialize()
     }
 
-    fn get_display_config(&mut self) -> PinnedFuture<'_, Result<DisplayHostInfo, TransportError>> {
+    fn get_display_config(
+        &mut self,
+    ) -> PinnedFuture<'_, Result<DisplayParameters, TransportError>> {
         self.inner.get_display_config()
     }
 

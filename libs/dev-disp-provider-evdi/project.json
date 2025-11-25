@@ -4,6 +4,9 @@
   "sourceRoot": "libs/dev-disp-provider-evdi/src",
   "projectType": "library",
   "targets": {
+    "check": {
+      "executor": "@monodon/rust:check"
+    },
     "build": {
       "executor": "@monodon/rust:build",
       "configurations": {
