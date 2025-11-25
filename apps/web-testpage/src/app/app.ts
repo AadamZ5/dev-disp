@@ -1,9 +1,10 @@
 import { Component } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { NxWelcome } from './nx-welcome';
+import { ScreenComponent } from './screen/screen.component';
+import { ReactiveFormsModule } from '@angular/forms';
 
 @Component({
-  imports: [NxWelcome, RouterModule],
+  imports: [RouterModule, ScreenComponent, ReactiveFormsModule],
   selector: 'app-root',
   templateUrl: './app.html',
   styleUrl: './app.scss',
