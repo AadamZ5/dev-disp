@@ -5,7 +5,7 @@ use std::{process::exit, time::Duration};
 use dev_disp_comm::usb::discovery::UsbDiscovery;
 use dev_disp_core::{
     core::handle_display_host,
-    host::{ConnectableDevice, DeviceDiscovery, ScreenProvider},
+    host::{ConnectableDevice, DeviceDiscovery},
 };
 use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::FutureExt;
@@ -34,7 +34,7 @@ async fn main() {
                 if first_iter {
                     first_iter = false;
                 } else {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    tokio::time::sleep(Duration::from_secs(3)).await;
                 }
 
                 // TODO: Implement some UI for picking this stuff
