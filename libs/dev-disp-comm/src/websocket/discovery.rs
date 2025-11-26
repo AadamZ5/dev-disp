@@ -5,9 +5,9 @@ use dev_disp_core::{
 
 use crate::websocket::ws_transport::WsTransport;
 
-pub struct WsDeviceSentinal {}
+pub struct WsDeviceHandle {}
 
-impl ConnectableDevice for WsDeviceSentinal {
+impl ConnectableDevice for WsDeviceHandle {
     type Transport = WsTransport;
 
     fn connect(
@@ -30,7 +30,7 @@ impl ConnectableDevice for WsDeviceSentinal {
 pub struct WsDiscovery {}
 
 impl DeviceDiscovery for WsDiscovery {
-    type DeviceFacade = WsDeviceSentinal;
+    type DeviceFacade = WsDeviceHandle;
 
     fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceFacade>> {
         async { vec![] }
