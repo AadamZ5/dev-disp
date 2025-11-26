@@ -15,6 +15,7 @@ pub enum TransportError {
     Other(Box<dyn std::error::Error + Send + Sync>),
     Unknown,
     NotImplemented,
+    SerializationError,
 }
 
 impl Display for TransportError {
@@ -25,6 +26,7 @@ impl Display for TransportError {
             TransportError::Other(e) => write!(f, "Other error: {}", e),
             TransportError::Unknown => write!(f, "Unknown error"),
             TransportError::NotImplemented => write!(f, "Not Implemented"),
+            TransportError::SerializationError => write!(f, "Serialization Error"),
         }
     }
 }

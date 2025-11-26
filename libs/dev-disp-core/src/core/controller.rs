@@ -101,4 +101,6 @@ where
         Ok(v) => Ok(v),
         Err(e) => Err(format!("Error handling client: {}", e)),
     });
+
+    screen_task
 }

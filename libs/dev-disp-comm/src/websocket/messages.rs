@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WsMessageProtocolInit {
     // TODO: Security!
-    init_key: String,
+    pub init_key: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
