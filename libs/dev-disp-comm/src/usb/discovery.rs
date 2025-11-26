@@ -29,11 +29,11 @@ pub async fn connect_usb(
 
 /// This guy represents a USB device that we *can* connect to, but
 /// have not yet.
-pub struct UsbDeviceSentinel {
+pub struct UsbDeviceCandidate {
     device_info: nusb::DeviceInfo,
 }
 
-impl ConnectableDevice for UsbDeviceSentinel {
+impl ConnectableDevice for UsbDeviceCandidate {
     type Transport = SomeScreenTransport;
 
     fn connect(
@@ -80,15 +80,15 @@ impl ConnectableDevice for UsbDeviceSentinel {
 pub struct UsbDiscovery;
 
 impl DeviceDiscovery for UsbDiscovery {
-    type DeviceFacade = UsbDeviceSentinel;
+    type DeviceCandidate = UsbDeviceCandidate;
 
-    fn discover_devices(&self) -> PinnedFuture<Vec<Self::DeviceFacade>> {
+    fn discover_devices(&self) -> PinnedFuture<Vec<Self::DeviceCandidate>> {
         nusb_list_usb_sentinels().boxed()
     }
 }
 
 impl StreamingDeviceDiscovery for UsbDiscovery {
-    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceFacade>> + Send>> {
+    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>> {
         nusb::watch_devices()
             .map(|hotplugs| hotplugs.then(|_| nusb_list_usb_sentinels()))
             .map(|st| st.boxed())
@@ -97,12 +97,12 @@ impl StreamingDeviceDiscovery for UsbDiscovery {
     }
 }
 
-async fn nusb_list_usb_sentinels() -> Vec<UsbDeviceSentinel> {
+async fn nusb_list_usb_sentinels() -> Vec<UsbDeviceCandidate> {
     nusb::list_devices()
         .await
         .map(|dev| {
             dev.into_iter()
-                .map(|device_info| UsbDeviceSentinel { device_info })
+                .map(|device_info| UsbDeviceCandidate { device_info })
                 .collect()
         })
         .unwrap_or_else(|_| empty().collect())

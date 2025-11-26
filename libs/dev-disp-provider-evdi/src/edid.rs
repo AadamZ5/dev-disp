@@ -7,8 +7,10 @@ pub struct EdidDetailedTimingDescriptor {
     horizontal_active_pixels: u16,
 }
 
+#[derive(Debug, Clone)]
 pub enum EdidDescriptor {}
 
+#[derive(Default, Debug, Clone)]
 pub struct Edid {
     /// A 3 character manufacturer ID
     manufacturer_id: String,
@@ -61,14 +63,6 @@ pub struct Edid {
     descriptor_2: Option<EdidDescriptor>,
     descriptor_3: Option<EdidDescriptor>,
     descriptor_4: Option<EdidDescriptor>,
-}
-
-impl Default for Edid {
-    fn default() -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
 }
 
 const TEMPLATE_EDID: &[u8; 128] = include_bytes!("./Example_EDID.bin");

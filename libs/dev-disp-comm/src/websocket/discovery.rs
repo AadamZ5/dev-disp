@@ -2,12 +2,13 @@ use dev_disp_core::{
     host::{ConnectableDevice, DeviceDiscovery},
     util::PinnedFuture,
 };
+use futures_util::FutureExt;
 
 use crate::websocket::ws_transport::WsTransport;
 
-pub struct WsDeviceSentinal {}
+pub struct WsDeviceCandidate {}
 
-impl ConnectableDevice for WsDeviceSentinal {
+impl ConnectableDevice for WsDeviceCandidate {
     type Transport = WsTransport;
 
     fn connect(
@@ -30,9 +31,9 @@ impl ConnectableDevice for WsDeviceSentinal {
 pub struct WsDiscovery {}
 
 impl DeviceDiscovery for WsDiscovery {
-    type DeviceFacade = WsDeviceSentinal;
+    type DeviceCandidate = WsDeviceCandidate;
 
-    fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceFacade>> {
-        async { vec![] }
+    fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>> {
+        async { vec![] }.boxed()
     }
 }

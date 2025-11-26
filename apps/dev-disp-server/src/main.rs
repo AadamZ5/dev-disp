@@ -31,7 +31,7 @@ async fn main() {
             let mut first_iter = true;
 
             loop {
-                if !first_iter {
+                if first_iter {
                     first_iter = false;
                 } else {
                     tokio::time::sleep(Duration::from_secs(1)).await;

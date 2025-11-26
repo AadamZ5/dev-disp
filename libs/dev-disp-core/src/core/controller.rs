@@ -68,13 +68,11 @@ where
                     }
                     ScreenReadyStatus::Ready => {
                         info!("Screen data ready!");
-                        let d8ta = screen.get_bytes();
-                        // Send then drop
-                        let send_result = host.send_screen_data(d8ta).await;
+                        let data = screen.get_bytes();
+                        let send_result = host.send_screen_data(data).await;
                         if let Err(e) = send_result {
                             error!("Error during transmission to screen host: {}", e);
                         }
-                        drop(d8ta);
                     }
                 },
                 Err(e) => {

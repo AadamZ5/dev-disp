@@ -4,7 +4,9 @@ import { WebSocketSubject } from 'rxjs/webSocket';
 
 @Injectable({ providedIn: 'root' })
 export class DevDispService {
-  connect(address: string) {}
+  connect(address: string) {
+    return new DevDispConnection(address);
+  }
 }
 
 export class DevDispConnection {

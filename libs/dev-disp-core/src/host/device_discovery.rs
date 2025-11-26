@@ -29,13 +29,13 @@ pub trait ConnectableDevice: Sized {
 }
 
 pub trait DeviceDiscovery {
-    type DeviceFacade: ConnectableDevice;
+    type DeviceCandidate: ConnectableDevice;
 
-    fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceFacade>>;
+    fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>>;
 }
 
 pub trait StreamingDeviceDiscovery: DeviceDiscovery {
-    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceFacade>> + Send>>;
+    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>>;
 }
 
 pub struct PollingDeviceDiscovery<D>
@@ -68,9 +68,9 @@ impl<D> DeviceDiscovery for PollingDeviceDiscovery<D>
 where
     D: DeviceDiscovery,
 {
-    type DeviceFacade = D::DeviceFacade;
+    type DeviceCandidate = D::DeviceCandidate;
 
-    fn discover_devices(&'_ self) -> PinnedFuture<'_, Vec<Self::DeviceFacade>> {
+    fn discover_devices(&'_ self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>> {
         self.inner.discover_devices()
     }
 }
@@ -78,9 +78,9 @@ where
 impl<D> StreamingDeviceDiscovery for PollingDeviceDiscovery<D>
 where
     D: DeviceDiscovery + Send + 'static,
-    <D as DeviceDiscovery>::DeviceFacade: Send + 'static,
+    <D as DeviceDiscovery>::DeviceCandidate: Send + 'static,
 {
-    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceFacade>> + Send>> {
+    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>> {
         let discovery_stream = async move {
             let initial_discovery = self.inner.discover_devices().await;
 
@@ -97,6 +97,10 @@ where
         Box::pin(discovery_stream)
     }
 }
+
+// TODO: Below is an attempt to generalize the device discovery, but there are issues
+// with traites with GATs and dyn-compatibility. There may be a way to fix this. Needs
+// further investigation.
 
 // pub struct GenericDeviceDiscovery {
 //     inner: Box<dyn StreamingDeviceDiscovery<DeviceFacade = GenericDeviceFacade>>,
