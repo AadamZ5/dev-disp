@@ -63,8 +63,20 @@ where
     {
         async move {
             let (get_ws_tx, get_ws_rx) = oneshot::channel();
-            self.take_ws_tx.send(get_ws_tx).await.unwrap();
-            let websocket = get_ws_rx.await.unwrap();
+            match self.take_ws_tx.send(get_ws_tx).await {
+                Err(e) => {
+                    error!("Error requesting to takeover connection: {}", e);
+                }
+                _ => {}
+            }
+            let websocket = match get_ws_rx.await {
+                Err(e) => {
+                    error!("Error waiting for connection to be handed to us: {}", e);
+                    return Err(Box::new(e) as Box<dyn Error + Send + Sync>);
+                }
+                Ok(ws) => ws,
+            };
+
             Ok(DisplayHost::new(
                 0,
                 self.device_info.name,
@@ -105,7 +117,7 @@ impl<S> Clone for WsDiscoveryListenCtx<S> {
 pub struct WsDiscovery<S> {
     current_connections: Arc<RwLock<HashMap<String, WsDeviceCandidate<S>>>>,
     listen_ctx: WsDiscoveryListenCtx<S>,
-    new_connection_notification: mpsc::Receiver<()>,
+    connections_update_notification: mpsc::Receiver<()>,
 }
 
 impl<S> WsDiscovery<S>
@@ -113,15 +125,15 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     pub fn new() -> Self {
-        let (new_connection_tx, new_connection_rx) = mpsc::channel(100);
+        let (connections_update_tx, connections_update_rx) = mpsc::channel(100);
         let current_connections = Arc::new(RwLock::new(HashMap::new()));
         Self {
             current_connections: current_connections.clone(),
             listen_ctx: WsDiscoveryListenCtx {
                 current_connections: current_connections,
-                connections_update_tx: new_connection_tx,
+                connections_update_tx,
             },
-            new_connection_notification: new_connection_rx,
+            connections_update_notification: connections_update_rx,
         }
     }
 
@@ -139,7 +151,7 @@ where
 
             // These channels will be used to transfer a *new* future that is created
             // when a new connection comes in, to the main task loop.
-            let (mut new_connection_tx, mut new_connection_rx) =
+            let (mut connection_task_tx, mut connection_task_rx) =
                 mpsc::channel::<Pin<Box<dyn Future<Output = ()>>>>(10);
             let mut tasks = FuturesUnordered::<Pin<Box<dyn Future<Output = ()>>>>::new();
 
@@ -158,7 +170,12 @@ where
                     debug!("New WebSocket connection accepted.");
 
                     let init_task = Self::pre_init(listen_ctx_ref, ws_stream).boxed_local();
-                    new_connection_tx.send(init_task).await.unwrap();
+                    match connection_task_tx.send(init_task).await {
+                        Err(e) => {
+                            error!("Error sending new connection for spawning: {}", e);
+                        }
+                        _ => {}
+                    }
                 }
             };
 
@@ -171,7 +188,7 @@ where
                             break;
                         }
                     },
-                    new_task = new_connection_rx.next() => {
+                    new_task = connection_task_rx.next() => {
                         if let Some(task) = new_task {
                             tasks.push(task);
                         }
@@ -186,23 +203,21 @@ where
         .boxed_local()
     }
 
-    async fn pre_init(
-        listen_ctx: &WsDiscoveryListenCtx<S>,
-        mut ws_stream: WebSocketStream<S>,
-    ) -> () {
+    async fn pre_init(listen_ctx: &WsDiscoveryListenCtx<S>, mut ws_stream: WebSocketStream<S>) {
         // First talk to the websocket using the pre-init messages to figure
         // out details about the connecting device.
 
         // Do pre-init sanity check
         info!("Starting WebSocket pre-init handshake...");
         let pre_init_req = WsMessageFromSource::RequestPreInit;
-        let pre_init_req_bytes_result =
-            bincode::serde::encode_to_vec(&pre_init_req, bincode::config::standard());
-        if let Err(e) = pre_init_req_bytes_result {
-            error!("Failed to encode pre-init request: {}", e);
-            return;
-        }
-        let pre_init_req_bytes = pre_init_req_bytes_result.unwrap();
+        let pre_init_req_bytes =
+            match bincode::serde::encode_to_vec(&pre_init_req, bincode::config::standard()) {
+                Ok(vec) => vec,
+                Err(e) => {
+                    error!("Failed to encode pre-init request: {}", e);
+                    return;
+                }
+            };
 
         info!("Sending pre-init request...");
         debug!("Pre-init request bytes: {:?}", pre_init_req_bytes);
@@ -250,13 +265,15 @@ where
 
         // Now we do device info
         let device_info_req = WsMessageFromSource::RequestDeviceInformation;
-        let device_info_req_bytes_result =
-            bincode::serde::encode_to_vec(&device_info_req, bincode::config::standard());
-        if let Err(e) = device_info_req_bytes_result {
-            error!("Failed to encode device info request: {}", e);
-            return;
-        }
-        let device_info_req_bytes = device_info_req_bytes_result.unwrap();
+        let device_info_req_bytes =
+            match bincode::serde::encode_to_vec(&device_info_req, bincode::config::standard()) {
+                Ok(vec) => vec,
+                Err(e) => {
+                    error!("Failed to encode device info request: {}", e);
+                    return;
+                }
+            };
+
         debug!("Device info request bytes: {:?}", device_info_req_bytes);
 
         if let Err(e) = ws_stream.send(Message::binary(device_info_req_bytes)).await {
@@ -360,7 +377,7 @@ where
 {
     fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>> {
         Box::pin(futures::stream::unfold(self, |mut this| async move {
-            let notification = this.new_connection_notification.next().await;
+            let notification = this.connections_update_notification.next().await;
             if notification.is_none() {
                 return None;
             }
