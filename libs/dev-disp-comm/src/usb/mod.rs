@@ -1,7 +1,7 @@
 pub mod error;
 pub mod strategies;
 
-#[cfg(feature = "host")]
+#[cfg(feature = "usb-host")]
 pub mod discovery;
 
 pub enum UsbConnectionStrategy {

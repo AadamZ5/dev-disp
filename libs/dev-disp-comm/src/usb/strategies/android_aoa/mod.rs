@@ -1,5 +1,6 @@
-#[cfg(feature = "host")]
-pub mod android_accessory;
+#[cfg(feature = "usb-host")]
 pub mod protocol;
-#[cfg(feature = "host")]
+#[cfg(feature = "usb-host")]
 pub mod transport;
+
+pub mod android_accessory;

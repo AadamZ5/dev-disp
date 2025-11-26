@@ -331,6 +331,7 @@ dependencies = [
  "futures-util",
  "log",
  "nusb",
+ "serde",
  "thiserror 2.0.16",
 ]
 

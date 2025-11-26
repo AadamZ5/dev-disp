@@ -28,19 +28,39 @@ async fn main() {
         let logic = tokio::task::spawn_local(async move {
             let usb_discovery = UsbDiscovery {};
 
+            let mut first_iter = true;
+
             loop {
+                if !first_iter {
+                    first_iter = false;
+                } else {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+
                 // TODO: Implement some UI for picking this stuff
-                let sammy_accessory = usb_discovery
+                let sammy_accessory_result = usb_discovery
                     .discover_devices()
                     .await
                     .into_iter()
-                    .find(|dev| dev.get_info().id == SAMSUNG_SERIAL)
-                    .expect("Could not find Samsung device");
+                    .find(|dev| dev.get_info().id == SAMSUNG_SERIAL);
 
-                let display = sammy_accessory
-                    .connect()
-                    .await
-                    .expect("Failed to connect to device");
+                if sammy_accessory_result.is_none() {
+                    error!("Could not find Samsung device");
+                    continue;
+                }
+
+                let sammy_accessory =
+                    sammy_accessory_result.expect("Sammy accessory was None after checking!");
+
+                let display_result = sammy_accessory.connect().await;
+
+                if let Err(e) = display_result {
+                    error!("Failed to connect to device: {}", e);
+                    continue;
+                }
+
+                let display = display_result
+                    .expect("Sammy accessory was an error after checking that it wasnt!");
 
                 let display = display.to_some_transport();
 
@@ -56,8 +76,6 @@ async fn main() {
                     }
                 })
                 .await;
-
-                tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });
 

@@ -16,6 +16,11 @@ use crate::usb::strategies::android_aoa::protocol::{Message, MessageToAndroid};
 
 const USB_TIMEOUT: Duration = Duration::from_millis(200);
 
+/// The Android AOA Screen Host Transport
+///
+/// This facilitates communication to an Android device
+/// running corresponding software, via AOA (Android
+/// Open Accessory) mode.
 pub struct AndroidAoaScreenHostTransport {
     dev_info: DeviceInfo,
     dev: Device,
