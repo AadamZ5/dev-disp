@@ -10,9 +10,9 @@ export class DevDispService {
 }
 
 export class DevDispConnection {
-  private readonly connection$: WebSocketSubject<unknown>;
+  private readonly connection$: WebSocketSubject<ArrayBuffer>;
 
-  private readonly anyData$ = defer(() => {
+  public readonly anyData$ = defer(() => {
     console.log(`Subscribing to dev-disp subject...`);
     return this.connection$;
   }).pipe(
@@ -21,7 +21,7 @@ export class DevDispConnection {
   );
 
   constructor(public readonly address: string) {
-    this.connection$ = new WebSocketSubject<unknown>({
+    this.connection$ = new WebSocketSubject<ArrayBuffer>({
       url: this.address,
       openObserver: {
         next: (event) => {
@@ -33,7 +33,14 @@ export class DevDispConnection {
           console.log(`Disconnected from dev-disp`, event);
         },
       },
+      binaryType: 'arraybuffer',
+      deserializer: (e) => e.data,
+      serializer: (value) => value,
     });
+  }
+
+  send(data: ArrayBuffer) {
+    this.connection$.next(data);
   }
 
   destroy() {

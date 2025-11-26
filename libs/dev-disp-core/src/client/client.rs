@@ -1,4 +1,7 @@
-use std::{fmt::Display, pin::Pin};
+use std::{
+    fmt::{Debug, Display},
+    pin::Pin,
+};
 
 use futures_util::FutureExt;
 
@@ -36,6 +39,13 @@ where
         }
     }
 
+    pub fn get_background_task<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>>
+    where
+        'a: 's,
+    {
+        self.transport.background()
+    }
+
     pub async fn initialize(&mut self) -> Result<(), TransportError> {
         self.transport.initialize().boxed_local().await
     }
@@ -55,7 +65,10 @@ where
     pub fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>>
+    where
+        'a: 's,
+    {
         self.transport.send_screen_data(data)
     }
 

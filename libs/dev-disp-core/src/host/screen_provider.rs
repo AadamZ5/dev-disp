@@ -22,7 +22,7 @@ impl Display for DisplayParameters {
 }
 
 /// A screen provider is something that provides a screen
-pub trait ScreenProvider {
+pub trait ScreenProvider: Clone + Send + Sync + 'static {
     type ScreenType: Screen;
 
     // TODO: Better error type!

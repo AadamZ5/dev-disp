@@ -110,11 +110,15 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>>
+    where
+        'a: 's,
+    {
         // TODO: Don't do this below, use compression!
         let screen_update = MessageToAndroid::ScreenUpdate(Message {
             id: 0,
-            payload: data.to_vec(),
+            // TODO: Handle larger payloads properly
+            payload: data.iter().take(128_000).cloned().collect(),
         });
         let heaped_data = match screen_update.serialize() {
             Ok(vec) => vec,

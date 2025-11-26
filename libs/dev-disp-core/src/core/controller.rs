@@ -1,7 +1,8 @@
 use core::error;
 use std::time::Duration;
 
-use futures_util::FutureExt;
+use futures::{StreamExt, channel::oneshot};
+use futures_util::{FutureExt, stream::FuturesUnordered};
 use log::{debug, error, info, warn};
 
 use crate::{
@@ -19,7 +20,25 @@ where
     T: ScreenTransport + 'static,
     P: ScreenProvider + 'static,
 {
-    async move {
+    let mut tasks = FuturesUnordered::new();
+
+    let (device_tx, device_rx) = oneshot::channel();
+
+    debug!("Spawning background task for {host}...");
+    let host_name = host.to_string();
+    let background_task = host
+        .get_background_task()
+        .map(|r| r.map_err(|e| e.to_string()))
+        .then(move |r| {
+            debug!(
+                "Background task for {host_name} finished with result: {:?}",
+                r
+            );
+            futures::future::ready(r)
+        })
+        .boxed_local();
+
+    let screen_task = async move {
         // Handle the display-host connection here
         info!("Handling display-host: {host}");
 
@@ -98,7 +117,26 @@ where
         Ok(host)
     }
     .map(|res: Result<DisplayHost<T>, String>| match res {
-        Ok(v) => Ok(v),
+        Ok(v) => {
+            debug!("Display host handling finished successfully");
+            device_tx
+                .send(v)
+                .map_err(|_| "Could not send device back to caller".to_string())
+        }
         Err(e) => Err(format!("Error handling client: {}", e)),
     })
+    .boxed_local();
+
+    tasks.push(background_task);
+    tasks.push(screen_task);
+
+    async move {
+        while let Some(_) = tasks.next().await {
+            // Don't care about results!
+        }
+
+        device_rx
+            .await
+            .map_err(|_| "Could not receive device from task".to_string())
+    }
 }

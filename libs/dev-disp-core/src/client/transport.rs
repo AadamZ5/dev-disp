@@ -4,6 +4,7 @@ use std::{
 };
 
 use futures_util::FutureExt;
+use log::debug;
 use thiserror::Error;
 
 use crate::{host::DisplayParameters, util::PinnedFuture};
@@ -15,6 +16,7 @@ pub enum TransportError {
     Other(Box<dyn std::error::Error + Send + Sync>),
     Unknown,
     NotImplemented,
+    SerializationError,
 }
 
 impl Display for TransportError {
@@ -25,6 +27,7 @@ impl Display for TransportError {
             TransportError::Other(e) => write!(f, "Other error: {}", e),
             TransportError::Unknown => write!(f, "Unknown error"),
             TransportError::NotImplemented => write!(f, "Not Implemented"),
+            TransportError::SerializationError => write!(f, "Serialization Error"),
         }
     }
 }
@@ -42,13 +45,22 @@ pub trait ScreenTransport {
     -> PinnedFuture<'_, Result<DisplayParameters, TransportError>>;
 
     fn close(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
-        Box::pin(future::ready(Ok(())))
+        future::ready(Ok(())).boxed()
     }
 
-    fn send_screen_data<'a>(
-        &mut self,
+    /// Optional function that runs in the background while the transport is active,
+    /// started before initialization. Cannot hold onto self reference.
+    fn background<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
+        debug!("Default background impl");
+        future::ready(Ok(())).boxed()
+    }
+
+    fn send_screen_data<'s, 'a>(
+        &'s mut self,
         data: &'a [u8],
-    ) -> PinnedFuture<'_, Result<(), TransportError>>;
+    ) -> PinnedFuture<'s, Result<(), TransportError>>
+    where
+        'a: 's;
 }
 
 pub struct SomeScreenTransport {
@@ -81,14 +93,21 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.get_display_config()
     }
 
+    fn background<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
+        self.inner.background()
+    }
+
     fn notify_loading_screen(&self) -> PinnedFuture<'_, Result<(), TransportError>> {
         self.inner.notify_loading_screen()
     }
 
     fn send_screen_data<'s, 'a>(
-        &mut self,
+        &'s mut self,
         data: &'a [u8],
-    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+    ) -> PinnedFuture<'s, Result<(), TransportError>>
+    where
+        'a: 's,
+    {
         self.inner.send_screen_data(data)
     }
 
