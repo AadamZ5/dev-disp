@@ -19,8 +19,6 @@ export class ScreenComponent implements AfterViewInit {
   private readonly injector = inject(INJECTOR);
   readonly canvas = viewChild<ElementRef<HTMLCanvasElement>>('screen');
 
-  constructor() {}
-
   ngAfterViewInit(): void {
     asyncScheduler.schedule(() => {
       effect(
