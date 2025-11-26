@@ -380,6 +380,7 @@ dependencies = [
 name = "dev-disp-core"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "futures-core",
  "futures-timer",
  "futures-util",
@@ -414,6 +415,7 @@ dependencies = [
  "futures-util",
  "log",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1363,6 +1365,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "tokio-util"
+version = "0.7.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2efa149fe76073d6e8fd97ef4f4eca7b67f599660115591483572e406e165594"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "futures-io",
+ "futures-sink",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]

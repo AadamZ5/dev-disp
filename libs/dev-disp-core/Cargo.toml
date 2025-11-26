@@ -7,6 +7,11 @@ edition = "2024"
 futures-core = "0.3.31"
 futures-timer = "3.0.3"
 futures-util = { version = "0.3.31", features = ["sink"] }
+futures = { version = "0.3.31", default-features = false, features = [
+  "alloc",
+  "async-await",
+  "std",
+] }
 log = "0.4.28"
 serde = { version = "1.0.228", features = ["serde_derive"] }
 thiserror = "2.0.16"

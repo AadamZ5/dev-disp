@@ -19,7 +19,7 @@ pub enum WsMessageFromSource<'a> {
     /// Used to ask new connection if it is in the right place
     RequestPreInit,
 
-    /// Used to ask connection for it's device information
+    /// Used to ask connection for its device information
     RequestDeviceInformation,
 
     /// Used to request that the device is really ready to receive screen data
