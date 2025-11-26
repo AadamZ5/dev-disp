@@ -19,7 +19,7 @@ where
     T: ScreenTransport + 'static,
     P: ScreenProvider + 'static,
 {
-    async move {
+    let screen_task = async move {
         // Handle the display-host connection here
         info!("Handling display-host: {host}");
 
@@ -100,5 +100,5 @@ where
     .map(|res: Result<DisplayHost<T>, String>| match res {
         Ok(v) => Ok(v),
         Err(e) => Err(format!("Error handling client: {}", e)),
-    })
+    });
 }

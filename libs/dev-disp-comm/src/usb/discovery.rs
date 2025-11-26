@@ -68,6 +68,7 @@ impl ConnectableDevice for UsbDeviceCandidate {
                 .unwrap_or("Unknown")
                 .to_string(),
             device_type: "USB".to_string(),
+            description: None,
             id: self
                 .device_info
                 .serial_number()
@@ -83,21 +84,22 @@ impl DeviceDiscovery for UsbDiscovery {
     type DeviceCandidate = UsbDeviceCandidate;
 
     fn discover_devices(&self) -> PinnedFuture<Vec<Self::DeviceCandidate>> {
-        nusb_list_usb_sentinels().boxed()
+        nusb_list_usb_candidates().boxed()
     }
 }
 
 impl StreamingDeviceDiscovery for UsbDiscovery {
     fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>> {
         nusb::watch_devices()
-            .map(|hotplugs| hotplugs.then(|_| nusb_list_usb_sentinels()))
+            .map(|hotplugs| hotplugs.then(|_| nusb_list_usb_candidates()))
             .map(|st| st.boxed())
             .unwrap_or_else(|_| futures_util::stream::empty().boxed())
             .boxed()
     }
 }
 
-async fn nusb_list_usb_sentinels() -> Vec<UsbDeviceCandidate> {
+async fn nusb_list_usb_candidates() -> Vec<UsbDeviceCandidate> {
+    // TODO: Filter out devices that are currently connected by us!?
     nusb::list_devices()
         .await
         .map(|dev| {

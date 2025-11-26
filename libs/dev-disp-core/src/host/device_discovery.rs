@@ -13,6 +13,7 @@ pub struct ConnectableDeviceInfo {
     pub name: String,
     pub device_type: String,
     pub id: String,
+    pub description: Option<String>,
 }
 
 pub trait ConnectableDevice: Sized {

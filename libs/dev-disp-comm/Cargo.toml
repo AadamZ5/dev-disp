@@ -6,12 +6,21 @@ edition = "2024"
 [dependencies]
 log = "0.4.28"
 dev-disp-core = { path = "../../libs/dev-disp-core" }
+# TODO: I want tokio dependency out of here!
 nusb = { version = "0.2.0", features = ["tokio"] }
 thiserror = "2.0.16"
 futures-util = { version = "0.3.31", features = ["sink"] }
 futures-timer = "3.0.3"
-bincode = { version = "2.0.1" }
+bincode = { version = "2.0.1", features = ["serde"] }
 serde = { version = "1.0.228", features = ["serde_derive"] }
+async-tungstenite = "0.32.0"
+futures-locks = { version = "0.7.1", default-features = false }
+futures = { version = "0.3.31", default-features = false, features = [
+  "alloc",
+  "async-await",
+  "std",
+] }
+uuid = { version = "1.18.1", features = ["v4"] }
 
 
 [features]

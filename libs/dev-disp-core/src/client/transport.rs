@@ -42,7 +42,13 @@ pub trait ScreenTransport {
     -> PinnedFuture<'_, Result<DisplayParameters, TransportError>>;
 
     fn close(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
-        Box::pin(future::ready(Ok(())))
+        future::ready(Ok(())).boxed()
+    }
+
+    /// Optional function that runs in the background while the transport is active,
+    /// after initialization.
+    fn background(&self) -> PinnedFuture<'_, Result<(), TransportError>> {
+        future::ready(Ok(())).boxed()
     }
 
     fn send_screen_data<'a>(
