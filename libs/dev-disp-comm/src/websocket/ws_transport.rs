@@ -1,29 +1,30 @@
-use dev_disp_core::client::ScreenTransport;
+use dev_disp_core::{
+    client::{ScreenTransport, TransportError},
+    util::PinnedFuture,
+};
+use futures_util::FutureExt;
 
 pub struct WsTransport {}
 
 impl ScreenTransport for WsTransport {
-    fn initialize<'s>(
-        &'s mut self,
-    ) -> dev_disp_core::util::PinnedFuture<'s, Result<(), dev_disp_core::client::TransportError>>
-    {
+    fn initialize(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
         todo!()
     }
 
-    fn get_display_config<'s>(
-        &'s mut self,
-    ) -> dev_disp_core::util::PinnedFuture<
-        's,
-        Result<dev_disp_core::host::DisplayParameters, dev_disp_core::client::TransportError>,
-    > {
+    fn notify_loading_screen(&self) -> PinnedFuture<'_, Result<(), TransportError>> {
+        async { Err(TransportError::NotImplemented) }.boxed()
+    }
+
+    fn get_display_config(
+        &mut self,
+    ) -> PinnedFuture<'_, Result<dev_disp_core::host::DisplayParameters, TransportError>> {
         todo!()
     }
 
-    fn send_screen_data<'s, 'a>(
-        &'s mut self,
+    fn send_screen_data<'a>(
+        &mut self,
         data: &'a [u8],
-    ) -> dev_disp_core::util::PinnedFuture<'s, Result<(), dev_disp_core::client::TransportError>>
-    {
+    ) -> PinnedFuture<'_, Result<(), TransportError>> {
         todo!()
     }
 }

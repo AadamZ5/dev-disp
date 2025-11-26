@@ -45,5 +45,5 @@ pub trait Screen {
 
     // TODO: Better error type!
     fn get_ready(&mut self) -> impl Future<Output = Result<ScreenReadyStatus, String>>;
-    fn get_bytes(&self) -> &[u8];
+    fn get_bytes(&self) -> Option<&[u8]>;
 }

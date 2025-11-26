@@ -2,7 +2,7 @@ use core::error;
 use std::time::Duration;
 
 use futures_util::FutureExt;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 use crate::{
     client::{DisplayHost, ScreenTransport},
@@ -47,6 +47,14 @@ where
         }
         let display_params = display_params_result.unwrap();
 
+        match host.notify_loading_screen().await {
+            Err(e) => warn!(
+                "Couldn't notify {host} of loading screen provider, will continue anyways: {}",
+                e
+            ),
+            Ok(_) => debug!("Notified {host} of loading screen..."),
+        }
+
         let screen_result = provider.get_screen(display_params).await;
         if let Err(e) = screen_result {
             error!("Failed to create virtual screen: {}", e);
@@ -68,10 +76,14 @@ where
                     }
                     ScreenReadyStatus::Ready => {
                         info!("Screen data ready!");
-                        let data = screen.get_bytes();
-                        let send_result = host.send_screen_data(data).await;
-                        if let Err(e) = send_result {
-                            error!("Error during transmission to screen host: {}", e);
+                        if let Some(data) = screen.get_bytes() {
+                            // TODO: Allow some sort of encoding here!
+                            let send_result = host.send_screen_data(data).await;
+                            if let Err(e) = send_result {
+                                error!("Error during transmission to screen host: {}", e);
+                            }
+                        } else {
+                            error!("Bytes were missing after declared ready!");
                         }
                     }
                 },

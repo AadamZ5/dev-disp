@@ -1,10 +1,9 @@
 use std::{
     fmt::{Debug, Display},
     future,
-    pin::Pin,
 };
 
-use serde::{Deserialize, Serialize};
+use futures_util::FutureExt;
 use thiserror::Error;
 
 use crate::{host::DisplayParameters, util::PinnedFuture};
@@ -15,6 +14,7 @@ pub enum TransportError {
     Timeout,
     Other(Box<dyn std::error::Error + Send + Sync>),
     Unknown,
+    NotImplemented,
 }
 
 impl Display for TransportError {
@@ -24,6 +24,7 @@ impl Display for TransportError {
             TransportError::Timeout => write!(f, "Timeout"),
             TransportError::Other(e) => write!(f, "Other error: {}", e),
             TransportError::Unknown => write!(f, "Unknown error"),
+            TransportError::NotImplemented => write!(f, "Not Implemented"),
         }
     }
 }
@@ -31,20 +32,23 @@ impl Display for TransportError {
 /// The transport needs to be a sink that sends the screen data to the
 /// client via whatever means possible.
 pub trait ScreenTransport {
-    fn initialize<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>>;
+    fn initialize(&mut self) -> PinnedFuture<'_, Result<(), TransportError>>;
 
-    fn get_display_config<'s>(
-        &'s mut self,
-    ) -> PinnedFuture<'s, Result<DisplayParameters, TransportError>>;
+    fn notify_loading_screen(&self) -> PinnedFuture<'_, Result<(), TransportError>> {
+        async { Err(TransportError::NotImplemented) }.boxed()
+    }
 
-    fn close<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>> {
+    fn get_display_config(&mut self)
+    -> PinnedFuture<'_, Result<DisplayParameters, TransportError>>;
+
+    fn close(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
         Box::pin(future::ready(Ok(())))
     }
 
-    fn send_screen_data<'s, 'a>(
-        &'s mut self,
+    fn send_screen_data<'a>(
+        &mut self,
         data: &'a [u8],
-    ) -> PinnedFuture<'s, Result<(), TransportError>>;
+    ) -> PinnedFuture<'_, Result<(), TransportError>>;
 }
 
 pub struct SomeScreenTransport {
@@ -77,10 +81,14 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.get_display_config()
     }
 
+    fn notify_loading_screen(&self) -> PinnedFuture<'_, Result<(), TransportError>> {
+        self.inner.notify_loading_screen()
+    }
+
     fn send_screen_data<'s, 'a>(
-        &'s mut self,
+        &mut self,
         data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>> {
+    ) -> PinnedFuture<'_, Result<(), TransportError>> {
         self.inner.send_screen_data(data)
     }
 

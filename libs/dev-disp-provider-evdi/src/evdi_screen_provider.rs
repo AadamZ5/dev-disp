@@ -9,7 +9,7 @@ use dev_disp_core::{
     host::{DisplayHostResult, DisplayParameters, Screen, ScreenProvider, ScreenReadyStatus},
 };
 use evdi::{
-    buffer::BufferId,
+    buffer::{Buffer as EvdiBuffer, BufferId},
     device_node::OpenDeviceError,
     events::{AwaitEventError, Mode},
     handle::{Handle as EvdiHandle, RequestUpdateError},
@@ -118,7 +118,10 @@ pub struct EvdiScreen {
     stop_flag: AtomicBool,
     handle: EvdiHandle,
     buffer_id: BufferId,
+    bytes: Option<EvdiBuffer>,
 }
+
+const EMPTY_BYTES: [u8; 0] = [0; 0];
 
 impl EvdiScreen {
     pub fn new(mut handle: EvdiHandle, mode: Mode) -> Self {
@@ -129,6 +132,7 @@ impl EvdiScreen {
             stop_flag: false.into(),
             handle,
             buffer_id,
+            bytes: None,
         }
     }
 }
@@ -148,22 +152,24 @@ impl Screen for EvdiScreen {
             warn!("Failed to request buffer update from EVDI: {}", e);
             return Ok(ScreenReadyStatus::NotReady);
         }
+
+        Ok(ScreenReadyStatus::Ready)
+    }
+    fn get_bytes(&self) -> Option<&[u8]> {
         let buf = match self.handle.get_buffer(self.buffer_id) {
             Some(buf) => buf,
             None => {
                 warn!("EVDI buffer not available yet");
-                return Ok(ScreenReadyStatus::NotReady);
+                return None;
             }
         };
-        // Do something with the bytes
+
         let bytes = buf.bytes();
         let count = bytes.len();
-        debug!("Buffer ready with {count} bytes");
 
-        Ok(ScreenReadyStatus::Ready)
-    }
-    fn get_bytes(&self) -> &[u8] {
-        &[]
+        debug!("Buffer retrieved with {count} bytes");
+
+        Some(bytes)
     }
 }
 
