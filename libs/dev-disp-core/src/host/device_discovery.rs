@@ -15,7 +15,7 @@ pub struct ConnectableDeviceInfo {
     pub id: String,
 }
 
-pub trait ConnectableDevice {
+pub trait ConnectableDevice: Sized {
     type Transport: ScreenTransport;
 
     fn connect(
@@ -29,13 +29,13 @@ pub trait ConnectableDevice {
 }
 
 pub trait DeviceDiscovery {
-    type DeviceFacade: ConnectableDevice;
+    type DeviceCandidate: ConnectableDevice;
 
-    fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceFacade>>;
+    fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>>;
 }
 
 pub trait StreamingDeviceDiscovery: DeviceDiscovery {
-    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceFacade>> + Send>>;
+    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>>;
 }
 
 pub struct PollingDeviceDiscovery<D>
@@ -68,9 +68,9 @@ impl<D> DeviceDiscovery for PollingDeviceDiscovery<D>
 where
     D: DeviceDiscovery,
 {
-    type DeviceFacade = D::DeviceFacade;
+    type DeviceCandidate = D::DeviceCandidate;
 
-    fn discover_devices(&self) -> PinnedFuture<Vec<Self::DeviceFacade>> {
+    fn discover_devices(&'_ self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>> {
         self.inner.discover_devices()
     }
 }
@@ -78,22 +78,57 @@ where
 impl<D> StreamingDeviceDiscovery for PollingDeviceDiscovery<D>
 where
     D: DeviceDiscovery + Send + 'static,
+    <D as DeviceDiscovery>::DeviceCandidate: Send + 'static,
 {
-    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceFacade>> + Send>> {
-        let initial = self.inner.discover_devices();
+    fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>> {
+        let discovery_stream = async move {
+            let initial_discovery = self.inner.discover_devices().await;
 
-        todo!();
+            let poll_stream = unfold(self, |this| async move {
+                (this.sleep_factory)(this.interval).await;
+                let devices = this.inner.discover_devices().await;
+                Some((devices, this))
+            });
 
-        let poll_stream = unfold(self, |this| async move {
-            (this.sleep_factory)(this.interval).await;
-            let devices = this.inner.discover_devices().await;
-            Some((devices, this))
-        })
-        .boxed();
+            futures_util::stream::once(async move { initial_discovery }).chain(poll_stream)
+        }
+        .flatten_stream();
 
-        // Compose the initial result with the polling stream
-        let composed = initial.into_stream().chain(poll_stream);
-
-        Box::pin(composed)
+        Box::pin(discovery_stream)
     }
 }
+
+// TODO: Below is an attempt to generalize the device discovery, but there are issues
+// with traites with GATs and dyn-compatibility. There may be a way to fix this. Needs
+// further investigation.
+
+// pub struct GenericDeviceDiscovery {
+//     inner: Box<dyn StreamingDeviceDiscovery<DeviceFacade = GenericDeviceFacade>>,
+// }
+
+// pub struct GenericDeviceFacade {
+//     inner: Box<dyn ConnectableDevice<Transport = SomeScreenTransport>>,
+// }
+
+// impl ConnectableDevice for GenericDeviceFacade {
+//     type Transport = SomeScreenTransport;
+
+//     fn connect(
+//         self,
+//     ) -> PinnedFuture<
+//         'static,
+//         Result<DisplayHost<Self::Transport>, Box<dyn std::error::Error + Send + Sync>>,
+//     > {
+//         (self.inner).connect()
+//     }
+
+//     fn get_info(&self) -> ConnectableDeviceInfo {
+//         self.inner.get_info()
+//     }
+// }
+
+// impl DeviceDiscovery for GenericDeviceDiscovery {
+//     type DeviceFacade = GenericDeviceFacade;
+
+//     fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceFacade>> {}
+// }

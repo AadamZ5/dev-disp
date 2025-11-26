@@ -1,0 +1,19 @@
+{
+  "name": "dev-disp-comm",
+  "root": "libs/dev-disp-comm",
+  "sourceRoot": "libs/dev-disp-comm/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@monodon/rust:build",
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "lint": {
+      "executor": "@monodon/rust:lint"
+    }
+  }
+}

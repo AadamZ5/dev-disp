@@ -1,0 +1,22 @@
+{
+  "name": "dev-disp-provider-evdi",
+  "root": "libs/dev-disp-provider-evdi",
+  "sourceRoot": "libs/dev-disp-provider-evdi/src",
+  "projectType": "library",
+  "targets": {
+    "check": {
+      "executor": "@monodon/rust:check"
+    },
+    "build": {
+      "executor": "@monodon/rust:build",
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "lint": {
+      "executor": "@monodon/rust:lint"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "dev-disp-core",
+  "root": "libs/dev-disp-core",
+  "sourceRoot": "libs/dev-disp-core/src",
+  "projectType": "library",
+  "targets": {
+    "check": {
+      "executor": "@monodon/rust:check"
+    },
+    "lint": {
+      "executor": "@monodon/rust:lint"
+    }
+  }
+}

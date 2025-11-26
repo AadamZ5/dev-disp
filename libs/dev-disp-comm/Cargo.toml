@@ -1,5 +1,5 @@
 [package]
-name = "dev-disp-comm-usb"
+name = "dev-disp-comm"
 version = "0.1.0"
 edition = "2024"
 
@@ -11,7 +11,12 @@ thiserror = "2.0.16"
 futures-util = { version = "0.3.31", features = ["sink"] }
 futures-timer = "3.0.3"
 bincode = { version = "2.0.1" }
+serde = { version = "1.0.228", features = ["serde_derive"] }
+
 
 [features]
-default = ["host"]
-host = []
+default = ["usb", "usb-host", "ws", "ws-host"]
+usb = []
+usb-host = []
+ws = []
+ws-host = []

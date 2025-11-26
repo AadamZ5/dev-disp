@@ -1,7 +1,8 @@
 use std::{pin::Pin, time::Duration};
 
 use dev_disp_core::{
-    client::{DisplayHostInfo, ScreenTransport, TransportError},
+    client::{ScreenTransport, TransportError},
+    host::DisplayParameters,
     util::PinnedFuture,
 };
 use futures_util::{FutureExt, future};
@@ -11,10 +12,15 @@ use nusb::{
     transfer::{Buffer, Bulk, In, Out},
 };
 
-use crate::strategies::android_aoa::protocol::{Message, MessageToAndroid};
+use crate::usb::strategies::android_aoa::protocol::{Message, MessageToAndroid};
 
 const USB_TIMEOUT: Duration = Duration::from_millis(200);
 
+/// The Android AOA Screen Host Transport
+///
+/// This facilitates communication to an Android device
+/// running corresponding software, via AOA (Android
+/// Open Accessory) mode.
 pub struct AndroidAoaScreenHostTransport {
     dev_info: DeviceInfo,
     dev: Device,
@@ -83,8 +89,18 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         .boxed()
     }
 
-    fn get_display_config(&mut self) -> PinnedFuture<'_, Result<DisplayHostInfo, TransportError>> {
-        future::ready(Ok(DisplayHostInfo::new(1920, 1080, vec![]))).boxed()
+    fn get_display_config(
+        &mut self,
+    ) -> PinnedFuture<'_, Result<DisplayParameters, TransportError>> {
+        future::ready(Ok(DisplayParameters {
+            host_dev_name: self
+                .dev_info
+                .serial_number()
+                .unwrap_or("Unknown")
+                .to_string(),
+            resolution: (1920, 1080),
+        }))
+        .boxed()
     }
 
     fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send>> {

@@ -3,7 +3,8 @@ use std::{fmt::Display, pin::Pin};
 use futures_util::FutureExt;
 
 use crate::{
-    client::{DisplayHostInfo, ScreenTransport, SomeScreenTransport, TransportError},
+    client::{ScreenTransport, SomeScreenTransport, TransportError},
+    host::DisplayParameters,
     util::PinnedFuture,
 };
 
@@ -39,7 +40,11 @@ where
         self.transport.initialize().boxed_local().await
     }
 
-    pub async fn get_display_config(&mut self) -> Result<DisplayHostInfo, TransportError> {
+    pub async fn notify_loading_screen(&mut self) -> Result<(), TransportError> {
+        self.transport.notify_loading_screen().boxed_local().await
+    }
+
+    pub async fn get_display_config(&mut self) -> Result<DisplayParameters, TransportError> {
         self.transport.get_display_config().await
     }
 

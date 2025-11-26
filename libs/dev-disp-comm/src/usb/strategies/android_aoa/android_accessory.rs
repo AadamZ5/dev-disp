@@ -10,7 +10,7 @@ use nusb::{
     },
 };
 
-use crate::{
+use crate::usb::{
     error::UsbConnectionError, strategies::android_aoa::transport::AndroidAoaScreenHostTransport,
 };
 
