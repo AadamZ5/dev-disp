@@ -7,13 +7,13 @@ edition = "2024"
 log = "0.4.28"
 dev-disp-core = { path = "../../libs/dev-disp-core" }
 # TODO: I want tokio dependency out of here!
-nusb = { version = "0.2.0", features = ["tokio"] }
+nusb = { version = "0.2.0", features = ["tokio"], optional = true }
 thiserror = "2.0.16"
 futures-util = { version = "0.3.31", features = ["sink"] }
 futures-timer = "3.0.3"
 bincode = { version = "2.0.1", features = ["serde"] }
 serde = { version = "1.0.228", features = ["serde_derive"] }
-async-tungstenite = "0.32.0"
+async-tungstenite = { version = "0.32.0", optional = true }
 futures-locks = { version = "0.7.1", default-features = false }
 futures = { version = "0.3.31", default-features = false, features = [
   "alloc",
@@ -21,11 +21,15 @@ futures = { version = "0.3.31", default-features = false, features = [
   "std",
 ] }
 uuid = { version = "1.18.1", features = ["v4"] }
+ws_stream_tungstenite = { version = "0.15.0", optional = true }
 
 
 [features]
-default = ["usb", "usb-host", "ws", "ws-host"]
-usb = []
-usb-host = []
+default = ["full-host"]
+full-host = ["usb", "usb-host", "ws", "ws-host", "ws-client"]
+usb = ["nusb"]
+usb-host = ["nusb"]
 ws = []
-ws-host = []
+ws-host = ["async-tungstenite"]
+ws-client = ["ws_stream_tungstenite"]
+wasm = ["uuid/js"]

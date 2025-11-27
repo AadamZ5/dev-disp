@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::websocket::{
     messages::{WsMessageFromClient, WsMessageFromSource},
-    ws_transport::WsTransport,
+    transport::WsTransport,
 };
 
 #[derive(Debug)]

@@ -15,3 +15,5 @@ node_modules
 .angular
 
 vitest.config.*.timestamp*
+
+dist

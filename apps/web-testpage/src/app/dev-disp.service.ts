@@ -1,10 +1,22 @@
 import { Injectable } from '@angular/core';
 import { defer, retry, tap } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
+import { WsHandlers, connect_ws } from 'dev-disp-ws-js';
 
 @Injectable({ providedIn: 'root' })
 export class DevDispService {
   connect(address: string) {
+    const handlers: WsHandlers = {
+      onCore: () => {},
+      onRequestDeviceInfo: () => {},
+      onRequestPreInit: () => {},
+      onRequestProtocolInit: () => {},
+    };
+
+    const cancelConnection = connect_ws('127.0.0.1:56789', handlers);
+
+    cancelConnection();
+
     return new DevDispConnection(address);
   }
 }
