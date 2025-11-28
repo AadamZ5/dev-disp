@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::host::DisplayParameters;
 use serde::{Deserialize, Serialize};
 
@@ -14,9 +16,32 @@ pub enum DevDispMessageFromSource<'a> {
     PutScreenData(&'a [u8]),
 }
 
+impl Display for DevDispMessageFromSource<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DevDispMessageFromSource::GetDisplayParametersRequest => {
+                write!(f, "GetDisplayParametersRequest")
+            }
+            DevDispMessageFromSource::PutScreenData(data) => {
+                write!(f, "PutScreenData ({} bytes)", data.len())
+            }
+        }
+    }
+}
+
 /// A message coming from the client, where the screen data is painted
 /// (ex: a mobile phone presenting screen data from a laptop)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum DevDispMessageFromClient {
     DisplayParametersUpdate(DisplayParameters),
+}
+
+impl Display for DevDispMessageFromClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DevDispMessageFromClient::DisplayParametersUpdate(params) => {
+                write!(f, "DisplayParametersUpdate ({})", params)
+            }
+        }
+    }
 }

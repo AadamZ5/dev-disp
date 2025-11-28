@@ -1,4 +1,7 @@
-use dev_disp_core::core::{DevDispMessageFromClient, DevDispMessageFromSource};
+pub use dev_disp_core::{
+    core::{DevDispMessageFromClient, DevDispMessageFromSource},
+    host::DisplayParameters,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

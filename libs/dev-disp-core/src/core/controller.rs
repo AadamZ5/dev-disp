@@ -1,5 +1,5 @@
 use core::error;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::{StreamExt, channel::oneshot};
 use futures_util::{FutureExt, stream::FuturesUnordered};
@@ -58,6 +58,7 @@ where
         }
         debug!("Initialized transport");
 
+        debug!("Getting display parameters...");
         let display_params_result = host.get_display_config().await;
         if let Err(e) = display_params_result {
             error!("Failed to get display parameters: {}", e);
@@ -65,6 +66,7 @@ where
             return Err("Failed to get display parameters".to_string());
         }
         let display_params = display_params_result.unwrap();
+        debug!("Got display parameters: {:?}", display_params);
 
         match host.notify_loading_screen().await {
             Err(e) => warn!(
@@ -74,6 +76,7 @@ where
             Ok(_) => debug!("Notified {host} of loading screen..."),
         }
 
+        debug!("Creating virtual screen...");
         let screen_result = provider.get_screen(display_params).await;
         if let Err(e) = screen_result {
             error!("Failed to create virtual screen: {}", e);
@@ -81,6 +84,9 @@ where
             return Err("Failed to create virtual screen".to_string());
         }
         let mut screen = screen_result.unwrap();
+
+        let mut bad_transmission_start: Option<Instant> = None;
+        let mut bad_tramsmission_count = 0u32;
 
         loop {
             match screen.get_ready().await {
@@ -97,9 +103,38 @@ where
                         info!("Screen data ready!");
                         if let Some(data) = screen.get_bytes() {
                             // TODO: Allow some sort of encoding here!
+                            let now = Instant::now();
                             let send_result = host.send_screen_data(data).await;
+                            let elapsed = now.elapsed();
                             if let Err(e) = send_result {
                                 error!("Error during transmission to screen host: {}", e);
+                                let bad_transmission_elapsed = if let Some(start) = bad_transmission_start {
+                                    start.elapsed()
+                                } else {
+                                    bad_transmission_start = Some(Instant::now());
+                                    Duration::ZERO
+                                };
+                                bad_tramsmission_count += 1;
+
+                                if bad_transmission_elapsed >= Duration::from_secs(5) && bad_tramsmission_count >= 5 {
+                                    error!(
+                                        "Too many bad transmissions ({} errors in {}ms), closing connection",
+                                        bad_tramsmission_count, bad_transmission_elapsed.as_millis()
+                                    );
+                                    close_dev(&mut host).await;
+                                    return Err("Too many bad transmissions to display host".to_string());
+                                }
+
+                            } else {
+                                bad_transmission_start = None;
+                                bad_tramsmission_count = 0;
+                                let kbs = data.len() as f64 / 1024.0 / elapsed.as_secs_f64();
+                                debug!(
+                                    "Sent {} bytes to display host in {}ms ({:.2} KB/s)",
+                                    data.len(),
+                                    elapsed.as_millis(),
+                                    kbs
+                                );
                             }
                         } else {
                             error!("Bytes were missing after declared ready!");

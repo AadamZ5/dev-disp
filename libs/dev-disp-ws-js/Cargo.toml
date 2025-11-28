@@ -7,17 +7,31 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
+bincode = { version = "2.0.1", features = ["serde"] }
 dev-disp-comm = { path = "../../libs/dev-disp-comm", features = [
   "ws",
   "wasm",
 ], default-features = false }
 futures = "0.3.31"
+futures-util = "0.3.31"
 js-sys = "0.3.82"
+log = "0.4.28"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-wasm-bindgen = "0.6.5"
 tsify = { version = "0.5.6", default-features = false, features = ["js"] }
 wasm-bindgen = "0.2.105"
 wasm-bindgen-futures = "0.4.55"
-web-sys = { version = "0.3.82", features = ["console"] }
+wasm-logger = "0.2.0"
+web-sys = { version = "0.3.82", features = [
+  "console",
+  "BinaryType",
+  "Blob",
+  "ErrorEvent",
+  "FileReader",
+  "MessageEvent",
+  "ProgressEvent",
+  "WebSocket",
+] }
+ws_stream_wasm = "0.7.5"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

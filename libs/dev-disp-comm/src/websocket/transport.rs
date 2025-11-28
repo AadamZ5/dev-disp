@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use async_tungstenite::{
     WebSocketReceiver, WebSocketSender, WebSocketStream, tungstenite::Message,
 };
@@ -21,7 +23,7 @@ struct BackgroundContext<S> {
 
     tx_protocol_init: mpsc::Sender<WsMessageProtocolInit>,
     tx_device_info: mpsc::Sender<WsMessageDeviceInfo>,
-    tx_core_message: mpsc::Sender<DevDispMessageFromClient>,
+    tx_core_display_params_update: mpsc::Sender<DisplayParameters>,
 }
 
 pub struct WsTransport<S> {
@@ -32,7 +34,8 @@ pub struct WsTransport<S> {
 
     rx_protocol_init: mpsc::Receiver<WsMessageProtocolInit>,
     rx_device_info: mpsc::Receiver<WsMessageDeviceInfo>,
-    rx_core_message: mpsc::Receiver<DevDispMessageFromClient>,
+
+    rx_core_display_params_update: mpsc::Receiver<DisplayParameters>,
 }
 
 impl<S> WsTransport<S>
@@ -44,13 +47,13 @@ where
 
         let (tx_protocol_init, rx_protocol_init) = mpsc::channel(100);
         let (tx_device_info, rx_device_info) = mpsc::channel(100);
-        let (tx_core_message, rx_core_message) = mpsc::channel(100);
+        let (tx_core_display_params_update, rx_core_display_params_update) = mpsc::channel(100);
 
         let background_ctx = BackgroundContext {
             ws_rx,
             tx_protocol_init,
             tx_device_info,
-            tx_core_message,
+            tx_core_display_params_update,
         };
 
         Self {
@@ -58,7 +61,7 @@ where
             background_context: Some(background_ctx),
             rx_protocol_init,
             rx_device_info,
-            rx_core_message,
+            rx_core_display_params_update,
         }
     }
 
@@ -116,13 +119,21 @@ where
                                     .await
                                     .map_err(|e| TransportError::Other(Box::new(e)))?;
                             }
-                            WsMessageFromClient::Core(core_msg) => {
-                                let _ = background_ctx
-                                    .tx_core_message
-                                    .send(core_msg)
-                                    .await
-                                    .map_err(|e| TransportError::Other(Box::new(e)))?;
-                            }
+                            WsMessageFromClient::Core(core_msg) => match core_msg {
+                                DevDispMessageFromClient::DisplayParametersUpdate(params) => {
+                                    let _ = background_ctx
+                                        .tx_core_display_params_update
+                                        .send(params)
+                                        .await
+                                        .map_err(|e| TransportError::Other(Box::new(e)))?;
+                                }
+                                _ => {
+                                    debug!(
+                                        "Received unhandled core message from client: {:?}",
+                                        core_msg
+                                    );
+                                }
+                            },
                             other => {
                                 error!("Received unexpected WebSocket message {:?}", other);
                                 continue;
@@ -183,16 +194,15 @@ where
         async {
             let req_disp_params =
                 WsMessageFromSource::Core(DevDispMessageFromSource::GetDisplayParametersRequest);
+            debug!("Requesting display parameters: {:?}", req_disp_params);
             self.send_msg(req_disp_params).await?;
 
-            self.rx_device_info
+            debug!("Waiting for display parameters response...");
+
+            self.rx_core_display_params_update
                 .next()
                 .await
                 .ok_or(TransportError::NoConnection)
-                .map(|info| DisplayParameters {
-                    host_dev_name: info.name,
-                    resolution: info.resolution,
-                })
         }
         .boxed()
     }
@@ -205,8 +215,9 @@ where
         'a: 's,
     {
         async move {
-            let screen_data_msg =
-                WsMessageFromSource::Core(DevDispMessageFromSource::PutScreenData(data));
+            let screen_data_msg = WsMessageFromSource::Core(
+                DevDispMessageFromSource::PutScreenData(data[0..128 * 1024].as_ref()),
+            );
             self.send_msg(screen_data_msg).await
         }
         .boxed()
