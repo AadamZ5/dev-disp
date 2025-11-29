@@ -216,7 +216,7 @@ where
     {
         async move {
             let screen_data_msg = WsMessageFromSource::Core(
-                DevDispMessageFromSource::PutScreenData(data[0..128 * 1024].as_ref()),
+                DevDispMessageFromSource::PutScreenData(data[0..64 * 1024].as_ref()),
             );
             self.send_msg(screen_data_msg).await
         }

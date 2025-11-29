@@ -7,8 +7,26 @@ import {
   INJECTOR,
   viewChild,
 } from '@angular/core';
-import { asyncScheduler } from 'rxjs';
-import { DevDispService } from '../dev-disp.service';
+import {
+  asyncScheduler,
+  map,
+  Observable,
+  OperatorFunction,
+  retry,
+  scan,
+} from 'rxjs';
+import { DevDispService, fromDevDispConnection } from '../dev-disp.service';
+import { toSignal } from '@angular/core/rxjs-interop';
+
+function bufferRing<T>(size: number): OperatorFunction<T, T[]> {
+  return scan((acc: T[], value: T) => {
+    acc.unshift(value);
+    if (acc.length > size) {
+      acc.pop();
+    }
+    return acc;
+  }, [] as T[]);
+}
 
 @Component({
   selector: 'app-screen',
@@ -21,35 +39,37 @@ export class ScreenComponent implements AfterViewInit {
   private readonly devDispService = inject(DevDispService);
   readonly canvas = viewChild<ElementRef<HTMLCanvasElement>>('screen');
 
-  readonly connection = this.devDispService.connect('ws://localhost:56789');
+  readonly data$ = fromDevDispConnection(() =>
+    this.devDispService.connect('ws://localhost:56789')
+  ).pipe(retry({ delay: 5000 }));
+
+  readonly dataEpoch = toSignal(
+    this.data$.pipe(
+      scan((acc) => {
+        return acc + 1;
+      }, 0)
+    ),
+    { initialValue: -1 }
+  );
+
+  readonly fps = toSignal(
+    this.data$.pipe(
+      map(() => performance.now()),
+      bufferRing(30),
+      map((times) => {
+        if (times.length < 2) {
+          return 0;
+        }
+        const duration = times[0] - times[times.length - 1];
+        return ((times.length - 1) * 1000) / duration;
+      })
+    ),
+    { initialValue: 0 }
+  );
 
   // TODO: This is temporary test code to provide basic responses to the
   // server. Replace with actual implementation later. Probably replace
   // with WASM-based library
-  readonly dataSub = this.connection.anyData$.subscribe((data) => {
-    const view = new Uint8Array(data);
-
-    console.log('Received data from dev-disp:', view);
-
-    switch (view[0]) {
-      case 0x00: {
-        // Pre-init request. Respond with 0
-        const response = new Uint8Array([0x00]);
-        this.connection.send(response.buffer);
-        console.log('Sent pre-init response to dev-disp:', response);
-        break;
-      }
-      case 0x01: {
-        const response = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
-        this.connection.send(response.buffer);
-        console.log('Sent device info response to dev-disp:', response);
-        break;
-      }
-      default: {
-        console.log('Unknown message type from dev-disp:', view[0]);
-      }
-    }
-  });
 
   ngAfterViewInit(): void {
     asyncScheduler.schedule(() => {

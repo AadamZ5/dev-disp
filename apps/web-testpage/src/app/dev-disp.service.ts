@@ -1,19 +1,55 @@
-import { Injectable } from '@angular/core';
-import { defer, EMPTY, retry, tap } from 'rxjs';
-import { WebSocketSubject } from 'rxjs/webSocket';
-import { WsHandlers, connect_ws } from 'dev-disp-ws-js';
-
-export class InnerDevDispConnection {
-  constructor(public readonly address: string) {}
-}
+import { DestroyRef, inject, Injectable } from '@angular/core';
+import {
+  JsDisplayParameters,
+  WsDispatchers,
+  WsHandlers,
+  connectDevDispServer,
+} from 'dev-disp-ws-js';
+import {
+  BehaviorSubject,
+  Observable,
+  ReplaySubject,
+  Subject,
+  Subscription,
+} from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class DevDispService {
-  connect(address: string) {
+  private readonly destroyRef = inject(DestroyRef);
+
+  connect(address: string, canvas?: OffscreenCanvas): DevDispConnection {
+    const connection = new DevDispConnection(address, canvas);
+    this.destroyRef.onDestroy(() => {
+      connection.disconnect();
+    });
+    return connection;
+  }
+}
+
+export type DevDispEventDisconnect = {
+  intentional: boolean;
+  wsReason?: number;
+};
+
+export class DevDispConnection {
+  private readonly dispatchers: WsDispatchers;
+
+  private readonly _screenData$ = new ReplaySubject<ArrayBuffer | undefined>(1);
+  public readonly screenData$ = this._screenData$.asObservable();
+
+  private readonly _connected$ = new BehaviorSubject<boolean>(false);
+  public readonly connected$ = this._connected$.asObservable();
+
+  private readonly _disconnect$ = new ReplaySubject<DevDispEventDisconnect>(1);
+  public readonly disconnect$ = this._disconnect$.asObservable();
+
+  private intentionalDisconnect = false;
+
+  constructor(public readonly address: string, canvas?: OffscreenCanvas) {
     const handlers: WsHandlers = {
-      onCore: (e) => {
-        console.log('Dev-disp core message received', e, e.data);
-      },
+      // onCore: (e) => {
+      //   console.log('Dev-disp core message received', e, e.data);
+      // },
       onPreInit: () => {
         console.log('Dev-disp pre-init requested');
       },
@@ -22,9 +58,22 @@ export class DevDispService {
       },
       onConnect: (e) => {
         console.log('Dev-disp connected', e);
+        this._connected$.next(true);
       },
       onDisconnect: (e) => {
         console.log('Dev-disp disconnected', e);
+        // TODO: Check reason code here to see if it was an
+        // explicit disconnect from the server!
+        if (!this.intentionalDisconnect) {
+          console.warn('Dev-disp unintentional disconnect!');
+        }
+        this._disconnect$.next({
+          intentional: this.intentionalDisconnect,
+          wsReason: e.error,
+        });
+        this._connected$.next(false);
+
+        this._complete();
       },
       handleRequestDeviceInfo: (e) => {
         console.log('Dev-disp device info requested', e);
@@ -32,6 +81,7 @@ export class DevDispService {
       },
       handleScreenData: (e) => {
         console.log('Dev-disp screen data received', e);
+        this._screenData$.next(e?.data);
       },
       handleRequestDisplayParameters: (e) => {
         console.log('Dev-disp display parameters requested', e);
@@ -42,46 +92,62 @@ export class DevDispService {
       },
     };
 
-    const cancelConnection = connect_ws('127.0.0.1:56789', handlers);
+    this.dispatchers = connectDevDispServer(
+      '127.0.0.1:56789',
+      handlers,
+      canvas ?? new OffscreenCanvas(1, 1)
+    );
+  }
 
-    return new DevDispConnection(address);
+  disconnect() {
+    const result = this.dispatchers.closeConnection();
+    this._complete();
+    return result;
+  }
+
+  updateDisplayParameters(params: JsDisplayParameters) {
+    return this.dispatchers.updateDisplayParameters(params);
+  }
+
+  private _complete() {
+    this._screenData$.complete();
+    this._disconnect$.complete();
+    this._connected$.complete();
   }
 }
 
-export class DevDispConnection {
-  private readonly connection$: WebSocketSubject<ArrayBuffer>;
+export function fromDevDispConnection(
+  factory: () => DevDispConnection
+): Observable<ArrayBuffer | undefined> {
+  return new Observable<ArrayBuffer | undefined>((subscriber) => {
+    const devDispConnection = factory();
 
-  public readonly anyData$ = defer(() => {
-    return EMPTY;
-  }).pipe(
-    tap({ error: (e) => console.log(`Error from dev-disp subject:`, e) }),
-    retry({ delay: 5000 })
-  );
-
-  constructor(public readonly address: string) {
-    this.connection$ = new WebSocketSubject<ArrayBuffer>({
-      url: this.address,
-      openObserver: {
-        next: (event) => {
-          console.log(`Connected to dev-disp`, event);
-        },
+    const disconnectSub = devDispConnection.disconnect$.subscribe({
+      next: (e) => {
+        if (!e.intentional) {
+          subscriber.error(
+            new Error('Dev-disp connection disconnected unexpectedly')
+          );
+        }
       },
-      closeObserver: {
-        next: (event) => {
-          console.log(`Disconnected from dev-disp`, event);
-        },
-      },
-      binaryType: 'arraybuffer',
-      deserializer: (e) => e.data,
-      serializer: (value) => value,
     });
-  }
 
-  send(data: ArrayBuffer) {
-    this.connection$.next(data);
-  }
+    const screenDataSub = devDispConnection.screenData$.subscribe({
+      next: (data) => {
+        subscriber.next(data);
+      },
+      error: (err) => {
+        subscriber.error(err);
+      },
+      complete: () => {
+        subscriber.complete();
+      },
+    });
 
-  destroy() {
-    this.connection$.complete();
-  }
+    const allSub = new Subscription();
+    allSub.add(disconnectSub);
+    allSub.add(screenDataSub);
+
+    return allSub;
+  });
 }

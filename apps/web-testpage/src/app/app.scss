@@ -19,6 +19,9 @@
 
     .controls-container {
       grid-area: controls;
+      display: flex;
+      flex-direction: row;
+      gap: 20px;
     }
 
     .screen-container {
