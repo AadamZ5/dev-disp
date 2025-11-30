@@ -18,6 +18,9 @@ mod util;
 
 // TODO: Please design and think through a better interface here.
 
+/// Connect to a DevDisp server at the given address, and set up
+/// the appropriate handlers and canvas for rendering.
+/// Returns a set of dispatchers for controlling the connection.
 #[wasm_bindgen(js_name = "connectDevDispServer")]
 pub fn connect_dev_disp_server(
     address: &str,
@@ -134,6 +137,8 @@ pub fn connect_dev_disp_server(
         },
         move || {
             // If this has already been called, do nothing.
+            // TODO: This isn't actually reading the value of closed, since
+            // TODO: it is copied into this closure.
             if !closed {
                 debug!("Closing websocket connection");
                 let _ = cancel_token_outer.send(());
@@ -170,6 +175,6 @@ pub fn connect_dev_disp_server(
 }
 
 #[wasm_bindgen(start)]
-pub fn main() -> () {
+pub fn main() {
     wasm_logger::init(wasm_logger::Config::new(log::Level::Debug));
 }

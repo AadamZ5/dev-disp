@@ -1,5 +1,5 @@
 use dev_disp_comm::websocket::messages::DisplayParameters;
-use js_sys::{Function, SharedArrayBuffer};
+use js_sys::Function;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
@@ -46,6 +46,7 @@ mod serialize_option_function {
         }
     }
 
+    #[allow(dead_code)]
     pub fn serialize<S>(func: &Option<Function>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -73,11 +74,11 @@ pub struct JsDisplayParameters {
     pub resolution: (u32, u32),
 }
 
-impl Into<DisplayParameters> for JsDisplayParameters {
-    fn into(self) -> DisplayParameters {
+impl From<JsDisplayParameters> for DisplayParameters {
+    fn from(val: JsDisplayParameters) -> Self {
         DisplayParameters {
-            host_dev_name: self.name,
-            resolution: self.resolution,
+            host_dev_name: val.name,
+            resolution: val.resolution,
         }
     }
 }

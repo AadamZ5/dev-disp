@@ -63,11 +63,8 @@ where
     {
         async move {
             let (get_ws_tx, get_ws_rx) = oneshot::channel();
-            match self.take_ws_tx.send(get_ws_tx).await {
-                Err(e) => {
-                    error!("Error requesting to takeover connection: {}", e);
-                }
-                _ => {}
+            if let Err(e) = self.take_ws_tx.send(get_ws_tx).await {
+                error!("Error requesting to takeover connection: {}", e);
             }
             let websocket = match get_ws_rx.await {
                 Err(e) => {
@@ -120,6 +117,15 @@ pub struct WsDiscovery<S> {
     connections_update_notification: mpsc::Receiver<()>,
 }
 
+impl<S> Default for WsDiscovery<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+ {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<S> WsDiscovery<S>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -130,15 +136,15 @@ where
         Self {
             current_connections: current_connections.clone(),
             listen_ctx: WsDiscoveryListenCtx {
-                current_connections: current_connections,
+                current_connections,
                 connections_update_tx,
             },
             connections_update_notification: connections_update_rx,
         }
     }
 
-    pub fn listen<'s, 'a, I>(
-        &'s self,
+    pub fn listen<'a, I>(
+        &self,
         mut incoming_connections: I,
     ) -> PinnedLocalFuture<'a, Result<(), String>>
     where
@@ -170,11 +176,8 @@ where
                     debug!("New WebSocket connection accepted.");
 
                     let init_task = Self::pre_init(listen_ctx_ref, ws_stream).boxed_local();
-                    match connection_task_tx.send(init_task).await {
-                        Err(e) => {
-                            error!("Error sending new connection for spawning: {}", e);
-                        }
-                        _ => {}
+                    if let Err(e) = connection_task_tx.send(init_task).await {
+                        error!("Error sending new connection for spawning: {}", e);
                     }
                 }
             };
@@ -378,9 +381,7 @@ where
     fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>> {
         Box::pin(futures::stream::unfold(self, |mut this| async move {
             let notification = this.connections_update_notification.next().await;
-            if notification.is_none() {
-                return None;
-            }
+            notification?;
             Some((this.discover_devices().await, this))
         }))
     }

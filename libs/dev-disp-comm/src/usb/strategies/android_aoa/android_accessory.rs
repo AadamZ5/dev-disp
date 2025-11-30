@@ -146,13 +146,12 @@ pub async fn connect_usb_android_accessory(
             dev_list.find(|device_info| {
                 let this_device_serial = device_info.serial_number();
 
-                if let Some(serial) = target_device_serial {
-                    if this_device_serial.is_none()
-                        || this_device_serial.is_some_and(|s| s != serial)
+                if let Some(serial) = target_device_serial
+                    && (this_device_serial.is_none()
+                        || this_device_serial.is_some_and(|s| s != serial))
                     {
                         return false;
                     }
-                }
 
                 device_info.vendor_id() == USB_ACCESSORY_VENDOR_ID
                     && (device_info.product_id() == USB_ACCESSORY_DEVICE_ID
@@ -212,11 +211,7 @@ fn find_bulk_endpoints(interface: &Interface) -> Option<(u8, u8)> {
     let mut in_endpoint = None;
 
     // The interface descriptor contains information about the endpoints.
-    let current_setting = if let Some(desc) = interface.descriptor() {
-        desc
-    } else {
-        return None;
-    };
+    let current_setting = interface.descriptor()?;
 
     for ep in current_setting.endpoints() {
         match (ep.transfer_type(), ep.direction()) {

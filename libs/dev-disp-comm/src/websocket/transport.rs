@@ -76,7 +76,7 @@ where
         Ok(())
     }
 
-    fn _background_task<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
+    fn _background_task<'a>(&mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
         let background_ctx = self.background_context.take();
 
         async move {
@@ -106,14 +106,14 @@ where
 
                         match _ws_msg.unwrap() {
                             WsMessageFromClient::ResponseProtocolInit(resp) => {
-                                let _ = background_ctx
+                                background_ctx
                                     .tx_protocol_init
                                     .send(resp)
                                     .await
                                     .map_err(|e| TransportError::Other(Box::new(e)))?;
                             }
                             WsMessageFromClient::ResponseDeviceInformation(info) => {
-                                let _ = background_ctx
+                                background_ctx
                                     .tx_device_info
                                     .send(info)
                                     .await
@@ -121,7 +121,7 @@ where
                             }
                             WsMessageFromClient::Core(core_msg) => match core_msg {
                                 DevDispMessageFromClient::DisplayParametersUpdate(params) => {
-                                    let _ = background_ctx
+                                    background_ctx
                                         .tx_core_display_params_update
                                         .send(params)
                                         .await
@@ -184,7 +184,7 @@ where
         .boxed()
     }
 
-    fn background<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
+    fn background<'a>(&mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
         self._background_task()
     }
 
