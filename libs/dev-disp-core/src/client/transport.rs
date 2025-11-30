@@ -51,7 +51,7 @@ pub trait ScreenTransport {
     /// Optional function that runs in the background while the transport is active,
     /// started before initialization. Cannot hold onto self reference.
     fn background<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
-        debug!("Default background impl");
+        debug!("Default transport background impl");
         future::ready(Ok(())).boxed()
     }
 

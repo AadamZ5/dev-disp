@@ -3,15 +3,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::{channel::oneshot, join};
+use futures::{future, join};
 use futures_util::FutureExt;
 use log::{debug, error, info, warn};
 
 use crate::{
     client::{DisplayHost, ScreenTransport},
     host::{
-        DisplayHostResult, Encoder, EncoderProvider, RawEncoder, Screen, ScreenProvider,
-        ScreenReadyStatus,
+        DisplayHostResult, Encoder, EncoderProvider, Screen, ScreenProvider, ScreenReadyStatus,
     },
 };
 
@@ -32,7 +31,7 @@ where
     debug!("Getting background task for {host}...");
     let background_stopped = stopped.clone();
     let host_name = host.to_string();
-    let background_task = host
+    let host_background_task = host
         .get_background_task()
         .map(|r| r.map_err(|e| e.to_string()))
         .then(move |r| {
@@ -46,97 +45,129 @@ where
         .boxed_local();
 
     let screen_task_stopped = stopped.clone();
-    let screen_task = async move {
-        // Handle the display-host connection here
-        info!("Handling display-host: {host}");
-
-        async fn close_dev(host: &mut DisplayHost<impl ScreenTransport>) {
-            if let Err(_) = host.close().await {
-                error!("Error closing display host");
-            }
-        }
-
-        debug!("Initializing with transport...");
-        // Initialize the transport
-        if let Err(e) = host.initialize().await {
-            error!("Failed to initialize transport: {}", e);
-            close_dev(&mut host).await;
-            return Err((host, "Failed to initialize transport".to_string()));
-        }
-        debug!("Initialized transport");
-
-        debug!("Getting display parameters...");
-        let display_params = match host.get_display_config().await {
-            Err(e) => {
-                error!("Failed to get display parameters: {}", e);
-                close_dev(&mut host).await;
-                return Err((host, "Failed to get display parameters".to_string()));
-            }
-            Ok(display_params) => display_params,
-        };
-        debug!("Got display parameters: {:?}", display_params);
-
-        match host.notify_loading_screen().await {
-            Err(e) => warn!(
-                "Couldn't notify {host} of loading screen provider, will continue anyways: {}",
-                e
-            ),
-            Ok(_) => debug!("Notified {host} of loading screen..."),
-        }
-
-        debug!("Creating virtual screen...");
-        let screen = match screen_provider.get_screen(display_params).await {
-            Err(e) => {
-                error!("Failed to create virtual screen: {}", e);
-                close_dev(&mut host).await;
-                return Err((host, "Failed to create virtual screen".to_string()));
-            }
-            Ok(screen) => screen,
-        };
-        debug!("Created virtual screen.");
-
-        debug!("Creating encoder...");
-        let mut encoder = match encoder_provider.create_encoder() {
-            Err(e) => {
-                error!("Failed to create encoder: {}", e);
-                close_dev(&mut host).await;
-                return Err((host, "Failed to create encoder".to_string()));
-            }
-            Ok(encoder) => encoder,
-        };
-        debug!("Created encoder.");
-
-        debug!("Getting format parameters...");
-        let format_params = screen.get_format_parameters();
-        debug!("Got format parameters: {:?}", format_params);
-
-        debug!("Initializing encoder...");
-        let encoder_init_result = encoder
-            .init(crate::host::EncoderParameters {
-                width: format_params.width,
-                height: format_params.height,
-                bitrate: 1000000, // TODO: Make this configurable
-                fps: 60,          // TODO: Make this configurable
-                input_parameters: format_params,
-            })
-            .await;
-        if let Err(e) = encoder_init_result {
-            error!("Failed to initialize encoder: {}", e);
-            close_dev(&mut host).await;
-            return Err((host, "Failed to initialize encoder".to_string()));
-        };
-        debug!("Initialized encoder.");
-
-        debug!("Starting screen loop...");
-        let result = screen_loop(screen, host, encoder, screen_task_stopped.clone()).await;
-        debug!("Screen loop finished.");
-        result
-    }
+    let screen_task = screen_init(
+        screen_provider,
+        encoder_provider,
+        host,
+        screen_task_stopped.clone(),
+    )
+    .then(move |r| {
+        debug!("Screen task finished with is_error: {}", r.is_err());
+        screen_task_stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+        futures::future::ready(r)
+    })
     .boxed_local();
 
-    let (_, screen_result) = join!(background_task, screen_task);
+    let (_, screen_result) = join!(host_background_task, screen_task);
 
     screen_result
+}
+
+async fn screen_init<T, P, E>(
+    screen_provider: P,
+    encoder_provider: E,
+    mut host: DisplayHost<T>,
+    stop_flag: Arc<AtomicBool>,
+) -> DisplayHostResult<T>
+where
+    T: ScreenTransport,
+    E: EncoderProvider,
+    P: ScreenProvider,
+{
+    // Handle the display-host connection here
+    info!("Handling display-host: {host}");
+
+    async fn close_dev(host: &mut DisplayHost<impl ScreenTransport>) {
+        if let Err(_) = host.close().await {
+            error!("Error closing display host");
+        }
+    }
+
+    debug!("Initializing with transport...");
+    // Initialize the transport
+    if let Err(e) = host.initialize().await {
+        error!("Failed to initialize transport: {}", e);
+        close_dev(&mut host).await;
+        return Err((host, "Failed to initialize transport".to_string()));
+    }
+    debug!("Initialized transport");
+
+    debug!("Getting display parameters...");
+    let display_params = match host.get_display_config().await {
+        Err(e) => {
+            error!("Failed to get display parameters: {}", e);
+            close_dev(&mut host).await;
+            return Err((host, "Failed to get display parameters".to_string()));
+        }
+        Ok(display_params) => display_params,
+    };
+    debug!("Got display parameters: {:?}", display_params);
+
+    match host.notify_loading_screen().await {
+        Err(e) => warn!(
+            "Couldn't notify {host} of loading screen provider, will continue anyways: {}",
+            e
+        ),
+        Ok(_) => debug!("Notified {host} of loading screen..."),
+    }
+
+    debug!("Creating virtual screen...");
+    let mut screen = match screen_provider.get_screen(display_params).await {
+        Err(e) => {
+            error!("Failed to create virtual screen: {}", e);
+            close_dev(&mut host).await;
+            return Err((host, "Failed to create virtual screen".to_string()));
+        }
+        Ok(screen) => screen,
+    };
+    debug!("Created virtual screen.");
+
+    debug!("Creating encoder...");
+    let mut encoder = match encoder_provider.create_encoder() {
+        Err(e) => {
+            error!("Failed to create encoder: {}", e);
+            close_dev(&mut host).await;
+            return Err((host, "Failed to create encoder".to_string()));
+        }
+        Ok(encoder) => encoder,
+    };
+    debug!("Created encoder.");
+
+    debug!("Getting format parameters...");
+    let format_params = screen.get_format_parameters();
+    debug!("Got format parameters: {:?}", format_params);
+
+    debug!("Initializing encoder...");
+    let encoder_init_result = encoder
+        .init(crate::host::EncoderParameters {
+            width: format_params.width,
+            height: format_params.height,
+            bitrate: 1000000, // TODO: Make this configurable
+            fps: 60,          // TODO: Make this configurable
+            input_parameters: format_params,
+        })
+        .await;
+    if let Err(e) = encoder_init_result {
+        error!("Failed to initialize encoder: {}", e);
+        close_dev(&mut host).await;
+        return Err((host, "Failed to initialize encoder".to_string()));
+    };
+    debug!("Initialized encoder.");
+
+    debug!("Starting screen tasks...");
+    let screen_background_task = future::lazy(|_| {
+        warn!("Screen background tasks are not implemented!");
+        future::ready(Ok::<(), String>(()))
+    })
+    .boxed_local();
+
+    let (loop_result, _) = join!(
+        screen_loop(screen, host, encoder, stop_flag.clone()),
+        screen_background_task
+    );
+
+    debug!("Screen tasks finished.");
+    loop_result
 }
 
 async fn screen_loop<S, T, E>(
@@ -172,7 +203,6 @@ where
                 }
                 ScreenReadyStatus::Ready => {
                     if let Some(data) = screen.get_bytes() {
-                        // TODO: Allow some sort of encoding here!
                         let now = Instant::now();
                         let encoded_data = match encoder.encode(data).await {
                             Ok(ed) => ed,
@@ -230,6 +260,7 @@ where
             Err(e) => {
                 error!("Virtual screen error: {}", e);
                 err = Some("Virtual screen runtime error".to_string());
+                break;
             }
         }
     }
@@ -243,8 +274,8 @@ where
     }
 
     if let Some(e) = err {
-        return Err((host, e));
+        Err((host, e))
     } else {
-        return Ok(host);
+        Ok(host)
     }
 }

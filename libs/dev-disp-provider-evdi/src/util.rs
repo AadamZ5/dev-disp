@@ -1,22 +1,12 @@
-use std::fmt::Display;
-
 use dev_disp_core::host::VirtualScreenPixelFormat;
 use drm_fourcc::DrmFourcc;
+use thiserror::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
+#[error("Unsupported FourCC format: {} (0x{:08X})", name, fourcc)]
 pub struct UnsupportedFourccError {
     pub fourcc: u32,
     pub name: String,
-}
-
-impl Display for UnsupportedFourccError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Unsupported FourCC format: {} (0x{:08X})",
-            self.name, self.fourcc
-        )
-    }
 }
 
 pub fn evdi_format_to_internal_format(

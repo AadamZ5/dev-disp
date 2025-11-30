@@ -16,10 +16,34 @@ pub enum VirtualScreenPixelFormat {
 
 #[derive(Debug, Clone)]
 pub struct ScreenOutputParameters {
+    /// Our intermediate pixel format representation.
     pub format: VirtualScreenPixelFormat,
+
+    /// Width in pixels
     pub width: u32,
+
+    /// Height in pixels
     pub height: u32,
+
+    /// Stride in bytes
+    ///
+    /// This is the amount of bytes between the start of one row of pixels and the start of the next row.
+    /// This may be more than width * bytes_per_pixel due to padding or alignment requirements.
+    ///
+    /// In this example, notice the padding at the end of each row to align to the stride:
+    /// ```text
+    /// [ <----- ... Stride bytes ... -----> ]
+    ///
+    /// [P1][P2][P3][P4]...[Pn][PAD][PAD][PAD]  <- Row 1
+    /// [P1][P2][P3][P4]...[Pn][PAD][PAD][PAD]  <- Row 2
+    /// ...
+    /// [P1][P2][P3][P4]...[Pn][PAD][PAD][PAD]  <- Row h
+    ///
+    /// [ <-- Pixel Data ---> ][ < Padding > ]
+    /// ```
     pub stride: u32,
+
+    /// Any additional meta data associated with the screen output
     pub meta_data: Option<HashMap<String, String>>,
 }
 

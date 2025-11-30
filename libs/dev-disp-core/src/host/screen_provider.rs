@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use futures::{FutureExt, future};
+use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -48,6 +50,13 @@ pub trait Screen {
     // TODO: Should encoder types live here?
     fn get_format_parameters(&self) -> ScreenOutputParameters;
 
+    /// Background task started before the screen is used during looping. Cannot
+    /// hold onto self reference.
+    fn background<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), String>> {
+        debug!("Default screen background impl");
+        future::ready(Ok(())).boxed()
+    }
+
     // TODO: Better error type!
     fn get_ready(&mut self) -> impl Future<Output = Result<ScreenReadyStatus, String>>;
     fn get_bytes(&self) -> Option<&[u8]>;
@@ -58,6 +67,6 @@ pub trait Screen {
         // Hmm, what happens when we `Box<dyn Screen>`?
         Self: Sized,
     {
-        Box::pin(async move { Ok(()) })
+        future::ready(Ok(())).boxed()
     }
 }

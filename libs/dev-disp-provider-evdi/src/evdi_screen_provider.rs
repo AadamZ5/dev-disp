@@ -150,7 +150,7 @@ impl EvdiScreen {
     pub fn new(
         mut handle: EvdiHandle,
         mode: Mode,
-        mapped_px_format: VirtualScreenPixelFormat,
+        pixel_format: VirtualScreenPixelFormat,
     ) -> Self {
         let buffer_id = handle.new_buffer(&mode);
 
@@ -161,7 +161,7 @@ impl EvdiScreen {
             buffer_id,
             bytes: None,
             mode,
-            pixel_format: mapped_px_format,
+            pixel_format,
         }
     }
 }

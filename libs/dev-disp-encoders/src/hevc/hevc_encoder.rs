@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{fmt::Debug, time::Instant};
 
 use dev_disp_core::{
     host::{
@@ -27,15 +27,24 @@ struct HevcEncoderState {
     out_buf: Vec<u8>,
 }
 
+impl Debug for HevcEncoderState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HevcEncoderState")
+            .field("encoder_fmt", &self.encoder_fmt)
+            .field("given_params", &self.given_params)
+            .field("frame_index", &self.frame_index)
+            .field("encoder", &format!("video::Encoder@{:p}", &self.encoder))
+            .field("scaler", &format!("scaling::Context@{:p}", &self.scaler))
+            .finish()
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct HevcEncoder {
     state: Option<HevcEncoderState>,
 }
 
 impl HevcEncoder {
-    pub fn new() -> Self {
-        HevcEncoder { state: None }
-    }
-
     fn try_init(
         &mut self,
         parameters: EncoderParameters,
@@ -44,7 +53,7 @@ impl HevcEncoder {
         let codec = ffmpeg::encoder::find_by_name(&configuration.encoder_name)
             .ok_or_else(|| format!("Encoder '{}' not found", configuration.encoder_name))?;
 
-        debug!("Using HEVC encoder: {}", codec.name());
+        debug!("Initializing HEVC encoder: {}", codec.name(),);
 
         let mut context = ffmpeg::codec::context::Context::new_with_codec(codec)
             .encoder()
@@ -78,8 +87,8 @@ impl HevcEncoder {
             given_params: parameters,
             frame_index: 0,
             encoder_fmt: configuration.pixel_format,
-            // TODO: Compute buffer-size based on parameters!
-            out_buf: Vec::with_capacity(1024 * 1024),
+            // 16 KB initial buffer size for HEVC output
+            out_buf: Vec::with_capacity(1024 * 16),
         };
 
         Ok(state)
@@ -95,7 +104,7 @@ impl DevDispEncoder for HevcEncoder {
 
             while let Some(configuration) = encoders.next() {
                 debug!(
-                    "Trying encoder configuration: {} with options {:?} and pixel format {:?}",
+                    "Trying encoder configuration: {} with options {:#?} and pixel format {:#?}",
                     configuration.encoder_name,
                     configuration.encoder_options,
                     configuration.pixel_format
@@ -104,21 +113,16 @@ impl DevDispEncoder for HevcEncoder {
                 match self.try_init(parameters.clone(), configuration.clone()) {
                     Ok(state) => {
                         debug!(
-                            "Successfully initialized encoder: {} with options {:?} and pixel format {:?}",
-                            configuration.encoder_name,
-                            configuration.encoder_options,
-                            configuration.pixel_format
+                            "Successfully initialized encoder: {}",
+                            configuration.encoder_name
                         );
                         self.state = Some(state);
                         return Ok(());
                     }
                     Err(e) => {
                         debug!(
-                            "Failed to initialize encoder: {} with options {:?} and pixel format {:?}: {}",
-                            configuration.encoder_name,
-                            configuration.encoder_options,
-                            configuration.pixel_format,
-                            e
+                            "Failed to initialize encoder \"{}\": {}",
+                            configuration.encoder_name, e
                         );
                     }
                 }
@@ -157,16 +161,16 @@ impl DevDispEncoder for HevcEncoder {
                 _ => 4,
             };
 
-            let width = state.given_params.input_parameters.width as usize;
             let height = state.given_params.input_parameters.height as usize;
-            let src_stride = width * bpp;
+            let src_stride = state.given_params.input_parameters.stride as usize;
             let dst_stride = input_frame.stride(0);
             let data = input_frame.data_mut(0);
 
-            if raw_data.len() < height * src_stride {
+            let expected_data = src_stride * height;
+            if raw_data.len() < expected_data {
                 return Err(format!(
                     "Input buffer too small. Expected {}, got {}",
-                    height * src_stride,
+                    expected_data,
                     raw_data.len()
                 ));
             }
@@ -239,16 +243,10 @@ impl DevDispEncoder for HevcEncoder {
 
 pub struct HevcEncoderProvider;
 
-impl HevcEncoderProvider {
-    pub fn new() -> Self {
-        HevcEncoderProvider {}
-    }
-}
-
 impl EncoderProvider for HevcEncoderProvider {
     type EncoderType = HevcEncoder;
 
     fn create_encoder(&self) -> Result<Self::EncoderType, String> {
-        Ok(HevcEncoder::new())
+        Ok(HevcEncoder::default())
     }
 }
