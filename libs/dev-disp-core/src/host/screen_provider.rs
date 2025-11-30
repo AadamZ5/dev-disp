@@ -1,13 +1,16 @@
 use std::fmt::Display;
 
+use futures::{FutureExt, future};
+use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     client::DisplayHost,
+    host::ScreenOutputParameters,
     util::{PinnedFuture, PinnedLocalFuture},
 };
 
-pub type DisplayHostResult<T> = Result<DisplayHost<T>, String>;
+pub type DisplayHostResult<T> = Result<DisplayHost<T>, (DisplayHost<T>, String)>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DisplayParameters {
@@ -45,6 +48,14 @@ pub enum ScreenReadyStatus {
 /// to a client
 pub trait Screen {
     // TODO: Should encoder types live here?
+    fn get_format_parameters(&self) -> ScreenOutputParameters;
+
+    /// Background task started before the screen is used during looping. Cannot
+    /// hold onto self reference.
+    fn background<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), String>> {
+        debug!("Default screen background impl");
+        future::ready(Ok(())).boxed()
+    }
 
     // TODO: Better error type!
     fn get_ready(&mut self) -> impl Future<Output = Result<ScreenReadyStatus, String>>;
@@ -56,6 +67,6 @@ pub trait Screen {
         // Hmm, what happens when we `Box<dyn Screen>`?
         Self: Sized,
     {
-        Box::pin(async move { Ok(()) })
+        future::ready(Ok(())).boxed()
     }
 }

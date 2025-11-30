@@ -6,12 +6,16 @@ use std::{
 
 use dev_disp_core::{
     client::{DisplayHost, ScreenTransport},
-    host::{DisplayHostResult, DisplayParameters, Screen, ScreenProvider, ScreenReadyStatus},
+    host::{
+        DisplayHostResult, DisplayParameters, Screen, ScreenOutputParameters, ScreenProvider,
+        ScreenReadyStatus, VirtualScreenPixelFormat,
+    },
     util::PinnedLocalFuture,
 };
 use evdi::{
+    DrmFormat,
     buffer::{Buffer as EvdiBuffer, BufferId},
-    device_node::OpenDeviceError,
+    device_node::{DeviceNodeStatus, OpenDeviceError},
     events::{AwaitEventError, Mode},
     handle::{Handle as EvdiHandle, RequestUpdateError},
     prelude::{DeviceConfig, DeviceNode},
@@ -21,7 +25,7 @@ use futures_util::FutureExt;
 use log::{debug, error, info, warn};
 use thiserror::Error;
 
-use crate::edid_from_display_params;
+use crate::{edid_from_display_params, util::evdi_format_to_internal_format};
 
 const RECEIVE_INITIAL_MODE_TIMEOUT: Duration = Duration::from_secs(10);
 const UPDATE_BUFFER_TIMEOUT: Duration = Duration::from_secs(5);
@@ -102,6 +106,22 @@ impl ScreenProvider for EvdiScreenProvider {
             }
         };
 
+        let pixel_format = match mode.pixel_format {
+            Ok(format) => format,
+            Err(e) => {
+                error!("Failed to get pixel format from EVDI mode: {}", e);
+                return Err(HandleClientError::Unknown.to_string());
+            }
+        };
+
+        let pixel_format = match evdi_format_to_internal_format(pixel_format as u32) {
+            Ok(fmt) => fmt,
+            Err(e) => {
+                error!("Unsupported EVDI pixel format: {}", e);
+                return Err(e.to_string());
+            }
+        };
+
         info!("Received initial EVDI device mode: {mode:?}");
 
         // Redundant, but left here so you know this is default behavior
@@ -110,7 +130,7 @@ impl ScreenProvider for EvdiScreenProvider {
         // For simplicity, use only one buffer. We may want to use more than one buffer so that you
         // can send the contents of one buffer while updating another.
 
-        Ok(EvdiScreen::new(handle, mode))
+        Ok(EvdiScreen::new(handle, mode, pixel_format))
     }
 }
 
@@ -120,12 +140,18 @@ pub struct EvdiScreen {
     handle: EvdiHandle,
     buffer_id: BufferId,
     bytes: Option<EvdiBuffer>,
+    mode: Mode,
+    pixel_format: VirtualScreenPixelFormat,
 }
 
 const EMPTY_BYTES: [u8; 0] = [0; 0];
 
 impl EvdiScreen {
-    pub fn new(mut handle: EvdiHandle, mode: Mode) -> Self {
+    pub fn new(
+        mut handle: EvdiHandle,
+        mode: Mode,
+        pixel_format: VirtualScreenPixelFormat,
+    ) -> Self {
         let buffer_id = handle.new_buffer(&mode);
 
         Self {
@@ -134,11 +160,25 @@ impl EvdiScreen {
             handle,
             buffer_id,
             bytes: None,
+            mode,
+            pixel_format,
         }
     }
 }
 
 impl Screen for EvdiScreen {
+    fn get_format_parameters(&self) -> ScreenOutputParameters {
+        let mode = self.mode;
+
+        ScreenOutputParameters {
+            width: mode.width,
+            height: mode.height,
+            format: self.pixel_format.clone(),
+            stride: mode.stride(),
+            meta_data: None,
+        }
+    }
+
     async fn get_ready(&mut self) -> Result<ScreenReadyStatus, String> {
         if self.stop_flag.load(std::sync::atomic::Ordering::SeqCst) {
             info!("Stop flag set, exiting");
@@ -166,9 +206,6 @@ impl Screen for EvdiScreen {
         };
 
         let bytes = buf.bytes();
-        let count = bytes.len();
-
-        debug!("Buffer retrieved with {count} bytes");
 
         Some(bytes)
     }
@@ -197,6 +234,19 @@ impl Display for NoDeviceError {
 
 pub fn get_evdi_device() -> Result<DeviceNode, NoDeviceError> {
     DeviceNode::get()
+        .and_then(|dev| match dev.status() {
+            DeviceNodeStatus::Available => {
+                debug!("Found existing available device node");
+                Some(dev)
+            }
+            _ => {
+                warn!(
+                    "Existing EVDI device node is not status {:?}",
+                    DeviceNodeStatus::Available
+                );
+                None
+            }
+        })
         .or_else(|| {
             debug!("Failed to get an existing device node, will try to create one");
             if DeviceNode::add() {
