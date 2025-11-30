@@ -43,7 +43,7 @@ export class ScreenComponent implements AfterViewInit {
 
   // TODO: Correctly display data
   readonly data$ = fromDevDispConnection(() =>
-    this.devDispService.connect('127.0.0.1:56789')
+    this.devDispService.connect(`${window.location.hostname}:56789`)
   ).pipe(
     tap({
       error: (e) => {

@@ -114,11 +114,9 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
     where
         'a: 's,
     {
-        // TODO: Don't do this below, use compression!
         let screen_update = MessageToAndroid::ScreenUpdate(Message {
             id: 0,
-            // TODO: Handle larger payloads properly
-            payload: data.iter().take(128_000).cloned().collect(),
+            payload: data.to_vec(),
         });
         let heaped_data = match screen_update.serialize() {
             Ok(vec) => vec,

@@ -23,14 +23,10 @@ mod util;
 /// Returns a set of dispatchers for controlling the connection.
 #[wasm_bindgen(js_name = "connectDevDispServer")]
 pub fn connect_dev_disp_server(
-    address: &str,
+    address: String,
     handlers: &WsHandlers,
     canvas: OffscreenCanvas,
 ) -> Result<WsDispatchers, JsError> {
-    // First, parse the given address
-    let parsed_address = SocketAddr::from_str(address)
-        .map_err(|e| JsError::new(&format!("Invalid address: {}", e)))?;
-
     // Create cancel channels
     let (cancel_tx, mut cancel_rx) = mpsc::unbounded::<()>();
     let handlers = handlers.clone();
@@ -47,8 +43,8 @@ pub fn connect_dev_disp_server(
 
     let task_main = async move {
         let handlers = handlers_1;
-        info!("Connecting to WebSocket at ws://{}", parsed_address);
-        let (_, ws_stream) = WsMeta::connect(&format!("ws://{}", parsed_address), None)
+        info!("Connecting to WebSocket at ws://{}", address);
+        let (_, ws_stream) = WsMeta::connect(&format!("ws://{}", address), None)
             .await
             .map_err(|e| JsError::new(&format!("Failed to create WebSocket: {:?}", e)))?;
 
