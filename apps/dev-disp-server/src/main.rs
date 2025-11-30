@@ -6,12 +6,13 @@ use dev_disp_core::{
     core::handle_display_host,
     host::{ConnectableDevice, DeviceDiscovery, ScreenProvider, StreamingDeviceDiscovery},
 };
+use dev_disp_encoders::hevc::HevcEncoderProvider;
 use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::{
     FutureExt, StreamExt,
     stream::{self, empty},
 };
-use log::{LevelFilter, error, info, warn};
+use log::{LevelFilter, error, info, trace, warn};
 use tokio::{net::TcpListener, signal::ctrl_c, task::LocalSet};
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
@@ -21,6 +22,8 @@ const SAMSUNG_SERIAL: &str = "RFCT71HTZNL";
 async fn main() {
     env_logger::builder()
         .filter_level(LevelFilter::Debug)
+        .filter_module("evdi", LevelFilter::Warn)
+        .filter_module("tracing", LevelFilter::Warn)
         .init();
 
     let evdi_provider = EvdiScreenProvider::new();
@@ -30,8 +33,7 @@ async fn main() {
 
     let local_set = LocalSet::new();
     let single_thread_work = local_set.run_until(async move {
-        let logic_1 =
-            tokio::task::spawn_local(sammy_implementation(evdi_provider_1, UsbDiscovery {}));
+        let logic_1 = tokio::task::spawn_local(async {});
 
         let listener = TcpListener::bind("0.0.0.0:56789")
             .await
@@ -102,8 +104,6 @@ where
 {
     let mut first_iter = true;
 
-    return;
-
     loop {
         if first_iter {
             first_iter = false;
@@ -119,7 +119,7 @@ where
             .find(|dev| dev.get_info().id == SAMSUNG_SERIAL);
 
         if sammy_accessory_result.is_none() {
-            error!("Could not find Samsung device");
+            trace!("Could not find Samsung device");
             continue;
         }
 
@@ -141,9 +141,9 @@ where
         let provider_1 = provider.clone();
 
         let _ = tokio::task::spawn_local(async move {
-            let handle_result = handle_display_host(provider_1, display).await;
+            let handle_result = handle_display_host(provider_1, HevcEncoderProvider, display).await;
 
-            if let Err(e) = handle_result {
+            if let Err((_, e)) = handle_result {
                 error!("Error handling display host: {}", e);
             } else {
                 info!("Display host handling completed successfully");
@@ -179,9 +179,10 @@ where
             let provider_1 = provider.clone();
 
             let _ = tokio::task::spawn_local(async move {
-                let handle_result = handle_display_host(provider_1, display).await;
+                let handle_result =
+                    handle_display_host(provider_1, HevcEncoderProvider, display).await;
 
-                if let Err(e) = handle_result {
+                if let Err((_, e)) = handle_result {
                     error!("Error handling display host: {}", e);
                 } else {
                     info!("Display host handling completed successfully");
