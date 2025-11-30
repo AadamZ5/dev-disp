@@ -7,14 +7,7 @@ import {
   INJECTOR,
   viewChild,
 } from '@angular/core';
-import {
-  asyncScheduler,
-  map,
-  Observable,
-  OperatorFunction,
-  retry,
-  scan,
-} from 'rxjs';
+import { asyncScheduler, map, OperatorFunction, retry, scan } from 'rxjs';
 import { DevDispService, fromDevDispConnection } from '../dev-disp.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 

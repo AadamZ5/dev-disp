@@ -9,7 +9,7 @@ import {
   BehaviorSubject,
   Observable,
   ReplaySubject,
-  Subject,
+  share,
   Subscription,
 } from 'rxjs';
 
@@ -149,5 +149,5 @@ export function fromDevDispConnection(
     allSub.add(screenDataSub);
 
     return allSub;
-  });
+  }).pipe(share());
 }
