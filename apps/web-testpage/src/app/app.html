@@ -1,7 +1,10 @@
 <div class="receiver-root">
-  <div class="controls-container"></div>
+  <div class="controls-container">
+    <p>Screen Data Epoch: {{ screen.dataEpoch() }}</p>
+    <p>Screen FPS(?): {{ screen.fps() }}</p>
+  </div>
 
   <div class="screen-container">
-    <app-screen></app-screen>
+    <app-screen #screen></app-screen>
   </div>
 </div>

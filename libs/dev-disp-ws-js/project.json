@@ -1,0 +1,52 @@
+{
+  "name": "dev-disp-ws-js",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "library",
+  "sourceRoot": "libs/dev-disp-ws-js/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "configurations": {
+        "production": {
+          "env": {
+            "RELEASE_ARG": "--release",
+            "DEV_ARG": ""
+          }
+        }
+      },
+      "options": {
+        "env": {
+          "DEV_ARG": "--dev"
+        },
+        "commands": [
+          {
+            "description": "Run wasm-pack",
+            "command": "wasm-pack build libs/dev-disp-ws-js --out-name dev-disp-ws --out-dir ../../dist/libs/dev-disp-ws-js/pkg $RELEASE_ARG $DEV_ARG"
+          }
+        ]
+      }
+    },
+    "test": {
+      "cache": true,
+      "executor": "@monodon/rust:test",
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "target-dir": "dist/target/dev-disp-ws-js"
+      },
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "lint": {
+      "cache": true,
+      "executor": "@monodon/rust:lint",
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "target-dir": "dist/target/dev-disp-ws-js"
+      }
+    }
+  },
+  "tags": []
+}

@@ -13,7 +13,8 @@
       }
     },
     "lint": {
-      "executor": "@monodon/rust:lint"
+      "executor": "@monodon/rust:lint",
+      "options": {}
     }
   }
 }

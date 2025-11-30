@@ -1,4 +1,7 @@
-use dev_disp_core::core::{DevDispMessageFromClient, DevDispMessageFromSource};
+pub use dev_disp_core::{
+    core::{DevDispMessageFromClient, DevDispMessageFromSource},
+    host::DisplayParameters,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -7,6 +10,9 @@ pub struct WsMessageProtocolInit {
     pub init_key: String,
 }
 
+/// This is device information shown to the user when selecting a device.
+/// In other words, this is "pre" display parameters, intended to give the
+/// user an idea of what the device is before the initiate a full display session.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WsMessageDeviceInfo {
     pub name: String,

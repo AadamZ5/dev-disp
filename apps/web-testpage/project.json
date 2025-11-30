@@ -12,7 +12,6 @@
       "options": {
         "outputPath": "dist/apps/web-testpage",
         "browser": "apps/web-testpage/src/main.ts",
-        "polyfills": ["zone.js"],
         "tsConfig": "apps/web-testpage/tsconfig.app.json",
         "inlineStyleLanguage": "scss",
         "assets": [
@@ -50,6 +49,11 @@
     "serve": {
       "continuous": true,
       "executor": "@angular/build:dev-server",
+      "options": {
+        "prebundle": {
+          "exclude": ["dev-disp-ws-js"]
+        }
+      },
       "configurations": {
         "production": {
           "buildTarget": "web-testpage:build:production"

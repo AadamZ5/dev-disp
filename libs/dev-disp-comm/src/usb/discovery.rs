@@ -83,7 +83,7 @@ pub struct UsbDiscovery;
 impl DeviceDiscovery for UsbDiscovery {
     type DeviceCandidate = UsbDeviceCandidate;
 
-    fn discover_devices(&self) -> PinnedFuture<Vec<Self::DeviceCandidate>> {
+    fn discover_devices(&'_ self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>> {
         nusb_list_usb_candidates().boxed()
     }
 }
