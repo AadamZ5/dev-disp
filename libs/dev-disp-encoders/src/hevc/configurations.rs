@@ -53,9 +53,15 @@ impl Iterator for FfmpegEncoderConfigurationSet {
             }
         }
 
+        let options = if self.encoder_option_sets.is_empty() {
+            HashMap::new()
+        } else {
+            self.encoder_option_sets[self.encoder_option_set_index].clone()
+        };
+
         let config = FfmpegEncoderConfiguration {
             encoder_name: self.encoder_name.clone(),
-            encoder_options: self.encoder_option_sets[self.encoder_option_set_index].clone(),
+            encoder_options: options,
             pixel_format: self.pixel_formats[self.pixel_format_index],
         };
 
@@ -126,6 +132,7 @@ impl Iterator for FfmpegEncoderBruteForceIterator {
 }
 
 pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
+    // These are provided in order of preference, top to bottom left to right.
     FfmpegEncoderBruteForceIterator::new_from_iter(vec![
         FfmpegEncoderConfigurationSet::new(
             "hevc".to_string(),
@@ -134,6 +141,30 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
                 ("tune", "zerolatency"),
             ])],
             vec![Pixel::YUV420P],
+        ),
+        FfmpegEncoderConfigurationSet::new(
+            "hevc_nvenc".to_string(),
+            vec![HashMap::from([("preset", "p1"), ("tune", "ull")])],
+            vec![
+                Pixel::YUV420P,
+                Pixel::YUV444P,
+                Pixel::RGBA,
+                Pixel::YUV444P16LE,
+                Pixel::NV12,
+                Pixel::P010LE,
+                Pixel::P016LE,
+                Pixel::CUDA,
+            ],
+        ),
+        FfmpegEncoderConfigurationSet::new("hevc_vaapi".to_string(), vec![], vec![Pixel::VAAPI]),
+        FfmpegEncoderConfigurationSet::new(
+            "hevc_vulkan".to_string(),
+            vec![HashMap::from([
+                ("usage", "stream"),
+                ("tune", "ull"),
+                ("content", "desktop"),
+            ])],
+            vec![Pixel::VULKAN],
         ),
         FfmpegEncoderConfigurationSet::new(
             "libx265".to_string(),

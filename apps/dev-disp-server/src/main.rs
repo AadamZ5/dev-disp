@@ -24,6 +24,10 @@ async fn main() {
         .filter_level(LevelFilter::Debug)
         .filter_module("evdi", LevelFilter::Warn)
         .filter_module("tracing", LevelFilter::Warn)
+        .filter_module(
+            "nusb::platform::linux_usbfs::enumeration",
+            LevelFilter::Warn,
+        )
         .init();
 
     let evdi_provider = EvdiScreenProvider::new();
@@ -33,7 +37,7 @@ async fn main() {
 
     let local_set = LocalSet::new();
     let single_thread_work = local_set.run_until(async move {
-        let logic_1 = tokio::task::spawn_local(async {});
+        let logic_1 = tokio::task::spawn_local(sammy_implementation(evdi_provider_1, UsbDiscovery));
 
         let listener = TcpListener::bind("0.0.0.0:56789")
             .await
@@ -136,8 +140,6 @@ where
         let display =
             connect_result.expect("Sammy accessory was an error after checking that it wasnt!");
 
-        let display = display.to_some_transport();
-
         let provider_1 = provider.clone();
 
         let _ = tokio::task::spawn_local(async move {
@@ -173,8 +175,6 @@ where
 
             let display =
                 connect_result.expect("Device was an error after checking that it wasnt!");
-
-            let display = display.to_some_transport();
 
             let provider_1 = provider.clone();
 

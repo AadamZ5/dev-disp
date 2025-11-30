@@ -40,7 +40,7 @@ where
                 "Background task for {host_name} finished with result: {:?}",
                 r
             );
-            background_stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+            //background_stopped.store(true, std::sync::atomic::Ordering::SeqCst);
             futures::future::ready(r)
         })
         .boxed_local();
