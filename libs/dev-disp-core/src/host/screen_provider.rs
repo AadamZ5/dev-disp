@@ -2,7 +2,10 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::client::DisplayHost;
+use crate::{
+    client::DisplayHost,
+    util::{PinnedFuture, PinnedLocalFuture},
+};
 
 pub type DisplayHostResult<T> = Result<DisplayHost<T>, String>;
 
@@ -41,9 +44,18 @@ pub enum ScreenReadyStatus {
 /// A screen is something that provides visual data bytes to be given
 /// to a client
 pub trait Screen {
-    // TODO: Should formatter types live here?
+    // TODO: Should encoder types live here?
 
     // TODO: Better error type!
     fn get_ready(&mut self) -> impl Future<Output = Result<ScreenReadyStatus, String>>;
     fn get_bytes(&self) -> Option<&[u8]>;
+
+    // TODO: Better error type!
+    fn close(self) -> PinnedLocalFuture<'static, Result<(), String>>
+    where
+        // Hmm, what happens when we `Box<dyn Screen>`?
+        Self: Sized,
+    {
+        Box::pin(async move { Ok(()) })
+    }
 }

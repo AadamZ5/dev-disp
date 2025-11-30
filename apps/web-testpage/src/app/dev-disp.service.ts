@@ -74,7 +74,10 @@ export class DevDispConnection {
       },
       handleRequestDeviceInfo: (e) => {
         console.log('Dev-disp device info requested', e);
-        return {};
+        return {
+          name: 'Web Testpage Display',
+          resolution: [800, 600],
+        };
       },
       handleScreenData: (e) => {
         console.log('Dev-disp screen data received', e);
@@ -142,7 +145,9 @@ export function fromDevDispConnection(
       },
     });
 
-    const allSub = new Subscription();
+    const allSub = new Subscription(() => {
+      devDispConnection.disconnect();
+    });
     allSub.add(disconnectSub);
     allSub.add(screenDataSub);
 

@@ -1,5 +1,8 @@
 use core::error;
-use std::time::{Duration, Instant};
+use std::{
+    sync::{Arc, atomic::AtomicBool},
+    time::{Duration, Instant},
+};
 
 use futures::{StreamExt, channel::oneshot};
 use futures_util::{FutureExt, stream::FuturesUnordered};
@@ -21,10 +24,12 @@ where
     P: ScreenProvider + 'static,
 {
     let mut tasks = FuturesUnordered::new();
+    let mut stopped = Arc::new(AtomicBool::new(false));
 
     let (device_tx, device_rx) = oneshot::channel();
 
     debug!("Spawning background task for {host}...");
+    let background_stopped = stopped.clone();
     let host_name = host.to_string();
     let background_task = host
         .get_background_task()
@@ -34,10 +39,12 @@ where
                 "Background task for {host_name} finished with result: {:?}",
                 r
             );
+            background_stopped.store(true, std::sync::atomic::Ordering::SeqCst);
             futures::future::ready(r)
         })
         .boxed_local();
 
+    let screen_task_stopped = stopped.clone();
     let screen_task = async move {
         // Handle the display-host connection here
         info!("Handling display-host: {host}");
@@ -46,6 +53,7 @@ where
             if let Err(_) = host.close().await {
                 error!("Error closing display host");
             }
+            
         }
 
         debug!("Initializing with transport...");
@@ -94,10 +102,15 @@ where
                     ScreenReadyStatus::Finished => {
                         info!("Virtual screen has finished");
                         close_dev(&mut host).await;
+                        screen_task_stopped.store(true, std::sync::atomic::Ordering::SeqCst);
                         break;
                     }
                     ScreenReadyStatus::NotReady => {
                         futures_timer::Delay::new(NOT_READY_DELAY).await;
+                        if (screen_task_stopped.load(std::sync::atomic::Ordering::SeqCst)) {
+                            info!("Screen task stop flag set, exiting not-ready wait loop");
+                            break;
+                        }
                     }
                     ScreenReadyStatus::Ready => {
                         info!("Screen data ready!");
@@ -122,6 +135,10 @@ where
                                         bad_transmission_count, bad_transmission_elapsed.as_millis()
                                     );
                                     close_dev(&mut host).await;
+                                    screen_task_stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+                                    if let Err(e) = screen.close().await {
+                                        error!("Error closing virtual screen: {}", e);
+                                    }
                                     return Err("Too many bad transmissions to display host".to_string());
                                 }
 
@@ -144,9 +161,16 @@ where
                 Err(e) => {
                     error!("Virtual screen error: {}", e);
                     close_dev(&mut host).await;
+                    if let Err(e) = screen.close().await {
+                        error!("Error closing virtual screen: {}", e);
+                    }
                     return Err("Virtual screen runtime error".to_string());
                 }
             }
+        }
+
+        if let Err(e) = screen.close().await {
+            error!("Error closing virtual screen: {}", e);
         }
 
         Ok(host)

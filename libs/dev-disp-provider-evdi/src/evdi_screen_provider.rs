@@ -7,6 +7,7 @@ use std::{
 use dev_disp_core::{
     client::{DisplayHost, ScreenTransport},
     host::{DisplayHostResult, DisplayParameters, Screen, ScreenProvider, ScreenReadyStatus},
+    util::PinnedLocalFuture,
 };
 use evdi::{
     buffer::{Buffer as EvdiBuffer, BufferId},
@@ -170,6 +171,18 @@ impl Screen for EvdiScreen {
         debug!("Buffer retrieved with {count} bytes");
 
         Some(bytes)
+    }
+
+    fn close(self) -> PinnedLocalFuture<'static, Result<(), String>>
+    where
+        Self: Sized,
+    {
+        async move {
+            info!("Closing EVDI screen");
+            self.handle.disconnect();
+            Ok(())
+        }
+        .boxed_local()
     }
 }
 

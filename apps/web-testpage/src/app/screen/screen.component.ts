@@ -7,7 +7,15 @@ import {
   INJECTOR,
   viewChild,
 } from '@angular/core';
-import { asyncScheduler, map, OperatorFunction, retry, scan } from 'rxjs';
+import {
+  asyncScheduler,
+  map,
+  OperatorFunction,
+  retry,
+  scan,
+  share,
+  tap,
+} from 'rxjs';
 import { DevDispService, fromDevDispConnection } from '../dev-disp.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 
@@ -35,8 +43,16 @@ export class ScreenComponent implements AfterViewInit {
 
   // TODO: Correctly display data
   readonly data$ = fromDevDispConnection(() =>
-    this.devDispService.connect('ws://localhost:56789')
-  ).pipe(retry({ delay: 5000 }));
+    this.devDispService.connect('127.0.0.1:56789')
+  ).pipe(
+    tap({
+      error: (e) => {
+        console.error('Dev-disp connection error', e);
+      },
+    }),
+    retry({ delay: 5000 }),
+    share()
+  );
 
   readonly dataEpoch = toSignal(
     this.data$.pipe(
