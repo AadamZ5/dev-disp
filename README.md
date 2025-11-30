@@ -1,4 +1,4 @@
-# dev-disp
+# dev-disp ([#18](https://github.com/AadamZ5/dev-disp/issues/18))
 
 I have an Android device with a screen, why can't I use it as another display for my laptop?!? This repository aims to create a virtual screen-extension utility that can be easily cast to other devices.
 
