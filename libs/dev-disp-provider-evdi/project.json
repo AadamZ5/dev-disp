@@ -5,7 +5,12 @@
   "projectType": "library",
   "targets": {
     "build": {
-      "executor": "@monodon/rust:check"
+      "executor": "@monodon/rust:build",
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
     },
     "lint": {
       "executor": "@monodon/rust:lint"

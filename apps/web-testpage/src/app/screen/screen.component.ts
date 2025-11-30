@@ -11,7 +11,8 @@ import { asyncScheduler, map, OperatorFunction, retry, scan } from 'rxjs';
 import { DevDispService, fromDevDispConnection } from '../dev-disp.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 
-function bufferRing<T>(size: number): OperatorFunction<T, T[]> {
+// TODO: Move to a shared utilities library
+function slidingWindow<T>(size: number): OperatorFunction<T, T[]> {
   return scan((acc: T[], value: T) => {
     acc.unshift(value);
     if (acc.length > size) {
@@ -32,6 +33,7 @@ export class ScreenComponent implements AfterViewInit {
   private readonly devDispService = inject(DevDispService);
   readonly canvas = viewChild<ElementRef<HTMLCanvasElement>>('screen');
 
+  // TODO: Correctly display data
   readonly data$ = fromDevDispConnection(() =>
     this.devDispService.connect('ws://localhost:56789')
   ).pipe(retry({ delay: 5000 }));
@@ -48,7 +50,7 @@ export class ScreenComponent implements AfterViewInit {
   readonly fps = toSignal(
     this.data$.pipe(
       map(() => performance.now()),
-      bufferRing(30),
+      slidingWindow(30),
       map((times) => {
         if (times.length < 2) {
           return 0;
@@ -59,10 +61,6 @@ export class ScreenComponent implements AfterViewInit {
     ),
     { initialValue: 0 }
   );
-
-  // TODO: This is temporary test code to provide basic responses to the
-  // server. Replace with actual implementation later. Probably replace
-  // with WASM-based library
 
   ngAfterViewInit(): void {
     asyncScheduler.schedule(() => {

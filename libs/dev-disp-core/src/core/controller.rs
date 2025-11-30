@@ -86,7 +86,7 @@ where
         let mut screen = screen_result.unwrap();
 
         let mut bad_transmission_start: Option<Instant> = None;
-        let mut bad_tramsmission_count = 0u32;
+        let mut bad_transmission_count = 0u32;
 
         loop {
             match screen.get_ready().await {
@@ -114,12 +114,12 @@ where
                                     bad_transmission_start = Some(Instant::now());
                                     Duration::ZERO
                                 };
-                                bad_tramsmission_count += 1;
+                                bad_transmission_count += 1;
 
-                                if bad_transmission_elapsed >= Duration::from_secs(5) && bad_tramsmission_count >= 5 {
+                                if bad_transmission_elapsed >= Duration::from_secs(5) && bad_transmission_count >= 5 {
                                     error!(
                                         "Too many bad transmissions ({} errors in {}ms), closing connection",
-                                        bad_tramsmission_count, bad_transmission_elapsed.as_millis()
+                                        bad_transmission_count, bad_transmission_elapsed.as_millis()
                                     );
                                     close_dev(&mut host).await;
                                     return Err("Too many bad transmissions to display host".to_string());
@@ -127,7 +127,7 @@ where
 
                             } else {
                                 bad_transmission_start = None;
-                                bad_tramsmission_count = 0;
+                                bad_transmission_count = 0;
                                 let kbs = data.len() as f64 / 1024.0 / elapsed.as_secs_f64();
                                 debug!(
                                     "Sent {} bytes to display host in {}ms ({:.2} KB/s)",

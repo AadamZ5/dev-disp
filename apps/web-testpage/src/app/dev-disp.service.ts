@@ -47,9 +47,6 @@ export class DevDispConnection {
 
   constructor(public readonly address: string, canvas?: OffscreenCanvas) {
     const handlers: WsHandlers = {
-      // onCore: (e) => {
-      //   console.log('Dev-disp core message received', e, e.data);
-      // },
       onPreInit: () => {
         console.log('Dev-disp pre-init requested');
       },
@@ -93,13 +90,14 @@ export class DevDispConnection {
     };
 
     this.dispatchers = connectDevDispServer(
-      '127.0.0.1:56789',
+      address,
       handlers,
       canvas ?? new OffscreenCanvas(1, 1)
     );
   }
 
   disconnect() {
+    this.intentionalDisconnect = true;
     const result = this.dispatchers.closeConnection();
     this._complete();
     return result;

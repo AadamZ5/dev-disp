@@ -1,4 +1,4 @@
-use dev_disp_comm::websocket::messages::DisplayParameters;
+use dev_disp_comm::websocket::messages::{DisplayParameters, WsMessageDeviceInfo};
 use js_sys::Function;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
@@ -83,15 +83,23 @@ impl From<JsDisplayParameters> for DisplayParameters {
     }
 }
 
+impl From<JsDisplayParameters> for WsMessageDeviceInfo {
+    fn from(val: JsDisplayParameters) -> WsMessageDeviceInfo {
+        WsMessageDeviceInfo {
+            name: val.name,
+            resolution: val.resolution,
+        }
+    }
+}
+
 #[wasm_bindgen(typescript_custom_section)]
 const WS_HANDLER_FN_TYPE_CONTENT: &str = r#"
 export type WsNotificationFunction = (event: DevDispEvent) => void;
 "#;
 
-// TODO: Define a return type
 #[wasm_bindgen(typescript_custom_section)]
 const WS_HANDLER_REQUEST_DEVICE_INFO: &str = r#"
-export type WsHandlerRequestDeviceInfo = (event: DevDispEvent) => object;
+export type WsHandlerRequestDeviceInfo = (event: DevDispEvent) => JsDisplayParameters;
 "#;
 
 #[wasm_bindgen(typescript_custom_section)]
