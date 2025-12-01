@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use ffmpeg_next::format::Pixel;
+use ffmpeg_next::{codec::encoder::video::Encoder as VideoEncoder, format::Pixel};
+use log::warn;
 
 /// A set of FFmpeg encoder configurations to try for a particular encoder.
 ///
@@ -9,6 +10,7 @@ use ffmpeg_next::format::Pixel;
 #[derive(Debug, Clone)]
 pub struct FfmpegEncoderConfigurationSet {
     pub encoder_name: String,
+    pub encoder_family: String,
     pub encoder_option_sets: Vec<HashMap<&'static str, &'static str>>,
     pub pixel_formats: Vec<Pixel>,
     encoder_option_set_index: usize,
@@ -16,13 +18,18 @@ pub struct FfmpegEncoderConfigurationSet {
 }
 
 impl FfmpegEncoderConfigurationSet {
-    pub fn new(
-        encoder_name: String,
+    pub fn new<T>(
+        encoder_name: T,
+        encoder_family: T,
         encoder_option_sets: Vec<HashMap<&'static str, &'static str>>,
         pixel_formats: Vec<Pixel>,
-    ) -> Self {
+    ) -> Self
+    where
+        T: Into<String>,
+    {
         FfmpegEncoderConfigurationSet {
-            encoder_name,
+            encoder_name: encoder_name.into(),
+            encoder_family: encoder_family.into(),
             encoder_option_sets,
             pixel_formats,
             encoder_option_set_index: 0,
@@ -58,6 +65,7 @@ impl Iterator for FfmpegEncoderConfigurationSet {
 
         let config = FfmpegEncoderConfiguration {
             encoder_name: self.encoder_name.clone(),
+            encoder_family: self.encoder_family.clone(),
             encoder_options: options,
             pixel_format: self.pixel_formats[self.pixel_format_index],
         };
@@ -72,6 +80,7 @@ impl Iterator for FfmpegEncoderConfigurationSet {
 #[derive(Debug, Clone)]
 pub struct FfmpegEncoderConfiguration {
     pub encoder_name: String,
+    pub encoder_family: String,
     pub encoder_options: HashMap<&'static str, &'static str>,
     pub pixel_format: Pixel,
 }
@@ -108,6 +117,10 @@ impl FfmpegEncoderBruteForceIterator {
     pub fn into_inner(self) -> Vec<FfmpegEncoderConfigurationSet> {
         self.configurations
     }
+
+    pub fn into_iter_encoders(self) -> impl Iterator<Item = String> {
+        self.configurations.into_iter().map(|set| set.encoder_name)
+    }
 }
 
 impl Iterator for FfmpegEncoderBruteForceIterator {
@@ -135,9 +148,25 @@ impl Iterator for FfmpegEncoderBruteForceIterator {
 pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
     // These are provided in order of preference, top to bottom left to right.
     FfmpegEncoderBruteForceIterator::new(vec![
+        FfmpegEncoderConfigurationSet::new(
+            "libvpx",
+            "vp8",
+            vec![HashMap::from([
+                ("deadline", "realtime"),
+                ("quality", "realtime"),
+            ])],
+            vec![Pixel::YUV420P],
+        ),
+        FfmpegEncoderConfigurationSet::new(
+            "libaom-av1",
+            "av1",
+            vec![HashMap::from([("usage", "realtime"), ("cpu-used", "4")])],
+            vec![Pixel::YUV420P],
+        ),
         // I don't think this encoder exists
         FfmpegEncoderConfigurationSet::new(
-            "hevc".to_string(),
+            "hevc",
+            "hevc",
             vec![HashMap::from([
                 ("preset", "ultrafast"),
                 ("tune", "zerolatency"),
@@ -147,23 +176,25 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         // Nvidia NVENC
         // Note if the driver is active but the GPU isn't connected,
         // it may take a long time to try to initialize and fail.
-        FfmpegEncoderConfigurationSet::new(
-            "hevc_nvenc".to_string(),
-            vec![HashMap::from([("preset", "p1"), ("tune", "ull")])],
-            vec![
-                Pixel::YUV420P,
-                Pixel::YUV444P,
-                Pixel::RGBA,
-                Pixel::YUV444P16LE,
-                Pixel::NV12,
-                Pixel::P010LE,
-                Pixel::P016LE,
-                Pixel::CUDA,
-            ],
-        ),
+        // FfmpegEncoderConfigurationSet::new(
+        //     "hevc_nvenc",
+        //     "hevc",
+        //     vec![HashMap::from([("preset", "p1"), ("tune", "ull")])],
+        //     vec![
+        //         Pixel::YUV420P,
+        //         Pixel::YUV444P,
+        //         Pixel::RGBA,
+        //         Pixel::YUV444P16LE,
+        //         Pixel::NV12,
+        //         Pixel::P010LE,
+        //         Pixel::P016LE,
+        //         Pixel::CUDA,
+        //     ],
+        // ),
         // Intel Quick Sync Video
         FfmpegEncoderConfigurationSet::new(
-            "hevc_qsv".to_string(),
+            "hevc_qsv",
+            "hevc",
             vec![HashMap::from([
                 ("preset", "veryfast"),
                 ("scenario", "displayremoting"),
@@ -179,10 +210,11 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
             ],
         ),
         // AMD AMF
-        FfmpegEncoderConfigurationSet::new("hevc_vaapi".to_string(), vec![], vec![Pixel::VAAPI]),
+        FfmpegEncoderConfigurationSet::new("hevc_vaapi", "hevc", vec![], vec![Pixel::VAAPI]),
         // Vulkan-based encoder
         FfmpegEncoderConfigurationSet::new(
-            "hevc_vulkan".to_string(),
+            "hevc_vulkan",
+            "hevc",
             vec![HashMap::from([
                 ("usage", "stream"),
                 ("tune", "ull"),
@@ -192,7 +224,8 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         ),
         // CPU-based software encoders
         FfmpegEncoderConfigurationSet::new(
-            "libx265".to_string(),
+            "libx265",
+            "hevc",
             vec![HashMap::from([
                 ("preset", "ultrafast"),
                 ("tune", "zerolatency"),
@@ -201,25 +234,29 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         ),
         // Don't think this exists
         FfmpegEncoderConfigurationSet::new(
-            "h265".to_string(),
+            "h265",
+            "hevc",
             vec![HashMap::new()],
             vec![Pixel::YUV420P],
         ),
         // Don't think this exists
         FfmpegEncoderConfigurationSet::new(
-            "x265".to_string(),
+            "x265",
+            "hevc",
             vec![HashMap::new()],
             vec![Pixel::YUV420P],
         ),
         // Don't think this exists
         FfmpegEncoderConfigurationSet::new(
-            "h264".to_string(),
+            "h264",
+            "h264",
             vec![HashMap::new()],
             vec![Pixel::YUV420P],
         ),
         // Vulkan-based h264 encoder
         FfmpegEncoderConfigurationSet::new(
-            "h264_vulkan".to_string(),
+            "h264_vulkan",
+            "h264",
             vec![HashMap::from([
                 ("tuning", "ll"),
                 ("usage", "stream"),
@@ -229,9 +266,42 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         ),
         // CPU-based software h264 encoder
         FfmpegEncoderConfigurationSet::new(
-            "libx264".to_string(),
+            "libx264",
+            "h264",
             vec![HashMap::new()],
             vec![Pixel::YUV420P],
         ),
     ])
+}
+
+pub fn get_relevant_codec_parameters(
+    encoder_family: &str,
+    encoder: &VideoEncoder,
+) -> HashMap<String, String> {
+    let name = encoder.codec().map(|c| c.name().to_owned());
+
+    match encoder_family {
+        "hevc" => HashMap::from([
+            ("preset".to_string(), "".to_string()),
+            (
+                "tune".to_string(),
+                "Encoder tuning (e.g., zerolatency)".to_string(),
+            ),
+            ("bitrate".to_string(), "Target bitrate in kbps".to_string()),
+            ("maxrate".to_string(), "Maximum bitrate in kbps".to_string()),
+            ("bufsize".to_string(), "Buffer size in kbps".to_string()),
+            ("g".to_string(), "GOP size (keyframe interval)".to_string()),
+            (
+                "rc-lookahead".to_string(),
+                "Number of frames for lookahead".to_string(),
+            ),
+        ]),
+        _ => {
+            warn!(
+                "Unknown codec family '{}', no relevant parameters available",
+                encoder_family
+            );
+            HashMap::new()
+        }
+    }
 }

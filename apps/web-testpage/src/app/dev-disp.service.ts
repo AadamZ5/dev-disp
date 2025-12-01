@@ -90,6 +90,11 @@ export class DevDispConnection {
           resolution: [800, 600],
         };
       },
+      handleRequestPreferredEncoding: async (configs) => {
+        console.log('Dev-disp preferred encodings requested', configs);
+        // For testing, just return the same list we were given.
+        return configs;
+      },
     };
 
     this.dispatchers = connectDevDispServer(

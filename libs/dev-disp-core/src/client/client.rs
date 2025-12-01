@@ -7,7 +7,7 @@ use futures_util::FutureExt;
 
 use crate::{
     client::{ScreenTransport, SomeScreenTransport, TransportError},
-    host::DisplayParameters,
+    host::{DisplayParameters, EncoderPossibleConfiguration},
     util::PinnedFuture,
 };
 
@@ -56,6 +56,13 @@ where
 
     pub async fn get_display_config(&mut self) -> Result<DisplayParameters, TransportError> {
         self.transport.get_display_config().await
+    }
+
+    pub async fn get_preferred_encodings(
+        &mut self,
+        configurations: Vec<EncoderPossibleConfiguration>,
+    ) -> Result<Vec<EncoderPossibleConfiguration>, TransportError> {
+        self.transport.get_preferred_encoding(configurations).await
     }
 
     pub fn into_transport(self) -> T {

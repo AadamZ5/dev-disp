@@ -1,4 +1,8 @@
-use dev_disp_comm::websocket::messages::{DisplayParameters, WsMessageDeviceInfo};
+use std::collections::HashMap;
+
+use dev_disp_comm::websocket::messages::{
+    DisplayParameters, EncoderPossibleConfiguration, WsMessageDeviceInfo,
+};
 use js_sys::Function;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
@@ -92,6 +96,25 @@ impl From<JsDisplayParameters> for WsMessageDeviceInfo {
     }
 }
 
+#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
+#[tsify(from_wasm_abi)]
+#[serde(rename_all = "camelCase")]
+pub struct JsEncoderPossibleConfiguration {
+    pub encoder_name: String,
+    pub encoder_family: String,
+    pub parameters: HashMap<String, String>,
+}
+
+impl From<JsEncoderPossibleConfiguration> for EncoderPossibleConfiguration {
+    fn from(val: JsEncoderPossibleConfiguration) -> Self {
+        EncoderPossibleConfiguration {
+            encoder_name: val.encoder_name,
+            encoder_family: val.encoder_family,
+            parameters: val.parameters,
+        }
+    }
+}
+
 #[wasm_bindgen(typescript_custom_section)]
 const WS_HANDLER_FN_TYPE_CONTENT: &str = r#"
 export type WsNotificationFunction = (event: DevDispEvent) => void;
@@ -110,6 +133,11 @@ export type WsHandlerScreenData = (event: DevDispEvent | null) => void;
 #[wasm_bindgen(typescript_custom_section)]
 const WS_HANDLER_REQUEST_DISPLAY_PARAMETERS: &str = r#"
 export type WsHandlerRequestDisplayParameters = (event: DevDispEvent) => JsDisplayParameters;
+"#;
+
+#[wasm_bindgen(typescript_custom_section)]
+const WS_HANDLER_REQUEST_PREFERRED_ENCODINGS: &str = r#"
+export type WsHandlerRequestPreferredEncodings = (event: JsEncoderPossibleConfiguration[]) => Promise<JsEncoderPossibleConfiguration[]>;
 "#;
 
 #[derive(Tsify, Deserialize, Clone, Debug)]
@@ -154,6 +182,10 @@ pub struct WsHandlers {
     #[serde(with = "serialize_function")]
     #[tsify(type = "WsHandlerRequestDisplayParameters")]
     pub handle_request_display_parameters: Function,
+
+    #[serde(with = "serialize_function")]
+    #[tsify(type = "WsHandlerRequestPreferredEncodings")]
+    pub handle_request_preferred_encoding: Function,
 }
 
 #[wasm_bindgen(typescript_custom_section)]

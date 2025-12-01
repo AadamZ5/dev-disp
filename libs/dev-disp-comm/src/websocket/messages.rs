@@ -1,6 +1,6 @@
 pub use dev_disp_core::{
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
-    host::DisplayParameters,
+    host::{DisplayParameters, EncoderPossibleConfiguration},
 };
 use serde::{Deserialize, Serialize};
 

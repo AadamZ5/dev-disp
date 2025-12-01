@@ -7,7 +7,10 @@ use futures_util::FutureExt;
 use log::debug;
 use thiserror::Error;
 
-use crate::{host::DisplayParameters, util::PinnedFuture};
+use crate::{
+    host::{DisplayParameters, EncoderPossibleConfiguration},
+    util::PinnedFuture,
+};
 
 #[derive(Debug, Error)]
 pub enum TransportError {
@@ -55,6 +58,11 @@ pub trait ScreenTransport {
         future::ready(Ok(())).boxed()
     }
 
+    fn get_preferred_encoding(
+        &mut self,
+        configurations: Vec<EncoderPossibleConfiguration>,
+    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>>;
+
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
@@ -99,6 +107,13 @@ impl ScreenTransport for SomeScreenTransport {
 
     fn notify_loading_screen(&self) -> PinnedFuture<'_, Result<(), TransportError>> {
         self.inner.notify_loading_screen()
+    }
+
+    fn get_preferred_encoding(
+        &mut self,
+        configurations: Vec<EncoderPossibleConfiguration>,
+    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
+        async move { Err(TransportError::NotImplemented) }.boxed()
     }
 
     fn send_screen_data<'s, 'a>(

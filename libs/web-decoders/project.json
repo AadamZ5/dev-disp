@@ -1,0 +1,26 @@
+{
+  "name": "web-decoders",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/web-decoders/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/web-decoders",
+        "main": "libs/web-decoders/src/index.ts",
+        "tsConfig": "libs/web-decoders/tsconfig.lib.json",
+        "assets": ["libs/web-decoders/*.md"]
+      }
+    },
+    "test": {
+      "executor": "@nx/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "options": {
+        "jestConfig": "libs/web-decoders/jest.config.ts"
+      }
+    }
+  }
+}

@@ -1,8 +1,9 @@
-use std::{fmt::Debug, time::Instant};
+use std::{collections::HashMap, fmt::Debug, time::Instant};
 
 use dev_disp_core::{
     host::{
-        Encoder as DevDispEncoder, EncoderParameters, EncoderProvider, VirtualScreenPixelFormat,
+        Encoder as DevDispEncoder, EncoderParameters, EncoderPossibleConfiguration,
+        EncoderProvider, VirtualScreenPixelFormat,
     },
     util::PinnedLocalFuture,
 };
@@ -11,10 +12,12 @@ use ffmpeg_next::{
     frame::Video, software::scaling::Context as ScalingContext,
 };
 use futures::FutureExt;
-use log::debug;
+use log::{debug, info};
 
 use crate::{
-    hevc::configurations::{FfmpegEncoderConfiguration, get_encoders},
+    hevc::configurations::{
+        FfmpegEncoderConfiguration, get_encoders, get_relevant_codec_parameters,
+    },
     util::ffmpeg_format_from_internal_format,
 };
 
@@ -44,31 +47,38 @@ pub struct HevcEncoder {
     state: Option<HevcEncoderState>,
 }
 
+pub fn get_encoder(
+    parameters: &EncoderParameters,
+    configuration: &FfmpegEncoderConfiguration,
+) -> Result<VideoEncoder, String> {
+    let mut codec = ffmpeg::encoder::find_by_name(&configuration.encoder_name)
+        .ok_or_else(|| format!("Encoder '{}' not found", configuration.encoder_name))?;
+
+    debug!("Initializing HEVC encoder: {}", codec.name(),);
+
+    let mut context = ffmpeg::codec::context::Context::new_with_codec(codec)
+        .encoder()
+        .video()
+        .map_err(|e| format!("Failed to create video codec context: {}", e))?;
+
+    context.set_height(parameters.height);
+    context.set_width(parameters.width);
+    context.set_format(configuration.pixel_format);
+    context.set_time_base((1, parameters.fps as i32));
+
+    let options = Dictionary::from_iter(configuration.encoder_options.clone().into_iter());
+    context
+        .open_with(options)
+        .map_err(|e| format!("Failed to open encoder: {}", e))
+}
+
 impl HevcEncoder {
     fn try_init(
         &mut self,
         parameters: EncoderParameters,
         configuration: FfmpegEncoderConfiguration,
     ) -> Result<HevcEncoderState, String> {
-        let codec = ffmpeg::encoder::find_by_name(&configuration.encoder_name)
-            .ok_or_else(|| format!("Encoder '{}' not found", configuration.encoder_name))?;
-
-        debug!("Initializing HEVC encoder: {}", codec.name(),);
-
-        let mut context = ffmpeg::codec::context::Context::new_with_codec(codec)
-            .encoder()
-            .video()
-            .map_err(|e| format!("Failed to create video codec context: {}", e))?;
-
-        context.set_height(parameters.height);
-        context.set_width(parameters.width);
-        context.set_format(configuration.pixel_format);
-        context.set_time_base((1, parameters.fps as i32));
-
-        let options = Dictionary::from_iter(configuration.encoder_options.into_iter());
-        let encoder = context
-            .open_with(options)
-            .map_err(|e| format!("Failed to open encoder: {}", e))?;
+        let encoder = get_encoder(&parameters, &configuration)?;
 
         let scaler = ScalingContext::get(
             ffmpeg_format_from_internal_format(&parameters.input_parameters.format),
@@ -80,6 +90,11 @@ impl HevcEncoder {
             ffmpeg::software::scaling::flag::Flags::BILINEAR,
         )
         .map_err(|e| format!("Failed to create scaler: {}", e))?;
+
+        info!(
+            "Initialized encoder: {}",
+            encoder.codec().unwrap().video().unwrap().description()
+        );
 
         let state = HevcEncoderState {
             encoder,
@@ -96,6 +111,29 @@ impl HevcEncoder {
 }
 
 impl DevDispEncoder for HevcEncoder {
+    fn get_supported_configurations(
+        &mut self,
+        parameters: &EncoderParameters,
+    ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
+        let supported_configurations: Vec<_> = get_encoders()
+            .filter_map(|config| match get_encoder(parameters, &config) {
+                Ok(encoder) => Some((encoder, config, parameters)),
+                Err(_) => None,
+            })
+            .map(|(encoder, config, _)| {
+                let codec_params = get_relevant_codec_parameters(&config.encoder_family, &encoder);
+
+                EncoderPossibleConfiguration {
+                    encoder_name: config.encoder_name,
+                    encoder_family: config.encoder_family,
+                    parameters: codec_params,
+                }
+            })
+            .collect();
+
+        Ok(supported_configurations)
+    }
+
     fn init(&mut self, parameters: EncoderParameters) -> PinnedLocalFuture<'_, Result<(), String>> {
         async move {
             ffmpeg::init().map_err(|e| format!("Failed to initialize ffmpeg: {}", e))?;

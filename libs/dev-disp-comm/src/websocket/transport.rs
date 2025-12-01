@@ -7,12 +7,12 @@ use async_tungstenite::{
 use dev_disp_core::{
     client::{ScreenTransport, TransportError},
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
-    host::DisplayParameters,
+    host::{DisplayParameters, EncoderPossibleConfiguration},
     util::PinnedFuture,
 };
 use futures::{AsyncRead, AsyncWrite, SinkExt, StreamExt, channel::mpsc};
 use futures_util::FutureExt;
-use log::{debug, error};
+use log::{debug, error, warn};
 
 use crate::websocket::messages::{
     WsMessageDeviceInfo, WsMessageFromClient, WsMessageFromSource, WsMessageProtocolInit,
@@ -24,6 +24,7 @@ struct BackgroundContext<S> {
     tx_protocol_init: mpsc::Sender<WsMessageProtocolInit>,
     tx_device_info: mpsc::Sender<WsMessageDeviceInfo>,
     tx_core_display_params_update: mpsc::Sender<DisplayParameters>,
+    tx_core_preferred_encoding_response: mpsc::Sender<Vec<EncoderPossibleConfiguration>>,
 }
 
 pub struct WsTransport<S> {
@@ -36,6 +37,7 @@ pub struct WsTransport<S> {
     rx_device_info: mpsc::Receiver<WsMessageDeviceInfo>,
 
     rx_core_display_params_update: mpsc::Receiver<DisplayParameters>,
+    rx_core_preferred_encoding_response: mpsc::Receiver<Vec<EncoderPossibleConfiguration>>,
 }
 
 impl<S> WsTransport<S>
@@ -48,12 +50,15 @@ where
         let (tx_protocol_init, rx_protocol_init) = mpsc::channel(100);
         let (tx_device_info, rx_device_info) = mpsc::channel(100);
         let (tx_core_display_params_update, rx_core_display_params_update) = mpsc::channel(100);
+        let (tx_core_preferred_encoding_response, rx_core_preferred_encoding_response) =
+            mpsc::channel(100);
 
         let background_ctx = BackgroundContext {
             ws_rx,
             tx_protocol_init,
             tx_device_info,
             tx_core_display_params_update,
+            tx_core_preferred_encoding_response,
         };
 
         Self {
@@ -62,6 +67,7 @@ where
             rx_protocol_init,
             rx_device_info,
             rx_core_display_params_update,
+            rx_core_preferred_encoding_response,
         }
     }
 
@@ -127,17 +133,17 @@ where
                                         .await
                                         .map_err(|e| TransportError::Other(Box::new(e)))?;
                                 }
-                                _ => {
-                                    debug!(
-                                        "Received unhandled core message from client: {:?}",
-                                        core_msg
-                                    );
+                               DevDispMessageFromClient::EncodingPreferenceResponse(encoder_possible_configurations) => {
+                                    background_ctx
+                                        .tx_core_preferred_encoding_response
+                                        .send(encoder_possible_configurations)
+                                        .await
+                                        .map_err(|e| TransportError::Other(Box::new(e)))?;
                                 }
-                            },
-                            other => {
-                                error!("Received unexpected WebSocket message {:?}", other);
-                                continue;
                             }
+                            WsMessageFromClient::ResponsePreInit => {
+                                warn!("Received pre-init response when we weren't expecting it... ignoring.");
+                            },
                         }
                     }
                     Ok(_) => return Err(TransportError::Unknown),
@@ -200,6 +206,27 @@ where
             debug!("Waiting for display parameters response...");
 
             self.rx_core_display_params_update
+                .next()
+                .await
+                .ok_or(TransportError::NoConnection)
+        }
+        .boxed()
+    }
+
+    fn get_preferred_encoding(
+        &mut self,
+        configurations: Vec<EncoderPossibleConfiguration>,
+    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
+        async move {
+            let req_pref_encoding = WsMessageFromSource::Core(
+                DevDispMessageFromSource::GetPreferredEncodingRequest(configurations),
+            );
+            debug!("Requesting preferred encoding: {:?}", req_pref_encoding);
+            self.send_msg(req_pref_encoding).await?;
+
+            debug!("Waiting for preferred encoding response...");
+
+            self.rx_core_preferred_encoding_response
                 .next()
                 .await
                 .ok_or(TransportError::NoConnection)
