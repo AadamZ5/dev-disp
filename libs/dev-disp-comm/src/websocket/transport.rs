@@ -25,6 +25,7 @@ struct BackgroundContext<S> {
     tx_device_info: mpsc::Sender<WsMessageDeviceInfo>,
     tx_core_display_params_update: mpsc::Sender<DisplayParameters>,
     tx_core_preferred_encoding_response: mpsc::Sender<Vec<EncoderPossibleConfiguration>>,
+    tx_core_set_encoding_response: mpsc::Sender<bool>,
 }
 
 pub struct WsTransport<S> {
@@ -38,6 +39,7 @@ pub struct WsTransport<S> {
 
     rx_core_display_params_update: mpsc::Receiver<DisplayParameters>,
     rx_core_preferred_encoding_response: mpsc::Receiver<Vec<EncoderPossibleConfiguration>>,
+    rx_core_set_encoding_response: mpsc::Receiver<bool>,
 }
 
 impl<S> WsTransport<S>
@@ -47,11 +49,12 @@ where
     pub fn new(websocket: WebSocketStream<S>) -> Self {
         let (ws_tx, ws_rx) = websocket.split();
 
-        let (tx_protocol_init, rx_protocol_init) = mpsc::channel(100);
-        let (tx_device_info, rx_device_info) = mpsc::channel(100);
-        let (tx_core_display_params_update, rx_core_display_params_update) = mpsc::channel(100);
+        let (tx_protocol_init, rx_protocol_init) = mpsc::channel(2);
+        let (tx_device_info, rx_device_info) = mpsc::channel(2);
+        let (tx_core_display_params_update, rx_core_display_params_update) = mpsc::channel(10);
         let (tx_core_preferred_encoding_response, rx_core_preferred_encoding_response) =
-            mpsc::channel(100);
+            mpsc::channel(2);
+        let (tx_core_set_encoding_response, rx_core_set_encoding_response) = mpsc::channel(2);
 
         let background_ctx = BackgroundContext {
             ws_rx,
@@ -59,6 +62,7 @@ where
             tx_device_info,
             tx_core_display_params_update,
             tx_core_preferred_encoding_response,
+            tx_core_set_encoding_response,
         };
 
         Self {
@@ -68,6 +72,7 @@ where
             rx_device_info,
             rx_core_display_params_update,
             rx_core_preferred_encoding_response,
+            rx_core_set_encoding_response,
         }
     }
 
@@ -137,6 +142,13 @@ where
                                     background_ctx
                                         .tx_core_preferred_encoding_response
                                         .send(encoder_possible_configurations)
+                                        .await
+                                        .map_err(|e| TransportError::Other(Box::new(e)))?;
+                                },
+                                DevDispMessageFromClient::SetEncodingResponse(success) => {
+                                    background_ctx
+                                        .tx_core_set_encoding_response
+                                        .send(success)
                                         .await
                                         .map_err(|e| TransportError::Other(Box::new(e)))?;
                                 }
@@ -230,6 +242,31 @@ where
                 .next()
                 .await
                 .ok_or(TransportError::NoConnection)
+        }
+        .boxed()
+    }
+
+    fn set_encoding(
+        &mut self,
+        configuration: EncoderPossibleConfiguration,
+    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+        async move {
+            let set_encoding_msg =
+                WsMessageFromSource::Core(DevDispMessageFromSource::SetEncoding(configuration));
+            self.send_msg(set_encoding_msg).await?;
+
+            debug!("Waiting for set encoding response...");
+            self.rx_core_set_encoding_response
+                .next()
+                .await
+                .ok_or(TransportError::NoConnection)
+                .and_then(|success| {
+                    if success {
+                        Ok(())
+                    } else {
+                        Err(TransportError::Unknown)
+                    }
+                })
         }
         .boxed()
     }

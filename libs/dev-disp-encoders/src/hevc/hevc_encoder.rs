@@ -134,11 +134,35 @@ impl DevDispEncoder for HevcEncoder {
         Ok(supported_configurations)
     }
 
-    fn init(&mut self, parameters: EncoderParameters) -> PinnedLocalFuture<'_, Result<(), String>> {
+    fn init(
+        &mut self,
+        parameters: EncoderParameters,
+        preferred_encoders: Vec<EncoderPossibleConfiguration>,
+    ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
         async move {
             ffmpeg::init().map_err(|e| format!("Failed to initialize ffmpeg: {}", e))?;
 
-            let mut encoders = get_encoders();
+            let mut encoders: Box<dyn Iterator<Item = FfmpegEncoderConfiguration>>;
+
+            if preferred_encoders.is_empty() {
+                info!("No preferred encoders specified, trying all available HEVC encoders.");
+                encoders = Box::new(get_encoders());
+            } else {
+                info!(
+                    "Trying preferred encoders in order: {:?}",
+                    preferred_encoders
+                        .iter()
+                        .map(|e| e.encoder_name.clone())
+                        .collect::<Vec<_>>()
+                );
+
+                encoders = Box::new(get_encoders().filter(move |config| {
+                    preferred_encoders.iter().any(|preferred| {
+                        preferred.encoder_name == config.encoder_name
+                            && preferred.encoder_family == config.encoder_family
+                    })
+                }));
+            }
 
             while let Some(configuration) = encoders.next() {
                 debug!(
@@ -154,8 +178,21 @@ impl DevDispEncoder for HevcEncoder {
                             "Successfully initialized encoder: {}",
                             configuration.encoder_name
                         );
+
+                        let codec_params = get_relevant_codec_parameters(
+                            &configuration.encoder_family,
+                            &state.encoder,
+                        );
+
+                        let configuration = EncoderPossibleConfiguration {
+                            encoder_name: configuration.encoder_name,
+                            encoder_family: configuration.encoder_family,
+                            parameters: codec_params,
+                        };
+
                         self.state = Some(state);
-                        return Ok(());
+
+                        return Ok(configuration);
                     }
                     Err(e) => {
                         debug!(

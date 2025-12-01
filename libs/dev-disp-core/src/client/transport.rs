@@ -63,6 +63,11 @@ pub trait ScreenTransport {
         configurations: Vec<EncoderPossibleConfiguration>,
     ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>>;
 
+    fn set_encoding(
+        &mut self,
+        configuration: EncoderPossibleConfiguration,
+    ) -> PinnedFuture<'_, Result<(), TransportError>>;
+
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
@@ -113,7 +118,14 @@ impl ScreenTransport for SomeScreenTransport {
         &mut self,
         configurations: Vec<EncoderPossibleConfiguration>,
     ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
-        async move { Err(TransportError::NotImplemented) }.boxed()
+        self.inner.get_preferred_encoding(configurations)
+    }
+
+    fn set_encoding(
+        &mut self,
+        configuration: EncoderPossibleConfiguration,
+    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+        self.inner.set_encoding(configuration)
     }
 
     fn send_screen_data<'s, 'a>(

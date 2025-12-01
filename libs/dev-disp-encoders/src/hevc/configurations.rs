@@ -118,7 +118,7 @@ impl FfmpegEncoderBruteForceIterator {
         self.configurations
     }
 
-    pub fn into_iter_encoders(self) -> impl Iterator<Item = String> {
+    pub fn into_iter_encoder_names(self) -> impl Iterator<Item = String> {
         self.configurations.into_iter().map(|set| set.encoder_name)
     }
 }

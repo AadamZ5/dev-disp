@@ -140,6 +140,11 @@ const WS_HANDLER_REQUEST_PREFERRED_ENCODINGS: &str = r#"
 export type WsHandlerRequestPreferredEncodings = (event: JsEncoderPossibleConfiguration[]) => Promise<JsEncoderPossibleConfiguration[]>;
 "#;
 
+#[wasm_bindgen(typescript_custom_section)]
+const WS_HANDLER_SET_ENCODING: &str = r#"
+export type WsHandlerSetEncoding = (event: JsEncoderPossibleConfiguration) => void;
+"#;
+
 #[derive(Tsify, Deserialize, Clone, Debug)]
 #[tsify(from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
@@ -186,6 +191,10 @@ pub struct WsHandlers {
     #[serde(with = "serialize_function")]
     #[tsify(type = "WsHandlerRequestPreferredEncodings")]
     pub handle_request_preferred_encoding: Function,
+
+    #[serde(with = "serialize_function")]
+    #[tsify(type = "WsHandlerSetEncoding")]
+    pub handle_set_encoding: Function,
 }
 
 #[wasm_bindgen(typescript_custom_section)]

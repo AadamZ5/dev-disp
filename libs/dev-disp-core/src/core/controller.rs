@@ -182,16 +182,30 @@ where
         preferred_configurations
     );
 
-    // TODO: Do encoder negotiation here!
-
     debug!("Initializing encoder...");
-    let encoder_init_result = encoder.init(encoder_parameters).await;
-    if let Err(e) = encoder_init_result {
-        error!("Failed to initialize encoder: {}", e);
-        close_dev(&mut host).await;
-        return Err((host, "Failed to initialize encoder".to_string()));
+    let encoder_init_result = encoder
+        .init(encoder_parameters, preferred_configurations)
+        .await;
+    let initialized_codec = match encoder_init_result {
+        Err(e) => {
+            error!("Failed to initialize encoder: {}", e);
+            close_dev(&mut host).await;
+            return Err((host, "Failed to initialize encoder".to_string()));
+        }
+        Ok(config) => config,
     };
-    debug!("Initialized encoder.");
+    debug!(
+        "Initialized encoder with {}.",
+        initialized_codec.encoder_name
+    );
+
+    debug!("Setting encoding on host...");
+    if let Err(e) = host.set_encoding(initialized_codec).await {
+        error!("Failed to set encoding on host: {}", e);
+        close_dev(&mut host).await;
+        return Err((host, "Failed to set encoding on host".to_string()));
+    }
+    debug!("Set encoding on host.");
 
     debug!("Starting screen tasks...");
     let screen_background_task = future::lazy(|_| {

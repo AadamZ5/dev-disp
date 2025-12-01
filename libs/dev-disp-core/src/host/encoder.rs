@@ -75,8 +75,13 @@ pub trait Encoder {
     ) -> Result<Vec<EncoderPossibleConfiguration>, String>;
 
     /// Called first, to initialize the encoder with the given parameters.
+    /// Must return the successfully initialized encoder configuration.
     /// TODO: Better error type
-    fn init(&mut self, parameters: EncoderParameters) -> PinnedLocalFuture<'_, Result<(), String>>;
+    fn init(
+        &mut self,
+        parameters: EncoderParameters,
+        preferred_encoders: Vec<EncoderPossibleConfiguration>,
+    ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>>;
 
     /// Encodes a frame of raw data, returning the encoded data.
     /// TODO: Better error type
@@ -114,10 +119,15 @@ impl Encoder for RawEncoder {
     fn init(
         &mut self,
         _parameters: EncoderParameters,
-    ) -> PinnedLocalFuture<'_, Result<(), String>> {
+        _preferred_encoders: Vec<EncoderPossibleConfiguration>,
+    ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
         async move {
             // No initialization needed for raw encoder
-            Ok(())
+            Ok(EncoderPossibleConfiguration {
+                encoder_name: "raw".to_string(),
+                encoder_family: "raw".to_string(),
+                parameters: HashMap::new(),
+            })
         }
         .boxed_local()
     }

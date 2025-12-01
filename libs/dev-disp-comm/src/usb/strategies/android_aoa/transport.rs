@@ -117,6 +117,13 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         todo!("Not implemented yet for Android AOA transport")
     }
 
+    fn set_encoding(
+        &mut self,
+        _configuration: dev_disp_core::host::EncoderPossibleConfiguration,
+    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+        todo!("Not implemented yet for Android AOA transport")
+    }
+
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],

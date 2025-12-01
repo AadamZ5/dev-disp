@@ -263,6 +263,37 @@ where
                                 send_ws_message(&mut response_tx, resp).await?;
                                 debug!("Sent EncodingPreferenceResponse message");
                             }
+                            DevDispMessageFromSource::SetEncoding(configuration) => {
+                                debug!("Handling SetEncoding message");
+                                let js_config = JsEncoderPossibleConfiguration {
+                                    encoder_name: configuration.encoder_name,
+                                    encoder_family: configuration.encoder_family,
+                                    parameters: configuration.parameters,
+                                };
+                                let js_value = serde_wasm_bindgen::to_value(&js_config).map_err(|e| {
+                                    JsError::new(&format!(
+                                        "Failed to convert EncoderPossibleConfiguration to JsValue: {:?}",
+                                        e
+                                    ))
+                                })?;
+
+                                let _ = handlers
+                                    .handle_set_encoding
+                                    .call1(&JsValue::NULL, &js_value)
+                                    .map_err(|e| {
+                                        JsError::new(&format!(
+                                            "Failed to call set encoding handler: {:?}",
+                                            e
+                                        ))
+                                    })?;
+                                debug!("Called set encoding handler");
+
+                                let resp = WsMessageFromClient::Core(
+                                    DevDispMessageFromClient::SetEncodingResponse(true),
+                                );
+                                send_ws_message(&mut response_tx, resp).await?;
+                                debug!("Sent SetEncodingResponse message");
+                            }
                         }
                     }
                 }

@@ -13,6 +13,8 @@ pub enum DevDispMessageFromSource<'a> {
     /// A request to get the preferred encoding from a set of possible configurations.
     GetPreferredEncodingRequest(Vec<EncoderPossibleConfiguration>),
 
+    SetEncoding(EncoderPossibleConfiguration),
+
     /// A command do put the given screen data.
     ///
     /// TODO: Allow region updates, or other metadata about the update
@@ -36,6 +38,9 @@ impl Display for DevDispMessageFromSource<'_> {
             DevDispMessageFromSource::PutScreenData(data) => {
                 write!(f, "PutScreenData ({} bytes)", data.len())
             }
+            DevDispMessageFromSource::SetEncoding(config) => {
+                write!(f, "SetEncoding ({})", config.encoder_name)
+            }
         }
     }
 }
@@ -44,8 +49,11 @@ impl Display for DevDispMessageFromSource<'_> {
 /// (ex: a mobile phone presenting screen data from a laptop)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum DevDispMessageFromClient {
+    /// Response to GetPreferredEncodingRequest message
     EncodingPreferenceResponse(Vec<EncoderPossibleConfiguration>),
-
+    /// Response to SetEncoding message, true if successful
+    SetEncodingResponse(bool),
+    /// Update with the current display parameters of the client device
     DisplayParametersUpdate(DisplayParameters),
 }
 
@@ -61,6 +69,9 @@ impl Display for DevDispMessageFromClient {
                     "EncodingPreferenceResponse ({} configurations)",
                     configs.len()
                 )
+            }
+            DevDispMessageFromClient::SetEncodingResponse(success) => {
+                write!(f, "SetEncodingResponse (success: {})", success)
             }
         }
     }

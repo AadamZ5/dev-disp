@@ -92,8 +92,54 @@ export class DevDispConnection {
       },
       handleRequestPreferredEncoding: async (configs) => {
         console.log('Dev-disp preferred encodings requested', configs);
-        // For testing, just return the same list we were given.
-        return configs;
+
+        const compatibleConfigResults = await Promise.allSettled(
+          configs.map(async (cfg) => {
+            return VideoDecoder.isConfigSupported({
+              codec: cfg.encoderFamily,
+              codedHeight: 600,
+              codedWidth: 800,
+            }).then((supportResult) => {
+              console.log(
+                `Config support result for ${cfg.encoderFamily} (${cfg.encoderName}):`,
+                supportResult.supported
+              );
+              return {
+                supportResult,
+                config: cfg,
+              };
+            });
+          })
+        );
+
+        return compatibleConfigResults
+          .filter((result) => {
+            return result.status === 'fulfilled';
+          })
+          .map((result) => {
+            const fulfilled = result as PromiseFulfilledResult<{
+              supportResult: VideoDecoderSupport;
+              config: (typeof configs)[number];
+            }>;
+            return fulfilled.value.config;
+          });
+      },
+      handleSetEncoding: (encodingConfig) => {
+        console.log('Dev-disp set encoding requested', encodingConfig);
+        const decode = new VideoDecoder({
+          output: (frame) => {
+            console.log('Decoded frame:', frame);
+            frame.close();
+          },
+          error: (e) => {
+            console.error('VideoDecoder error:', e);
+          },
+        });
+        decode.configure({
+          codec: encodingConfig.encoderFamily,
+          codedHeight: 600,
+          codedWidth: 800,
+        });
       },
     };
 

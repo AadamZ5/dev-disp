@@ -65,6 +65,13 @@ where
         self.transport.get_preferred_encoding(configurations).await
     }
 
+    pub async fn set_encoding(
+        &mut self,
+        configuration: EncoderPossibleConfiguration,
+    ) -> Result<(), TransportError> {
+        self.transport.set_encoding(configuration).await
+    }
+
     pub fn into_transport(self) -> T {
         self.transport
     }
