@@ -126,6 +126,7 @@ impl DevDispEncoder for HevcEncoder {
                 EncoderPossibleConfiguration {
                     encoder_name: config.encoder_name,
                     encoder_family: config.encoder_family,
+                    encoded_resolution: (parameters.width, parameters.height),
                     parameters: codec_params,
                 }
             })
@@ -187,6 +188,7 @@ impl DevDispEncoder for HevcEncoder {
                         let configuration = EncoderPossibleConfiguration {
                             encoder_name: configuration.encoder_name,
                             encoder_family: configuration.encoder_family,
+                            encoded_resolution: (parameters.width, parameters.height),
                             parameters: codec_params,
                         };
 

@@ -61,6 +61,8 @@ pub struct EncoderParameters {
 pub struct EncoderPossibleConfiguration {
     /// The name of the encoder, e.g., "h264_nvenc"
     pub encoder_name: String,
+    /// What resolution the encoder is configured for
+    pub encoded_resolution: (u32, u32),
     /// Something like "hevc", "h264", "vp8", etc.
     /// Or "raw" for raw uncompressed output.
     pub encoder_family: String,
@@ -107,18 +109,19 @@ pub struct RawEncoder;
 impl Encoder for RawEncoder {
     fn get_supported_configurations(
         &mut self,
-        _parameters: &EncoderParameters,
+        screen_parameters: &EncoderParameters,
     ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
         Ok(vec![EncoderPossibleConfiguration {
             encoder_name: "raw".to_string(),
             encoder_family: "raw".to_string(),
+            encoded_resolution: (screen_parameters.width, screen_parameters.height),
             parameters: HashMap::new(),
         }])
     }
 
     fn init(
         &mut self,
-        _parameters: EncoderParameters,
+        screen_parameters: EncoderParameters,
         _preferred_encoders: Vec<EncoderPossibleConfiguration>,
     ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
         async move {
@@ -126,6 +129,7 @@ impl Encoder for RawEncoder {
             Ok(EncoderPossibleConfiguration {
                 encoder_name: "raw".to_string(),
                 encoder_family: "raw".to_string(),
+                encoded_resolution: (screen_parameters.width, screen_parameters.height),
                 parameters: HashMap::new(),
             })
         }

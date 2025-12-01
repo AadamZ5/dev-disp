@@ -102,6 +102,7 @@ impl From<JsDisplayParameters> for WsMessageDeviceInfo {
 pub struct JsEncoderPossibleConfiguration {
     pub encoder_name: String,
     pub encoder_family: String,
+    pub encoded_resolution: (u32, u32),
     pub parameters: HashMap<String, String>,
 }
 
@@ -110,6 +111,18 @@ impl From<JsEncoderPossibleConfiguration> for EncoderPossibleConfiguration {
         EncoderPossibleConfiguration {
             encoder_name: val.encoder_name,
             encoder_family: val.encoder_family,
+            encoded_resolution: val.encoded_resolution,
+            parameters: val.parameters,
+        }
+    }
+}
+
+impl From<EncoderPossibleConfiguration> for JsEncoderPossibleConfiguration {
+    fn from(val: EncoderPossibleConfiguration) -> Self {
+        JsEncoderPossibleConfiguration {
+            encoder_name: val.encoder_name,
+            encoder_family: val.encoder_family,
+            encoded_resolution: val.encoded_resolution,
             parameters: val.parameters,
         }
     }

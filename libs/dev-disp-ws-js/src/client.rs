@@ -5,7 +5,7 @@ use dev_disp_comm::websocket::messages::{
     EncoderPossibleConfiguration, WsMessageFromClient, WsMessageFromSource,
 };
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use js_sys::Promise;
+use js_sys::{Promise, Uint8Array};
 use log::{debug, warn};
 use wasm_bindgen::{JsCast, JsError, JsValue};
 use wasm_bindgen_futures::JsFuture;
@@ -57,6 +57,8 @@ where
     S: Sink<WsMessage> + Unpin,
     S::Error: Debug,
 {
+    let mut screen_buffer = Vec::<u8>::new();
+
     while let Some(data) = stream.next().await {
         match data {
             WsMessage::Text(text) => {
@@ -164,7 +166,7 @@ where
                                 );
                                 let event = DevDispEvent {
                                     error: None,
-                                    data: None,
+                                    data: Some(JsValue::from(Uint8Array::from(screen_data))),
                                 };
                                 let _ = handlers
                                     .handle_screen_data
@@ -202,11 +204,7 @@ where
                                 let event = encodings
                                     .into_iter()
                                     .filter_map(|config| {
-                                        let js_config = JsEncoderPossibleConfiguration {
-                                            encoder_name: config.encoder_name,
-                                            encoder_family: config.encoder_family,
-                                            parameters: config.parameters,
-                                        };
+                                        let js_config: JsEncoderPossibleConfiguration = config.into();
                                         match serde_wasm_bindgen::to_value(&js_config) {
                                             Ok(val) => Some(val),
                                             Err(e) => {
@@ -265,11 +263,8 @@ where
                             }
                             DevDispMessageFromSource::SetEncoding(configuration) => {
                                 debug!("Handling SetEncoding message");
-                                let js_config = JsEncoderPossibleConfiguration {
-                                    encoder_name: configuration.encoder_name,
-                                    encoder_family: configuration.encoder_family,
-                                    parameters: configuration.parameters,
-                                };
+                                let js_config: JsEncoderPossibleConfiguration =
+                                    configuration.into();
                                 let js_value = serde_wasm_bindgen::to_value(&js_config).map_err(|e| {
                                     JsError::new(&format!(
                                         "Failed to convert EncoderPossibleConfiguration to JsValue: {:?}",

@@ -46,6 +46,25 @@ export class DevDispConnection {
   private intentionalDisconnect = false;
 
   constructor(public readonly address: string, canvas?: OffscreenCanvas) {
+    const context2d = canvas?.getContext('2d');
+
+    const decode = new VideoDecoder({
+      output: (frame) => {
+        console.log('Decoded frame:', frame);
+        context2d?.drawImage(
+          frame,
+          0,
+          0,
+          frame.displayWidth,
+          frame.displayHeight
+        );
+        frame.close();
+      },
+      error: (e) => {
+        console.error('VideoDecoder error:', e);
+      },
+    });
+
     const handlers: WsHandlers = {
       onPreInit: () => {
         console.log('Dev-disp pre-init requested');
@@ -81,6 +100,17 @@ export class DevDispConnection {
       },
       handleScreenData: (e) => {
         console.log('Dev-disp screen data received', e);
+
+        if (!e?.data) {
+          return;
+        }
+        const chunk = new EncodedVideoChunk({
+          data: new Uint8Array(e?.data!),
+          timestamp: 0,
+          type: 'key',
+        });
+        decode.decode(chunk);
+
         this._screenData$.next(e?.data);
       },
       handleRequestDisplayParameters: (e) => {
@@ -97,8 +127,8 @@ export class DevDispConnection {
           configs.map(async (cfg) => {
             return VideoDecoder.isConfigSupported({
               codec: cfg.encoderFamily,
-              codedHeight: 600,
-              codedWidth: 800,
+              codedHeight: cfg.encodedResolution[0],
+              codedWidth: cfg.encodedResolution[1],
             }).then((supportResult) => {
               console.log(
                 `Config support result for ${cfg.encoderFamily} (${cfg.encoderName}):`,
@@ -126,19 +156,11 @@ export class DevDispConnection {
       },
       handleSetEncoding: (encodingConfig) => {
         console.log('Dev-disp set encoding requested', encodingConfig);
-        const decode = new VideoDecoder({
-          output: (frame) => {
-            console.log('Decoded frame:', frame);
-            frame.close();
-          },
-          error: (e) => {
-            console.error('VideoDecoder error:', e);
-          },
-        });
+
         decode.configure({
           codec: encodingConfig.encoderFamily,
-          codedHeight: 600,
-          codedWidth: 800,
+          codedHeight: encodingConfig.encodedResolution[0],
+          codedWidth: encodingConfig.encodedResolution[1],
         });
       },
     };
