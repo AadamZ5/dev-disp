@@ -93,7 +93,7 @@ impl ScreenProvider for EvdiScreenProvider {
         };
         debug!("Opened EVDI device");
 
-        let mut handle = unconnected_handle.connect(&device_config);
+        let handle = unconnected_handle.connect(&device_config);
         debug!("Connected to EVDI device");
 
         // For simplicity don't handle the mode changing after we start
@@ -106,6 +106,8 @@ impl ScreenProvider for EvdiScreenProvider {
             }
         };
 
+        info!("Received initial EVDI device mode: {mode:?}");
+
         let pixel_format = match mode.pixel_format {
             Ok(format) => format,
             Err(e) => {
@@ -114,15 +116,20 @@ impl ScreenProvider for EvdiScreenProvider {
             }
         };
 
-        let pixel_format = match evdi_format_to_internal_format(pixel_format as u32) {
-            Ok(fmt) => fmt,
+        let evdi_pixel_format = pixel_format;
+        let pixel_format = match evdi_format_to_internal_format(evdi_pixel_format as u32) {
+            Ok(fmt) => {
+                debug!(
+                    "Mapped EVDI pixel format from {} to internal format {:?}",
+                    evdi_pixel_format as u32, fmt
+                );
+                fmt
+            }
             Err(e) => {
                 error!("Unsupported EVDI pixel format: {}", e);
                 return Err(e.to_string());
             }
         };
-
-        info!("Received initial EVDI device mode: {mode:?}");
 
         // Redundant, but left here so you know this is default behavior
         // handle.enable_cursor_events(false);
@@ -144,14 +151,8 @@ pub struct EvdiScreen {
     pixel_format: VirtualScreenPixelFormat,
 }
 
-const EMPTY_BYTES: [u8; 0] = [0; 0];
-
 impl EvdiScreen {
-    pub fn new(
-        mut handle: EvdiHandle,
-        mode: Mode,
-        pixel_format: VirtualScreenPixelFormat,
-    ) -> Self {
+    pub fn new(mut handle: EvdiHandle, mode: Mode, pixel_format: VirtualScreenPixelFormat) -> Self {
         let buffer_id = handle.new_buffer(&mode);
 
         Self {

@@ -139,11 +139,13 @@ where
     debug!("Got format parameters: {:?}", format_params);
 
     let encoder_parameters = EncoderParameters {
+        // Note here, formatting to the same width/height as the screen
         width: format_params.width,
         height: format_params.height,
+
         bitrate: 1000000, // TODO: Make this configurable
         fps: 60,          // TODO: Make this configurable
-        input_parameters: format_params,
+        encoder_input_parameters: format_params,
     };
 
     let supported_configurations = match encoder.get_supported_configurations(&encoder_parameters) {
@@ -184,7 +186,7 @@ where
 
     debug!("Initializing encoder...");
     let encoder_init_result = encoder
-        .init(encoder_parameters, preferred_configurations)
+        .init(encoder_parameters, Some(preferred_configurations))
         .await;
     let initialized_codec = match encoder_init_result {
         Err(e) => {

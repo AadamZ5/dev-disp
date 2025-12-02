@@ -96,27 +96,5 @@ export class ScreenComponent implements AfterViewInit {
     { initialValue: 0 }
   );
 
-  ngAfterViewInit(): void {
-    asyncScheduler.schedule(() => {
-      effect(
-        () => {
-          const canvas = this.canvas();
-
-          const ctx = canvas?.nativeElement.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = 'green';
-            ctx.fillRect(
-              0,
-              0,
-              canvas!.nativeElement.width,
-              canvas!.nativeElement.height
-            );
-          }
-        },
-        {
-          injector: this.injector,
-        }
-      );
-    });
-  }
+  ngAfterViewInit(): void {}
 }

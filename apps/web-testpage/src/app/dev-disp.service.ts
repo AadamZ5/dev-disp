@@ -144,7 +144,10 @@ export class DevDispConnection {
 
         return compatibleConfigResults
           .filter((result) => {
-            return result.status === 'fulfilled';
+            return (
+              result.status === 'fulfilled' &&
+              result.value.supportResult.supported
+            );
           })
           .map((result) => {
             const fulfilled = result as PromiseFulfilledResult<{

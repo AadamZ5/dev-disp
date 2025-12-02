@@ -54,7 +54,7 @@ pub struct EncoderParameters {
     pub height: u32,
     pub bitrate: u32,
     pub fps: u32,
-    pub input_parameters: ScreenOutputParameters,
+    pub encoder_input_parameters: ScreenOutputParameters,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,7 +82,7 @@ pub trait Encoder {
     fn init(
         &mut self,
         parameters: EncoderParameters,
-        preferred_encoders: Vec<EncoderPossibleConfiguration>,
+        preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
     ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>>;
 
     /// Encodes a frame of raw data, returning the encoded data.
@@ -122,7 +122,7 @@ impl Encoder for RawEncoder {
     fn init(
         &mut self,
         screen_parameters: EncoderParameters,
-        _preferred_encoders: Vec<EncoderPossibleConfiguration>,
+        _preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
     ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
         async move {
             // No initialization needed for raw encoder

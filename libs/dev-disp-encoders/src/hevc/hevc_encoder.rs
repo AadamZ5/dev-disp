@@ -81,13 +81,13 @@ impl HevcEncoder {
         let encoder = get_encoder(&parameters, &configuration)?;
 
         let scaler = ScalingContext::get(
-            ffmpeg_format_from_internal_format(&parameters.input_parameters.format),
-            parameters.input_parameters.width,
-            parameters.input_parameters.height,
+            ffmpeg_format_from_internal_format(&parameters.encoder_input_parameters.format),
+            parameters.encoder_input_parameters.width,
+            parameters.encoder_input_parameters.height,
             configuration.pixel_format,
             parameters.width,
             parameters.height,
-            ffmpeg::software::scaling::flag::Flags::BILINEAR,
+            ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
         )
         .map_err(|e| format!("Failed to create scaler: {}", e))?;
 
@@ -138,31 +138,33 @@ impl DevDispEncoder for HevcEncoder {
     fn init(
         &mut self,
         parameters: EncoderParameters,
-        preferred_encoders: Vec<EncoderPossibleConfiguration>,
+        preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
     ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
         async move {
             ffmpeg::init().map_err(|e| format!("Failed to initialize ffmpeg: {}", e))?;
 
             let mut encoders: Box<dyn Iterator<Item = FfmpegEncoderConfiguration>>;
 
-            if preferred_encoders.is_empty() {
-                info!("No preferred encoders specified, trying all available HEVC encoders.");
-                encoders = Box::new(get_encoders());
-            } else {
-                info!(
-                    "Trying preferred encoders in order: {:?}",
-                    preferred_encoders
-                        .iter()
-                        .map(|e| e.encoder_name.clone())
-                        .collect::<Vec<_>>()
-                );
-
-                encoders = Box::new(get_encoders().filter(move |config| {
-                    preferred_encoders.iter().any(|preferred| {
-                        preferred.encoder_name == config.encoder_name
-                            && preferred.encoder_family == config.encoder_family
-                    })
-                }));
+            match preferred_encoders {
+                None => {
+                    info!("No preferred encoders specified, will try all available HEVC encoders.");
+                    encoders = Box::new(get_encoders());
+                }
+                Some(ref prefs) => {
+                    info!(
+                        "Trying preferred encoders in order: {:?}",
+                        prefs
+                            .iter()
+                            .map(|e| e.encoder_name.clone())
+                            .collect::<Vec<_>>()
+                    );
+                    encoders = Box::new(get_encoders().filter(move |config| {
+                        prefs.iter().any(|preferred| {
+                            preferred.encoder_name == config.encoder_name
+                                && preferred.encoder_family == config.encoder_family
+                        })
+                    }));
+                }
             }
 
             while let Some(configuration) = encoders.next() {
@@ -225,21 +227,16 @@ impl DevDispEncoder for HevcEncoder {
 
             let start = Instant::now();
 
+            // Frame representing input data before scaling
             let mut input_frame = Video::new(
-                ffmpeg_format_from_internal_format(&state.given_params.input_parameters.format),
-                state.given_params.input_parameters.width,
-                state.given_params.input_parameters.height,
+                ffmpeg_format_from_internal_format(&state.given_params.encoder_input_parameters.format),
+                state.given_params.encoder_input_parameters.width,
+                state.given_params.encoder_input_parameters.height,
             );
-
             let alloc_input_frame = start.elapsed();
 
-            let bpp = match state.given_params.input_parameters.format {
-                VirtualScreenPixelFormat::Rgb888 | VirtualScreenPixelFormat::Bgr888 => 3,
-                _ => 4,
-            };
-
-            let height = state.given_params.input_parameters.height as usize;
-            let src_stride = state.given_params.input_parameters.stride as usize;
+            let height = state.given_params.encoder_input_parameters.height as usize;
+            let src_stride = state.given_params.encoder_input_parameters.stride as usize;
             let dst_stride = input_frame.stride(0);
             let data = input_frame.data_mut(0);
 
@@ -260,8 +257,9 @@ impl DevDispEncoder for HevcEncoder {
                 let dst_end = dst_start + src_stride;
                 data[dst_start..dst_end].copy_from_slice(&raw_data[src_start..src_end]);
             }
-            let copy_time = Instant::now() - copy_start;
+            let copy_time = copy_start.elapsed();
 
+            // The output frame after scaling.
             let mut yuv_frame = Video::new(
                 state.encoder_fmt,
                 state.given_params.width,

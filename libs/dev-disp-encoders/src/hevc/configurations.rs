@@ -149,13 +149,23 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
     // These are provided in order of preference, top to bottom left to right.
     FfmpegEncoderBruteForceIterator::new(vec![
         FfmpegEncoderConfigurationSet::new(
-            "libvpx",
-            "vp8",
+            "libvpx-vp9",
+            "vp09",
             vec![HashMap::from([
                 ("deadline", "realtime"),
                 ("quality", "realtime"),
             ])],
             vec![Pixel::YUV420P],
+        ),
+        FfmpegEncoderConfigurationSet::new(
+            "libvpx",
+            "vp8",
+            vec![HashMap::from([
+                ("deadline", "realtime"),
+                ("quality", "realtime"),
+                ("vp8flags", "altref"),
+            ])],
+            vec![Pixel::YUVA420P, Pixel::YUV420P],
         ),
         FfmpegEncoderConfigurationSet::new(
             "libaom-av1",
