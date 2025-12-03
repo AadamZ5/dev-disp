@@ -1,5 +1,6 @@
 import { DestroyRef, inject, Injectable } from '@angular/core';
 import {
+  DevDispEvent,
   JsDisplayParameters,
   JsEncoderPossibleConfiguration,
   WsDispatchers,
@@ -35,6 +36,14 @@ export type DevDispEventDisconnect = {
   wsReason?: number;
 };
 
+export type DevDispEncoding = {
+  encoderName: string;
+  encoderFamily: string;
+  encodedResolution: [number, number];
+  parameters: Map<string, string>;
+  webCodecString: string;
+};
+
 export class DevDispConnection {
   private readonly dispatchers: WsDispatchers;
 
@@ -47,215 +56,34 @@ export class DevDispConnection {
   private readonly _disconnect$ = new ReplaySubject<DevDispEventDisconnect>(1);
   public readonly disconnect$ = this._disconnect$.asObservable();
 
+  private readonly _configuredEncoding$ = new ReplaySubject<DevDispEncoding>(1);
+  public readonly configuredEncoding$ =
+    this._configuredEncoding$.asObservable();
+
+  private readonly canvasContext?: OffscreenCanvasRenderingContext2D | null;
+  private readonly decoder = new VideoDecoder({
+    output: this.onDecode.bind(this),
+    error: this.onDecodeError.bind(this),
+  });
+
+  private supportedDecoderConfigurations: SearchCodecResult[] = [];
   private intentionalDisconnect = false;
 
   constructor(
     public readonly address: string,
-    canvas: OffscreenCanvas = new OffscreenCanvas(1, 1)
+    private readonly canvas: OffscreenCanvas = new OffscreenCanvas(2, 2),
   ) {
-    const context2d = canvas?.getContext('2d');
-
-    let supportedDecoderConfigurations: SearchCodecResult[] = [];
-
-    const decode = new VideoDecoder({
-      output: (frame) => {
-        console.log('Decoded frame:', frame);
-        context2d?.drawImage(
-          frame,
-          0,
-          0,
-          frame.displayWidth,
-          frame.displayHeight
-        );
-        frame.close();
-      },
-      error: (e) => {
-        console.error('VideoDecoder error:', e);
-      },
-    });
+    this.canvasContext = canvas?.getContext('2d');
 
     const handlers: WsHandlers = {
-      onPreInit: () => {
-        console.log('Dev-disp pre-init requested');
-      },
-      onProtocolInit: () => {
-        console.log('Dev-disp protocol init requested');
-      },
-      onConnect: (e) => {
-        console.log('Dev-disp connected', e);
-        this._connected$.next(true);
-      },
-      onDisconnect: (e) => {
-        console.log('Dev-disp disconnected', e);
-        // TODO: Check reason code here to see if it was an
-        // explicit disconnect from the server!
-        if (!this.intentionalDisconnect) {
-          console.warn('Dev-disp unintentional disconnect!');
-        }
-        this._disconnect$.next({
-          intentional: this.intentionalDisconnect,
-          wsReason: e.error,
-        });
-        this._connected$.next(false);
-
-        this._complete();
-      },
-      handleRequestDeviceInfo: (e) => {
-        console.log('Dev-disp device info requested', e);
-        return {
-          name: 'Web Testpage Display',
-          resolution: [800, 600],
-        };
-      },
-      handleScreenData: (e) => {
-        console.log('Dev-disp screen data received', e);
-
-        if (!e?.data) {
-          return;
-        }
-
-        let data: Uint8Array;
-        if (this.dispatchers.screenData) {
-          // Use the shared buffer if available
-          const sharedBuffer = this.dispatchers.screenData;
-          data = new Uint8Array(sharedBuffer, 0, e.data as number);
-        } else {
-          data = new Uint8Array(e.data);
-        }
-
-        const chunk = new EncodedVideoChunk({
-          data,
-          timestamp: 0,
-          // I don't know what this is doing
-          type: 'key',
-        });
-        decode.decode(chunk);
-        this._decodedFrame$.next();
-      },
-      handleRequestDisplayParameters: (e) => {
-        console.log('Dev-disp display parameters requested', e);
-        return {
-          name: 'Web Testpage Display',
-          resolution: [800, 600],
-        };
-      },
-      handleRequestPreferredEncoding: async (configs) => {
-        console.log('Dev-disp preferred encodings requested', configs);
-
-        const compatibleConfigResults = await Promise.allSettled(
-          configs.map(async (cfg) => {
-            const parameters = Object.fromEntries(cfg.parameters);
-            const supportedDecoders = await searchSupportedVideoDecoders(
-              cfg.encoderFamily,
-              parameters,
-              cfg.encodedResolution[0],
-              cfg.encodedResolution[1]
-            );
-            return {
-              supportedDecoders,
-              sentConfig: cfg,
-            };
-          })
-        );
-
-        supportedDecoderConfigurations = [];
-
-        const flattenedResults = compatibleConfigResults
-          .filter(
-            (
-              result
-            ): result is PromiseFulfilledResult<{
-              supportedDecoders: SearchCodecResult[];
-              sentConfig: JsEncoderPossibleConfiguration;
-            }> => {
-              if (result.status === 'rejected') {
-                console.error(`Decoding check failed`, result.reason);
-              } else if (
-                result.status === 'fulfilled' &&
-                result.value.supportedDecoders.length <= 0
-              ) {
-                console.log(
-                  `Decoding not supported for "${result.value.sentConfig.encoderFamily}"`
-                );
-              }
-
-              return (
-                result.status === 'fulfilled' &&
-                result.value.supportedDecoders.length > 0
-              );
-            }
-          )
-          .flatMap((result) => {
-            supportedDecoderConfigurations.push(
-              ...result.value.supportedDecoders
-            );
-
-            return result.value.supportedDecoders.map((supportedDecoder) => {
-              return {
-                supportedDecoder,
-                sentConfig: result.value.sentConfig,
-              };
-            });
-          })
-          .map((configuration) => {
-            const supportRes = configuration.supportedDecoder.decoderConfig
-              ? ([
-                  configuration.supportedDecoder.decoderConfig.codedWidth ??
-                    configuration.sentConfig.encodedResolution[0],
-                  configuration.supportedDecoder.decoderConfig.codedHeight ??
-                    configuration.sentConfig.encodedResolution[1],
-                ] as const)
-              : configuration.sentConfig.encodedResolution;
-
-            return {
-              encoderName: configuration.sentConfig.encoderName,
-              encoderFamily: configuration.supportedDecoder.definition.codec,
-              encodedResolution: supportRes as [number, number],
-              parameters: configuration.sentConfig.parameters,
-            } satisfies JsEncoderPossibleConfiguration;
-          });
-
-        flattenedResults.forEach((result) => {
-          console.log(
-            `Supported encoding found for ${result.encoderFamily}`,
-            result
-          );
-        });
-
-        return flattenedResults;
-      },
-      handleSetEncoding: (encodingConfig) => {
-        console.log('Dev-disp set encoding requested', encodingConfig);
-
-        const correspondingDecoder = supportedDecoderConfigurations.find(
-          (decodingConfig) =>
-            decodingConfig.definition.codec === encodingConfig.encoderFamily
-        );
-        if (!correspondingDecoder) {
-          console.error(
-            `No supported decoder found for requested encoding:`,
-            encodingConfig
-          );
-          return;
-        }
-
-        canvas.width = encodingConfig.encodedResolution[0];
-        canvas.height = encodingConfig.encodedResolution[1];
-
-        console.log(`Using decoder configuration:`, correspondingDecoder);
-
-        decode.configure({
-          codec: (
-            correspondingDecoder.definition
-              .toParamString as CodecParameterStringFn
-          )(
-            correspondingDecoder.definition.codec,
-            Object.fromEntries(encodingConfig.parameters)
-          ),
-          codedWidth: encodingConfig.encodedResolution[0],
-          codedHeight: encodingConfig.encodedResolution[1],
-        });
-      },
+      onConnect: this.onConnect.bind(this),
+      onDisconnect: this.onDisconnect.bind(this),
+      handleRequestDeviceInfo: this.onRequestDeviceInfo.bind(this),
+      handleScreenData: this.onScreenData.bind(this),
+      handleRequestDisplayParameters: this.onRequestDeviceInfo.bind(this),
+      handleRequestPreferredEncoding:
+        this.handleRequestPreferredEncodings.bind(this),
+      handleSetEncoding: this.handleSetEncoding.bind(this),
     };
 
     this.dispatchers = connectDevDispServer(address, handlers);
@@ -276,11 +104,215 @@ export class DevDispConnection {
     this._decodedFrame$.complete();
     this._disconnect$.complete();
     this._connected$.complete();
+    this._configuredEncoding$.complete();
+  }
+
+  private onDecode(frame: VideoFrame) {
+    this.canvasContext?.drawImage(
+      frame,
+      0,
+      0,
+      frame.displayWidth,
+      frame.displayHeight,
+    );
+    frame.close();
+    this._decodedFrame$.next();
+  }
+
+  private onDecodeError(e: DOMException) {
+    console.error('VideoDecoder error:', e);
+  }
+
+  private onConnect(e: unknown) {
+    console.log('Dev-disp connected', e);
+    this._connected$.next(true);
+  }
+
+  private onDisconnect(e: DevDispEvent) {
+    if (!this.intentionalDisconnect) {
+      console.warn('Dev-disp unintentional disconnect!', e);
+    } else {
+      console.log('Dev-disp intentional disconnect', e);
+    }
+
+    this._disconnect$.next({
+      intentional: this.intentionalDisconnect,
+      wsReason: e.error,
+    });
+    this._connected$.next(false);
+    this._complete();
+  }
+
+  private onRequestDeviceInfo(e: DevDispEvent): JsDisplayParameters {
+    console.log('Dev-disp device info requested', e);
+    return {
+      name: 'Web Testpage Display',
+      resolution: [this.canvas.width, this.canvas.height],
+    };
+  }
+
+  private onScreenData(e: DevDispEvent | null): void {
+    if (!e?.data) {
+      return;
+    }
+
+    // If we have a shared buffer and the data is a number, use that
+    // as the byte-length to read from the shared buffer
+    let data: Uint8Array;
+    if (this.dispatchers.screenData && typeof e.data === 'number') {
+      const sharedBuffer = this.dispatchers.screenData;
+      data = new Uint8Array(sharedBuffer, 0, e.data as number);
+    } else if (e.data instanceof Uint8Array) {
+      data = e.data;
+    } else if (e.data instanceof ArrayBuffer) {
+      // This shouldn't happen
+      data = new Uint8Array(e.data);
+    } else {
+      // Unknown data type
+      return;
+    }
+
+    const chunk = new EncodedVideoChunk({
+      data,
+      timestamp: 0,
+      // I don't know what this is doing
+      type: 'key',
+    });
+
+    this.decoder.decode(chunk);
+  }
+
+  private async handleRequestPreferredEncodings(
+    configs: JsEncoderPossibleConfiguration[],
+  ) {
+    console.log('Dev-disp preferred encodings requested', configs);
+
+    const compatibleConfigResults = await Promise.allSettled(
+      configs.map(async (cfg) => {
+        const parameters = Object.fromEntries(cfg.parameters);
+        const supportedDecoders = await searchSupportedVideoDecoders(
+          cfg.encoderFamily,
+          parameters,
+          cfg.encodedResolution[0],
+          cfg.encodedResolution[1],
+        );
+        return {
+          supportedDecoders,
+          sentConfig: cfg,
+        };
+      }),
+    );
+
+    this.supportedDecoderConfigurations = [];
+
+    const flattenedResults = compatibleConfigResults
+      .filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<{
+          supportedDecoders: SearchCodecResult[];
+          sentConfig: JsEncoderPossibleConfiguration;
+        }> => {
+          if (result.status === 'rejected') {
+            console.error(`Decoding check failed`, result.reason);
+          } else if (
+            result.status === 'fulfilled' &&
+            result.value.supportedDecoders.length <= 0
+          ) {
+            console.log(
+              `Decoding not supported for "${result.value.sentConfig.encoderFamily}"`,
+            );
+          }
+
+          return (
+            result.status === 'fulfilled' &&
+            result.value.supportedDecoders.length > 0
+          );
+        },
+      )
+      .flatMap((result) => {
+        this.supportedDecoderConfigurations.push(
+          ...result.value.supportedDecoders,
+        );
+
+        return result.value.supportedDecoders.map((supportedDecoder) => {
+          return {
+            supportedDecoder,
+            sentConfig: result.value.sentConfig,
+          };
+        });
+      })
+      .map((configuration) => {
+        const supportRes = configuration.supportedDecoder.decoderConfig
+          ? ([
+              configuration.supportedDecoder.decoderConfig.codedWidth ??
+                configuration.sentConfig.encodedResolution[0],
+              configuration.supportedDecoder.decoderConfig.codedHeight ??
+                configuration.sentConfig.encodedResolution[1],
+            ] as const)
+          : configuration.sentConfig.encodedResolution;
+
+        return {
+          encoderName: configuration.sentConfig.encoderName,
+          encoderFamily: configuration.supportedDecoder.definition.codec,
+          encodedResolution: supportRes as [number, number],
+          parameters: configuration.sentConfig.parameters,
+        } satisfies JsEncoderPossibleConfiguration;
+      });
+
+    flattenedResults.forEach((result) => {
+      console.log(
+        `Supported encoding found for ${result.encoderFamily}`,
+        result,
+      );
+    });
+
+    return flattenedResults;
+  }
+
+  private handleSetEncoding(encodingConfig: JsEncoderPossibleConfiguration) {
+    console.log('Dev-disp set encoding requested', encodingConfig);
+
+    const correspondingDecoder = this.supportedDecoderConfigurations.find(
+      (decodingConfig) =>
+        decodingConfig.definition.codec === encodingConfig.encoderFamily,
+    );
+    if (!correspondingDecoder) {
+      console.error(
+        `No supported decoder found for requested encoding:`,
+        encodingConfig,
+      );
+      return;
+    }
+
+    this.canvas.width = encodingConfig.encodedResolution[0];
+    this.canvas.height = encodingConfig.encodedResolution[1];
+
+    const webCodecString = (
+      correspondingDecoder.definition.toParamString as CodecParameterStringFn
+    )(
+      correspondingDecoder.definition.codec,
+      Object.fromEntries(encodingConfig.parameters),
+    );
+
+    this.decoder.configure({
+      codec: webCodecString,
+      codedWidth: encodingConfig.encodedResolution[0],
+      codedHeight: encodingConfig.encodedResolution[1],
+    });
+
+    this._configuredEncoding$.next({
+      encoderName: encodingConfig.encoderName,
+      encoderFamily: encodingConfig.encoderFamily,
+      encodedResolution: encodingConfig.encodedResolution,
+      parameters: encodingConfig.parameters,
+      webCodecString,
+    });
   }
 }
 
 export function ofDevDispConnection(
-  factory: () => DevDispConnection
+  factory: () => DevDispConnection,
 ): Observable<DevDispConnection> {
   return new Observable<DevDispConnection>((subscriber) => {
     const devDispConnection = factory();
@@ -289,7 +321,7 @@ export function ofDevDispConnection(
       next: (e) => {
         if (!e.intentional) {
           subscriber.error(
-            new Error('Dev-disp connection disconnected unexpectedly')
+            new Error('Dev-disp connection disconnected unexpectedly'),
           );
         }
         subscriber.complete();

@@ -88,7 +88,7 @@ impl HevcEncoder {
             configuration.pixel_format,
             parameters.width,
             parameters.height,
-            ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
+            ffmpeg::software::scaling::flag::Flags::POINT,
         )
         .map_err(|e| format!("Failed to create scaler: {}", e))?;
 
