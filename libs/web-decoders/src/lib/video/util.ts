@@ -1,5 +1,5 @@
-import { VIDEO_CODEC_DEFINITIONS, VideoCodecId } from './lib/video';
-import { CodecParameterStringFn } from './lib/video/common';
+import { VIDEO_CODEC_DEFINITIONS, VideoCodecId } from '.';
+import { CodecParameterStringFn } from './common';
 
 /**
  * Returns true if the given codec string is one defined by this library.
@@ -16,7 +16,7 @@ export function isDefinedVideoCodec<T extends string>(
 }
 
 export type SearchCodecResult = {
-  support: VideoDecoderSupport;
+  decoderConfig?: VideoDecoderConfig;
   definition: (typeof VIDEO_CODEC_DEFINITIONS)[number];
 };
 
@@ -56,10 +56,15 @@ export async function searchSupportedVideoDecoders(
 
   const supportedCodecs = supportResults
     .filter(
-      (result): result is PromiseFulfilledResult<SearchCodecResult> =>
+      (result): result is typeof result & { status: 'fulfilled' } =>
         result.status === 'fulfilled' && result.value.support.supported === true
     )
-    .map((result) => result.value);
+    .map((result) => {
+      return {
+        decoderConfig: result.value.support.config,
+        definition: result.value.definition,
+      };
+    });
 
   return supportedCodecs;
 }

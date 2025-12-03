@@ -5,6 +5,8 @@ import { CODEC_VP8 } from './vp8';
 // import { CODEC_HEV1, CODEC_HVC1 } from './hevc';
 // import { CODEC_AVC1, CODEC_AVC3 } from './avc';
 
+export * from './util';
+
 export * from './av1';
 export * from './avc';
 export * from './hevc';

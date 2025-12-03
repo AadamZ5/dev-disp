@@ -1,6 +1,7 @@
 import { DestroyRef, inject, Injectable } from '@angular/core';
 import {
   JsDisplayParameters,
+  JsEncoderPossibleConfiguration,
   WsDispatchers,
   WsHandlers,
   connectDevDispServer,
@@ -12,6 +13,7 @@ import {
   share,
   Subscription,
 } from 'rxjs';
+import { SearchCodecResult, searchSupportedVideoDecoders } from 'web-decoders';
 
 @Injectable({ providedIn: 'root' })
 export class DevDispService {
@@ -125,36 +127,56 @@ export class DevDispConnection {
 
         const compatibleConfigResults = await Promise.allSettled(
           configs.map(async (cfg) => {
-            return VideoDecoder.isConfigSupported({
-              codec: cfg.encoderFamily,
-              codedHeight: cfg.encodedResolution[0],
-              codedWidth: cfg.encodedResolution[1],
-            }).then((supportResult) => {
-              console.log(
-                `Config support result for ${cfg.encoderFamily} (${cfg.encoderName}):`,
-                supportResult.supported
-              );
-              return {
-                supportResult,
-                config: cfg,
-              };
-            });
+            const parameters = Object.fromEntries(cfg.parameters);
+            const supportedDecoders = await searchSupportedVideoDecoders(
+              cfg.encoderFamily,
+              parameters
+            );
+            return {
+              supportedDecoders,
+              sentConfig: cfg,
+            };
           })
         );
 
         return compatibleConfigResults
-          .filter((result) => {
-            return (
-              result.status === 'fulfilled' &&
-              result.value.supportResult.supported
-            );
+          .filter(
+            (
+              result
+            ): result is PromiseFulfilledResult<{
+              supportedDecoders: SearchCodecResult[];
+              sentConfig: JsEncoderPossibleConfiguration;
+            }> => {
+              return (
+                result.status === 'fulfilled' &&
+                result.value.supportedDecoders.length > 0
+              );
+            }
+          )
+          .flatMap((result) => {
+            return result.value.supportedDecoders.map((supportedDecoder) => {
+              return {
+                supportedDecoder,
+                sentConfig: result.value.sentConfig,
+              };
+            });
           })
-          .map((result) => {
-            const fulfilled = result as PromiseFulfilledResult<{
-              supportResult: VideoDecoderSupport;
-              config: (typeof configs)[number];
-            }>;
-            return fulfilled.value.config;
+          .map((configuration) => {
+            const supportRes = configuration.supportedDecoder.decoderConfig
+              ? ([
+                  configuration.supportedDecoder.decoderConfig.codedWidth ??
+                    configuration.sentConfig.encodedResolution[0],
+                  configuration.supportedDecoder.decoderConfig.codedHeight ??
+                    configuration.sentConfig.encodedResolution[1],
+                ] as const)
+              : configuration.sentConfig.encodedResolution;
+
+            return {
+              encoderName: configuration.sentConfig.encoderName,
+              encoderFamily: configuration.supportedDecoder.definition.codec,
+              encodedResolution: supportRes,
+              parameters: configuration.sentConfig.parameters,
+            } satisfies JsEncoderPossibleConfiguration;
           });
       },
       handleSetEncoding: (encodingConfig) => {
