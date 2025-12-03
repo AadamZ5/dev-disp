@@ -48,7 +48,10 @@ export class DevDispConnection {
 
   private intentionalDisconnect = false;
 
-  constructor(public readonly address: string, canvas?: OffscreenCanvas) {
+  constructor(
+    public readonly address: string,
+    canvas: OffscreenCanvas = new OffscreenCanvas(1, 1)
+  ) {
     const context2d = canvas?.getContext('2d');
 
     let supportedDecoderConfigurations: SearchCodecResult[] = [];
@@ -112,7 +115,8 @@ export class DevDispConnection {
         const chunk = new EncodedVideoChunk({
           data: new Uint8Array(e?.data!),
           timestamp: 0,
-          type: 'delta',
+          // I don't know what this is doing
+          type: 'key',
         });
         decode.decode(chunk);
 
@@ -225,6 +229,9 @@ export class DevDispConnection {
           return;
         }
 
+        canvas.width = encodingConfig.encodedResolution[0];
+        canvas.height = encodingConfig.encodedResolution[1];
+
         console.log(`Using decoder configuration:`, correspondingDecoder);
 
         decode.configure({
@@ -241,11 +248,7 @@ export class DevDispConnection {
       },
     };
 
-    this.dispatchers = connectDevDispServer(
-      address,
-      handlers,
-      canvas ?? new OffscreenCanvas(1, 1)
-    );
+    this.dispatchers = connectDevDispServer(address, handlers, canvas);
   }
 
   disconnect() {

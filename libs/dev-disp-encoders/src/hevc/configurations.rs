@@ -297,6 +297,8 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         FfmpegEncoderConfigurationSet::new(
             "libvpx-vp9",
             "vp09",
+            // Tuned with realtime screen encoding by following
+            // https://developers.google.com/media/vp9/live-encoding
             vec![HashMap::from([
                 ("deadline", "realtime"),
                 ("quality", "realtime"),
@@ -312,7 +314,14 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
                 ("row-mt", "1"),
                 ("error-resilient", "1"),
             ])],
-            vec![Pixel::YUV420P],
+            vec![
+                Pixel::YUV420P,
+                Pixel::YUV422P,
+                Pixel::YUV440P,
+                Pixel::YUV444P,
+                // Seems like alpha channels encode slower
+                Pixel::YUVA420P,
+            ],
         ),
         FfmpegEncoderConfigurationSet::new(
             "libvpx",
@@ -321,6 +330,8 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
                 ("deadline", "realtime"),
                 ("quality", "realtime"),
                 ("vp8flags", "altref"),
+                ("lag-in-frames", "0"),
+                ("cpu-used", "5"),
             ])],
             vec![Pixel::YUVA420P, Pixel::YUV420P],
         ),
