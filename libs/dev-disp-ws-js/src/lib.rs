@@ -1,7 +1,7 @@
-use std::{net::SocketAddr, panic, str::FromStr};
+use std::panic;
 
 use futures::{channel::mpsc, stream::FuturesUnordered, FutureExt, SinkExt, StreamExt};
-use js_sys::SharedArrayBuffer;
+use js_sys::{Reflect, SharedArrayBuffer};
 use log::{debug, error, info, warn};
 use wasm_bindgen::prelude::*;
 use web_sys::OffscreenCanvas;
@@ -42,7 +42,8 @@ pub fn connect_dev_disp_server(
     let mut cancel_token = cancel_tx.clone();
     let mut cancel_token_outer = cancel_tx.clone();
 
-    let shared_buffer = SharedArrayBuffer::new(512 * 1024 * 1024); // 512 MB
+    // Try to allocate a 512 MB shared array buffer for screen data
+    let shared_buffer = try_get_shared_array_buffer(512 * 1024 * 1024).ok();
 
     let shared_buffer_clone = shared_buffer.clone();
 
@@ -67,19 +68,14 @@ pub fn connect_dev_disp_server(
 
         let task_rx_update_display_params =
             listen_dispatchers(update_display_params_rx, ws_fwd_tx.clone()).boxed_local();
-        let task_rx = listen_ws_messages(
-            ws_rx,
-            ws_fwd_tx,
-            handlers.clone(),
-            Some(shared_buffer_clone),
-        )
-        .then(|r| async move {
-            // Call cancel token
-            let _ = cancel_token.send(()).await;
+        let task_rx = listen_ws_messages(ws_rx, ws_fwd_tx, handlers.clone(), shared_buffer_clone)
+            .then(|r| async move {
+                // Call cancel token
+                let _ = cancel_token.send(()).await;
 
-            r
-        })
-        .boxed_local();
+                r
+            })
+            .boxed_local();
 
         let task_forward_tx = async move {
             let mut ws_tx = ws_tx_original;
@@ -175,10 +171,27 @@ pub fn connect_dev_disp_server(
     let dispatchers = WsDispatchers {
         close_connection: cancel_closure.into_js_value().into(),
         update_display_parameters: update_display_params_closure.into_js_value().into(),
-        screen_data: Some(shared_buffer),
+        screen_data: shared_buffer,
     };
 
     Ok(dispatchers)
+}
+
+/// Attempt to get a shared array buffer only if it is defined in the browser context.
+fn try_get_shared_array_buffer(buffer_size: u32) -> Result<SharedArrayBuffer, JsValue> {
+    // 1. Check if the 'SharedArrayBuffer' is defined in the global scope.
+    let window = web_sys::window().ok_or_else(|| JsValue::from_str("Window object not found"))?;
+    let shared_array_buffer_constructor =
+        Reflect::get(&window, &JsValue::from_str("SharedArrayBuffer"))?;
+
+    if shared_array_buffer_constructor.is_undefined() {
+        // SharedArrayBuffer is not available (likely missing COOP/COEP headers)
+        let error_msg = "SharedArrayBuffer is not defined. Ensure Cross-Origin Isolation headers (COOP/COEP) are set.";
+        web_sys::console::error_1(&JsValue::from_str(error_msg));
+        return Err(JsValue::from_str(error_msg));
+    }
+
+    Ok(SharedArrayBuffer::new(buffer_size))
 }
 
 #[wasm_bindgen(start)]
