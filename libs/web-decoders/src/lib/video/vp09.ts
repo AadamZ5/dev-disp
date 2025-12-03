@@ -21,7 +21,7 @@ export function vp09ToParamString(codec: 'vp09', params: CodecVp09Parameters) {
   acc += `.${params.profile.toString().padStart(2, '0')}`;
   acc += `.${params.level.toString().padStart(2, '0')}`;
   acc += `.${params.bitDepth.toString().padStart(2, '0')}`;
-  // If none of the optional parametrs are set, return early
+  // If none of the optional parameters are set, return early
   if (
     typeof params.chromaSubsampling !== 'number' &&
     typeof params.videoFullRangeFlag !== 'number' &&

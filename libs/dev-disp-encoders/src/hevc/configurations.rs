@@ -35,7 +35,7 @@ impl FfmpegEncoderFamily {
             FfmpegEncoderFamily::Hevc => "hvc1",
             FfmpegEncoderFamily::H264 => "avc1",
             FfmpegEncoderFamily::Vp09 => "vp09",
-            FfmpegEncoderFamily::Vp8 => "vp08",
+            FfmpegEncoderFamily::Vp8 => "vp8",
             FfmpegEncoderFamily::Av1 => "av01",
         }
     }
@@ -416,14 +416,14 @@ pub fn get_relevant_codec_parameters(
                 // TODO: Find out how to get this value properly.
                 let tier_letter = "L";
 
-                let constraits = 0xB0;
+                let constraints = 0xB0;
 
                 HashMap::from([
                     ("profile".to_string(), profile.to_string()),
                     ("compatibility".to_string(), format!("{:02X}", compat)),
                     ("level".to_string(), level.to_string()),
                     ("tier".to_string(), tier_letter.to_string()),
-                    ("constraints".to_string(), format!("{:02X}", constraits)),
+                    ("constraints".to_string(), format!("{:02X}", constraints)),
                 ])
             }
         }

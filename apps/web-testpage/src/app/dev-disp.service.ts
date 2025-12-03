@@ -242,8 +242,8 @@ export class DevDispConnection {
             correspondingDecoder.definition.codec,
             Object.fromEntries(encodingConfig.parameters)
           ),
-          codedHeight: encodingConfig.encodedResolution[0],
-          codedWidth: encodingConfig.encodedResolution[1],
+          codedWidth: encodingConfig.encodedResolution[0],
+          codedHeight: encodingConfig.encodedResolution[1],
         });
       },
     };
