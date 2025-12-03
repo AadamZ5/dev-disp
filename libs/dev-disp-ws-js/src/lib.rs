@@ -4,7 +4,6 @@ use futures::{channel::mpsc, stream::FuturesUnordered, FutureExt, SinkExt, Strea
 use js_sys::{Reflect, SharedArrayBuffer};
 use log::{debug, error, info, warn};
 use wasm_bindgen::prelude::*;
-use web_sys::OffscreenCanvas;
 use ws_stream_wasm::{WsMessage, WsMeta};
 
 use crate::{
@@ -185,7 +184,7 @@ fn try_get_shared_array_buffer(buffer_size: u32) -> Result<SharedArrayBuffer, Js
 
     if shared_array_buffer_constructor.is_undefined() {
         // SharedArrayBuffer is not available (likely missing COOP/COEP headers)
-        let error_msg = "SharedArrayBuffer is not defined. Ensure Cross-Origin Isolation headers (COOP/COEP) are set.";
+        let error_msg = "SharedArrayBuffer is not defined. Ensure Cross-Origin-Opener-Policy (COOP) and Cross-Origin-Embedder-Policy (COEP) headers are set.";
         web_sys::console::error_1(&JsValue::from_str(error_msg));
         return Err(JsValue::from_str(error_msg));
     }

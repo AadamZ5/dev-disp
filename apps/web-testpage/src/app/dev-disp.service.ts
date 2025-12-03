@@ -118,7 +118,7 @@ export class DevDispConnection {
         if (this.dispatchers.screenData) {
           // Use the shared buffer if available
           const sharedBuffer = this.dispatchers.screenData;
-          data = new Uint8Array(sharedBuffer.slice(0, e.data as number));
+          data = new Uint8Array(sharedBuffer, 0, e.data as number);
         } else {
           data = new Uint8Array(e.data);
         }
@@ -299,22 +299,28 @@ export function ofDevDispConnection(
       },
     });
 
-    let syncDone = false;
+    let syncRan = false;
     const connectionSub = devDispConnection.connected$.subscribe({
       next: (connected) => {
         if (connected) {
           subscriber.next(devDispConnection);
-          if (syncDone) {
+          syncRan = true;
+          if (connectionSub) {
             connectionSub.unsubscribe();
           }
         }
       },
     });
-    syncDone = true;
+    if (syncRan) {
+      connectionSub.unsubscribe();
+    }
 
     const allSub = new Subscription();
     allSub.add(disconnectSub);
     allSub.add(connectionSub);
+    allSub.add(() => {
+      devDispConnection.disconnect();
+    });
 
     return allSub;
   }).pipe(share());

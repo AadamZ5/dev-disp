@@ -199,21 +199,20 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         // Nvidia NVENC
         // Note if the driver is active but the GPU isn't connected,
         // it may take a long time to try to initialize and fail.
-        // FfmpegEncoderConfigurationSet::new(
-        //     "hevc_nvenc",
-        //     "hvc1",
-        //     vec![HashMap::from([("preset", "p1"), ("tune", "ull")])],
-        //     vec![
-        //         Pixel::YUV420P,
-        //         Pixel::YUV444P,
-        //         Pixel::RGBA,
-        //         Pixel::YUV444P16LE,
-        //         Pixel::NV12,
-        //         Pixel::P010LE,
-        //         Pixel::P016LE,
-        //         Pixel::CUDA,
-        //     ],
-        // ),
+        FfmpegEncoderConfigurationSet::new(
+            "hevc_nvenc",
+            "hvc1",
+            vec![HashMap::from([("preset", "p1"), ("tune", "ull")])],
+            vec![
+                Pixel::YUV420P,
+                Pixel::YUV444P,
+                Pixel::RGBA,
+                Pixel::YUV444P16LE,
+                Pixel::NV12,
+                Pixel::P010LE,
+                Pixel::P016LE,
+            ],
+        ),
         // Intel Quick Sync Video
         FfmpegEncoderConfigurationSet::new(
             "hevc_qsv",

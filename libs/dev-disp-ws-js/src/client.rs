@@ -63,12 +63,13 @@ where
         "WebSocket incoming message listener task starting, shared buffer provided: {}",
         have_shared_buf
     );
-    let mut buffer = shared_buffer.unwrap_or_else(|| {
-        // Allocate a default SharedArrayBuffer if none was provided
-        SharedArrayBuffer::new(512 * 1024 * 1024) // 512 MB
-    });
 
-    // I don't know how much memory we could get, but let's allocate enough for 0.5gb
+    let buffer = shared_buffer
+        .map(|sab| Uint8Array::new(&sab))
+        .unwrap_or_else(|| {
+            // I don't know how much memory we could get.
+            Uint8Array::new_with_length(512 * 1024 * 1024)
+        });
 
     while let Some(data) = stream.next().await {
         match data {
@@ -175,18 +176,18 @@ where
                                     screen_data.len()
                                 );
 
-                                let js_val = if have_shared_buf {
-                                    // Copy the screen data into the shared buffer
-                                    let mut buffer_u8 = Uint8Array::new(&buffer);
-                                    buffer_u8
-                                        .subarray(0, screen_data.len() as u32)
-                                        .copy_from(&screen_data);
+                                // Copy the screen data into the shared buffer
+                                let newdata = buffer.subarray(0, screen_data.len() as u32);
 
+                                newdata.copy_from(&screen_data[..]);
+
+                                let js_val = if have_shared_buf {
+                                    // Send the length of the screen data, so they can collect it from the
+                                    // shared array buffer.
                                     JsValue::from(screen_data.len())
                                 } else {
-                                    // Create a new Uint8Array for the screen data
-                                    let uint8_array = Uint8Array::from(&screen_data[..]);
-                                    JsValue::from(uint8_array)
+                                    // Send the uint8array directly
+                                    JsValue::from(newdata)
                                 };
 
                                 let event = DevDispEvent {
