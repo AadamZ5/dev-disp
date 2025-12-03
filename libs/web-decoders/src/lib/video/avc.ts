@@ -7,7 +7,7 @@ import { CodecDefinition } from './common';
  */
 export type CodecAvcParameters = {
   // TODO: Get a document that explains the parameters!
-};
+} & Record<string, string | number>;
 
 /**
  * Overview: https://www.w3.org/TR/webcodecs-av1-codec-registration/
@@ -15,6 +15,11 @@ export type CodecAvcParameters = {
  * @see {@link CodecAvcParameters}
  */
 export type CodecAvc1 = CodecDefinition<CodecAvcParameters, 'avc1'>;
+/**
+ * Overview: https://www.w3.org/TR/webcodecs-av1-codec-registration/
+ *
+ * @see {@link CodecAvcParameters}
+ */
 export type CodecAvc3 = CodecDefinition<CodecAvcParameters, 'avc3'>;
 
 function avcParamString(codec: 'avc1' | 'avc3', params: CodecAvcParameters) {
@@ -23,12 +28,19 @@ function avcParamString(codec: 'avc1' | 'avc3', params: CodecAvcParameters) {
   return acc;
 }
 
+/**
+ * @see {@link CodecAvc1}
+ */
 export const CODEC_AVC1: CodecAvc1 = {
   codec: 'avc1',
   toParamString: avcParamString,
 };
 
+/**
+ * @see {@link CodecAvc3}
+ */
 export const CODEC_AVC3: CodecAvc3 = {
   codec: 'avc3',
+  displayName: 'H.264',
   toParamString: avcParamString,
 };

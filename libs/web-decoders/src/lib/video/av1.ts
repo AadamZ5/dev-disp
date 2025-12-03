@@ -19,7 +19,6 @@ import { CodecDefinition } from './common';
  * Leading or trailing zeros cannot be omitted.
  */
 export type CodevAv1Parameters = {
-  sampleEntry: string; // 4CC
   profile: number; // 0..2
   level: number; // 10..63
   tier: 'M' | 'H'; // Main or High
@@ -74,5 +73,6 @@ export type CodecAv1 = CodecDefinition<CodevAv1Parameters, 'av01'>;
  */
 export const CODEC_AV1: CodecAv1 = {
   codec: 'av01',
+  displayName: 'AV1',
   toParamString: av1ToParamString,
 };

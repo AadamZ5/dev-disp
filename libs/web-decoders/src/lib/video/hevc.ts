@@ -54,10 +54,12 @@ function hevcParamString(codec: 'hvc1' | 'hev1', params: CodecHevcParameters) {
 
 export const CODEC_HVC1: CodecHevc = {
   codec: 'hvc1',
+  displayName: 'H.265',
   toParamString: hevcParamString,
 };
 
 export const CODEC_HEV1: CodecHevc = {
   codec: 'hev1',
+  displayName: 'H.265',
   toParamString: hevcParamString,
 };
