@@ -11,6 +11,8 @@ _(Web PoC pictured above with software encoding)_
 The goal of this utility is to use the EVDI sub-system developed for the DisplayLink driver to create a virtual display that represents the geometry of the device connected, then transmit that virtual display information to the device via some transport. Device Display will use a companion app to receive high-quality and low-latency data. While this is not targeted at an ultra-low-latency use-case such as gaming, it should
 function no worse than something like steam-link.
 
+### Proof of Concept Goals:
+
 - [x] Implement Domain via Core Library
 - [x] Implement PoC EVDI Subsystem [#25](https://github.com/AadamZ5/dev-disp/issues/25) (thanks to [evdi](https://github.com/dzfranklin/evdi-rs) crate! May need forked or contributed to)
 - [x] Implement PoC HEVC Encoding [#21](https://github.com/AadamZ5/dev-disp/issues/21) (thanks to [ffmpeg-next](https://github.com/zmwangx/rust-ffmpeg#readme) crate!)
