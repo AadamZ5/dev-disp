@@ -1,6 +1,7 @@
 import {
   AfterViewInit,
   Component,
+  computed,
   effect,
   ElementRef,
   inject,
@@ -9,15 +10,18 @@ import {
 } from '@angular/core';
 import {
   asyncScheduler,
+  distinctUntilChanged,
   map,
   OperatorFunction,
   retry,
   scan,
   share,
+  shareReplay,
+  switchMap,
   tap,
 } from 'rxjs';
 import { DevDispService, fromDevDispConnection } from '../dev-disp.service';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 
 // TODO: Move to a shared utilities library
 function slidingWindow<T>(size: number): OperatorFunction<T, T[]> {
@@ -41,10 +45,24 @@ export class ScreenComponent implements AfterViewInit {
   private readonly devDispService = inject(DevDispService);
   readonly canvas = viewChild<ElementRef<HTMLCanvasElement>>('screen');
 
+  readonly offscreenCanvas$ = toObservable(this.canvas).pipe(
+    distinctUntilChanged(),
+    map((canvas) => canvas?.nativeElement.transferControlToOffscreen()),
+    distinctUntilChanged(),
+    shareReplay(1)
+  );
+
   // TODO: Correctly display data
-  readonly data$ = fromDevDispConnection(() =>
-    this.devDispService.connect(`${window.location.hostname}:56789`)
-  ).pipe(
+  readonly data$ = this.offscreenCanvas$.pipe(
+    switchMap((offscreenCanvas) =>
+      fromDevDispConnection(() =>
+        this.devDispService.connect(
+          `${window.location.hostname}:56789`,
+          offscreenCanvas
+        )
+      )
+    ),
+
     tap({
       error: (e) => {
         console.error('Dev-disp connection error', e);
@@ -78,27 +96,5 @@ export class ScreenComponent implements AfterViewInit {
     { initialValue: 0 }
   );
 
-  ngAfterViewInit(): void {
-    asyncScheduler.schedule(() => {
-      effect(
-        () => {
-          const canvas = this.canvas();
-
-          const ctx = canvas?.nativeElement.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = 'green';
-            ctx.fillRect(
-              0,
-              0,
-              canvas!.nativeElement.width,
-              canvas!.nativeElement.height
-            );
-          }
-        },
-        {
-          injector: this.injector,
-        }
-      );
-    });
-  }
+  ngAfterViewInit(): void {}
 }

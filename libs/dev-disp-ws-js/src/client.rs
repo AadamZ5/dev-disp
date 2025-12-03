@@ -1,15 +1,17 @@
 use std::fmt::Debug;
 
 use dev_disp_comm::websocket::messages::{
-    DevDispMessageFromClient, DevDispMessageFromSource, DisplayParameters, WsMessageFromClient,
-    WsMessageFromSource,
+    DevDispMessageFromClient, DevDispMessageFromSource, DisplayParameters,
+    EncoderPossibleConfiguration, WsMessageFromClient, WsMessageFromSource,
 };
 use futures::{Sink, SinkExt, Stream, StreamExt};
+use js_sys::{Promise, Uint8Array};
 use log::{debug, warn};
-use wasm_bindgen::{JsError, JsValue};
+use wasm_bindgen::{JsCast, JsError, JsValue};
+use wasm_bindgen_futures::JsFuture;
 use ws_stream_wasm::WsMessage;
 
-use crate::types::{DevDispEvent, JsDisplayParameters, WsHandlers};
+use crate::types::{DevDispEvent, JsDisplayParameters, JsEncoderPossibleConfiguration, WsHandlers};
 
 /// Helper task that listens to the given dispatcher channels, and
 /// sends appropriate message to the WebSocket TX channel/sink.
@@ -55,6 +57,8 @@ where
     S: Sink<WsMessage> + Unpin,
     S::Error: Debug,
 {
+    let mut screen_buffer = Vec::<u8>::new();
+
     while let Some(data) = stream.next().await {
         match data {
             WsMessage::Text(text) => {
@@ -162,7 +166,7 @@ where
                                 );
                                 let event = DevDispEvent {
                                     error: None,
-                                    data: None,
+                                    data: Some(JsValue::from(Uint8Array::from(screen_data))),
                                 };
                                 let _ = handlers
                                     .handle_screen_data
@@ -194,6 +198,96 @@ where
                                 );
                                 send_ws_message(&mut response_tx, resp).await?;
                                 debug!("Sent DisplayParametersUpdate message");
+                            }
+                            DevDispMessageFromSource::GetPreferredEncodingRequest(encodings) => {
+                                debug!("Handling GetPreferredEncodingRequest message with {} configurations", encodings.len());
+                                let event = encodings
+                                    .into_iter()
+                                    .filter_map(|config| {
+                                        let js_config: JsEncoderPossibleConfiguration = config.into();
+                                        match serde_wasm_bindgen::to_value(&js_config) {
+                                            Ok(val) => Some(val),
+                                            Err(e) => {
+                                                warn!(
+                                                    "Failed to convert EncoderPossibleConfiguration to JsValue: {:#?}",
+                                                    e
+                                                );
+                                                None
+                                            }
+                                        }
+                                    })
+                                    .collect::<js_sys::Array>();
+
+                                let js_value = handlers
+                                    .handle_request_preferred_encoding
+                                    .call1(&JsValue::NULL, &event.into())
+                                    .map_err(|e| {
+                                        JsError::new(&format!(
+                                            "Failed to call preferred encoding handler: {:?}",
+                                            e
+                                        ))
+                                    })?;
+
+                                let js_fut = js_value
+                                    .dyn_into::<Promise>()
+                                    .map(|promise| JsFuture::from(promise)).map_err(|e| {
+                                    JsError::new(&format!(
+                                        "Failed to convert preferred encoding handler result to Promise: {:?}",
+                                        e
+                                    ))
+                                })?;
+
+                                let js_value = js_fut.await.map_err(|e| {
+                                    JsError::new(&format!(
+                                        "Preferred encoding handler Promise rejected: {:?}",
+                                        e
+                                    ))
+                                })?;
+
+                                debug!("Got preferred encoding from handler: {:?}", js_value);
+                                let preferred_encodings =
+                                    serde_wasm_bindgen::from_value::<
+                                        Vec<JsEncoderPossibleConfiguration>,
+                                    >(js_value)?
+                                    .into_iter()
+                                    .map(|js_config| js_config.into())
+                                    .collect::<Vec<EncoderPossibleConfiguration>>();
+
+                                let resp = WsMessageFromClient::Core(
+                                    DevDispMessageFromClient::EncodingPreferenceResponse(
+                                        preferred_encodings,
+                                    ),
+                                );
+                                send_ws_message(&mut response_tx, resp).await?;
+                                debug!("Sent EncodingPreferenceResponse message");
+                            }
+                            DevDispMessageFromSource::SetEncoding(configuration) => {
+                                debug!("Handling SetEncoding message");
+                                let js_config: JsEncoderPossibleConfiguration =
+                                    configuration.into();
+                                let js_value = serde_wasm_bindgen::to_value(&js_config).map_err(|e| {
+                                    JsError::new(&format!(
+                                        "Failed to convert EncoderPossibleConfiguration to JsValue: {:?}",
+                                        e
+                                    ))
+                                })?;
+
+                                let _ = handlers
+                                    .handle_set_encoding
+                                    .call1(&JsValue::NULL, &js_value)
+                                    .map_err(|e| {
+                                        JsError::new(&format!(
+                                            "Failed to call set encoding handler: {:?}",
+                                            e
+                                        ))
+                                    })?;
+                                debug!("Called set encoding handler");
+
+                                let resp = WsMessageFromClient::Core(
+                                    DevDispMessageFromClient::SetEncodingResponse(true),
+                                );
+                                send_ws_message(&mut response_tx, resp).await?;
+                                debug!("Sent SetEncodingResponse message");
                             }
                         }
                     }

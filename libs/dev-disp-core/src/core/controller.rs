@@ -10,7 +10,8 @@ use log::{debug, error, info, warn};
 use crate::{
     client::{DisplayHost, ScreenTransport},
     host::{
-        DisplayHostResult, Encoder, EncoderProvider, Screen, ScreenProvider, ScreenReadyStatus,
+        DisplayHostResult, Encoder, EncoderParameters, EncoderProvider, Screen, ScreenProvider,
+        ScreenReadyStatus,
     },
 };
 
@@ -137,22 +138,76 @@ where
     let format_params = screen.get_format_parameters();
     debug!("Got format parameters: {:?}", format_params);
 
+    let encoder_parameters = EncoderParameters {
+        // Note here, formatting to the same width/height as the screen
+        width: format_params.width,
+        height: format_params.height,
+
+        bitrate: 1000000, // TODO: Make this configurable
+        fps: 60,          // TODO: Make this configurable
+        encoder_input_parameters: format_params,
+    };
+
+    let supported_configurations = match encoder.get_supported_configurations(&encoder_parameters) {
+        Err(e) => {
+            error!("Failed to get supported encoder configurations: {}", e);
+            close_dev(&mut host).await;
+            return Err((
+                host,
+                "Failed to get supported encoder configurations".to_string(),
+            ));
+        }
+        Ok(configs) => configs,
+    };
+
+    let preferred_configurations = match host
+        .get_preferred_encodings(supported_configurations.clone())
+        .await
+    {
+        Err(e) => {
+            error!(
+                "Failed to get preferred encoder configurations from host: {}",
+                e
+            );
+            close_dev(&mut host).await;
+            return Err((
+                host,
+                "Failed to get preferred encoder configurations".to_string(),
+            ));
+        }
+        Ok(configs) => configs,
+    };
+
+    debug!(
+        "Got supported {} encoder configurations: {:#?}",
+        preferred_configurations.len(),
+        preferred_configurations
+    );
+
     debug!("Initializing encoder...");
     let encoder_init_result = encoder
-        .init(crate::host::EncoderParameters {
-            width: format_params.width,
-            height: format_params.height,
-            bitrate: 1000000, // TODO: Make this configurable
-            fps: 60,          // TODO: Make this configurable
-            input_parameters: format_params,
-        })
+        .init(encoder_parameters, Some(preferred_configurations))
         .await;
-    if let Err(e) = encoder_init_result {
-        error!("Failed to initialize encoder: {}", e);
-        close_dev(&mut host).await;
-        return Err((host, "Failed to initialize encoder".to_string()));
+    let initialized_codec = match encoder_init_result {
+        Err(e) => {
+            error!("Failed to initialize encoder: {}", e);
+            close_dev(&mut host).await;
+            return Err((host, "Failed to initialize encoder".to_string()));
+        }
+        Ok(config) => config,
     };
-    debug!("Initialized encoder.");
+    debug!(
+        "Initialized encoder with {}.",
+        initialized_codec.encoder_name
+    );
+
+    debug!("Setting encoding on host...");
+    if let Err(e) = host.set_encoding(initialized_codec).await {
+        error!("Failed to set encoding on host: {}", e);
+        close_dev(&mut host).await;
+        return Err((host, "Failed to set encoding on host".to_string()));
+    }
+    debug!("Set encoding on host.");
 
     debug!("Starting screen tasks...");
     let screen_background_task = future::lazy(|_| {

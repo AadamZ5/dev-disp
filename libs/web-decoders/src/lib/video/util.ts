@@ -1,0 +1,86 @@
+import { VIDEO_CODEC_DEFINITIONS, VideoCodecId } from '.';
+import { CodecParameterStringFn } from './common';
+
+/**
+ * Returns true if the given codec string is one defined by this library.
+ *
+ * @see {@link VIDEO_CODEC_DEFINITIONS}
+ *
+ * @param codec The codec to test
+ * @returns true if the codec is defined in this library
+ */
+export function isDefinedVideoCodec<T extends string>(
+  codec: string
+): codec is VideoCodecId {
+  return VIDEO_CODEC_DEFINITIONS.some((def) => def.codec === codec);
+}
+
+export type SearchCodecResult = {
+  decoderConfig?: VideoDecoderConfig;
+  definition: (typeof VIDEO_CODEC_DEFINITIONS)[number];
+};
+
+export const DEBUG_DECODER_SEARCH = { value: true };
+
+/**
+ * Given a codec name and a set of parameters, search through the known video codec
+ * definitions and return those that are supported by the current environment.
+ *
+ * @param codec The *WEB* codec name, e.g., 'av01', 'vp09', etc. (See {@link VideoCodecId})
+ * @param parameters The codec-specific parameters to test compatibility against
+ * @returns A list of supported codec definitions matching the given codec and parameters
+ */
+export async function searchSupportedVideoDecoders(
+  codec: string,
+  parameters?: Record<string, string | number>,
+  codedWidth?: number,
+  codedHeight?: number
+): Promise<SearchCodecResult[]> {
+  if (!('VideoDecoder' in window)) {
+    console.warn('VideoDecoder is not supported in this environment');
+    return [];
+  }
+
+  const supportResults = await Promise.allSettled(
+    // Filter first, find the codecs that match the ID given
+    VIDEO_CODEC_DEFINITIONS.filter((def) => def.codec === codec).map(
+      async (definition) => {
+        const paramString = (
+          definition.toParamString as CodecParameterStringFn
+        )(definition.codec, parameters ?? null);
+        const fullCodecString = paramString;
+        if (DEBUG_DECODER_SEARCH.value) {
+          console.log(
+            `Checking support for codec string: "${fullCodecString}"`
+          );
+        }
+        const support = await VideoDecoder.isConfigSupported({
+          codec: fullCodecString,
+          codedWidth,
+          codedHeight,
+        });
+        if (DEBUG_DECODER_SEARCH.value) {
+          console.log(
+            `Support for codec string "${fullCodecString}":`,
+            support
+          );
+        }
+        return { support, definition };
+      }
+    )
+  );
+
+  const supportedCodecs = supportResults
+    .filter(
+      (result): result is typeof result & { status: 'fulfilled' } =>
+        result.status === 'fulfilled' && result.value.support.supported === true
+    )
+    .map((result) => {
+      return {
+        decoderConfig: result.value.support.config,
+        definition: result.value.definition,
+      };
+    });
+
+  return supportedCodecs;
+}

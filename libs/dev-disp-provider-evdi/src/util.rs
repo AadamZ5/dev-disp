@@ -1,5 +1,6 @@
 use dev_disp_core::host::VirtualScreenPixelFormat;
 use drm_fourcc::DrmFourcc;
+use log::debug;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Error)]
@@ -16,6 +17,12 @@ pub fn evdi_format_to_internal_format(
         fourcc: format,
         name: "????".to_string(),
     })?;
+
+    debug!(
+        "Mapping EVDI FourCC format: {} ({})",
+        ToString::to_string(&result),
+        format
+    );
 
     match result {
         DrmFourcc::Rgba8888 => Ok(VirtualScreenPixelFormat::Rgba8888),

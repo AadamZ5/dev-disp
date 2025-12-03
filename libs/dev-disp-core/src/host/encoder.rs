@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use futures::FutureExt;
+use serde::{Deserialize, Serialize};
 
 use crate::util::PinnedLocalFuture;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum VirtualScreenPixelFormat {
     Rgb888,
     Bgr888,
@@ -14,7 +15,7 @@ pub enum VirtualScreenPixelFormat {
     Abgr8888,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScreenOutputParameters {
     /// Our intermediate pixel format representation.
     pub format: VirtualScreenPixelFormat,
@@ -47,19 +48,42 @@ pub struct ScreenOutputParameters {
     pub meta_data: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncoderParameters {
     pub width: u32,
     pub height: u32,
     pub bitrate: u32,
     pub fps: u32,
-    pub input_parameters: ScreenOutputParameters,
+    pub encoder_input_parameters: ScreenOutputParameters,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncoderPossibleConfiguration {
+    /// The name of the encoder, e.g., "h264_nvenc"
+    pub encoder_name: String,
+    /// What resolution the encoder is configured for
+    pub encoded_resolution: (u32, u32),
+    /// Something like "hevc", "h264", "vp8", etc.
+    /// Or "raw" for raw uncompressed output.
+    pub encoder_family: String,
+    /// Key-value pairs of encoder parameters and their values.
+    pub parameters: HashMap<String, String>,
 }
 
 pub trait Encoder {
+    fn get_supported_configurations(
+        &mut self,
+        parameters: &EncoderParameters,
+    ) -> Result<Vec<EncoderPossibleConfiguration>, String>;
+
     /// Called first, to initialize the encoder with the given parameters.
+    /// Must return the successfully initialized encoder configuration.
     /// TODO: Better error type
-    fn init(&mut self, parameters: EncoderParameters) -> PinnedLocalFuture<'_, Result<(), String>>;
+    fn init(
+        &mut self,
+        parameters: EncoderParameters,
+        preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
+    ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>>;
 
     /// Encodes a frame of raw data, returning the encoded data.
     /// TODO: Better error type
@@ -83,13 +107,31 @@ pub trait EncoderProvider {
 pub struct RawEncoder;
 
 impl Encoder for RawEncoder {
+    fn get_supported_configurations(
+        &mut self,
+        screen_parameters: &EncoderParameters,
+    ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
+        Ok(vec![EncoderPossibleConfiguration {
+            encoder_name: "raw".to_string(),
+            encoder_family: "raw".to_string(),
+            encoded_resolution: (screen_parameters.width, screen_parameters.height),
+            parameters: HashMap::new(),
+        }])
+    }
+
     fn init(
         &mut self,
-        _parameters: EncoderParameters,
-    ) -> PinnedLocalFuture<'_, Result<(), String>> {
+        screen_parameters: EncoderParameters,
+        _preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
+    ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
         async move {
             // No initialization needed for raw encoder
-            Ok(())
+            Ok(EncoderPossibleConfiguration {
+                encoder_name: "raw".to_string(),
+                encoder_family: "raw".to_string(),
+                encoded_resolution: (screen_parameters.width, screen_parameters.height),
+                parameters: HashMap::new(),
+            })
         }
         .boxed_local()
     }

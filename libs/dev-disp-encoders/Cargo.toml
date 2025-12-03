@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ffmpeg-next = { version = "8.0.0", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
+ffmpeg-next = { version = "8.0.0", default-features = false, features = [
+  "codec",
+  "format",
+  "software-scaling",
+] }
 dev-disp-core = { path = "../dev-disp-core" }
 futures-core = "0.3.31"
 futures-util = { version = "0.3.31", features = ["sink"] }
