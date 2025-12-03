@@ -1,15 +1,5 @@
+import { Component, ElementRef, inject, viewChild } from '@angular/core';
 import {
-  AfterViewInit,
-  Component,
-  computed,
-  effect,
-  ElementRef,
-  inject,
-  INJECTOR,
-  viewChild,
-} from '@angular/core';
-import {
-  asyncScheduler,
   distinctUntilChanged,
   map,
   OperatorFunction,
@@ -19,8 +9,9 @@ import {
   shareReplay,
   switchMap,
   tap,
+  throttleTime,
 } from 'rxjs';
-import { DevDispService, fromDevDispConnection } from '../dev-disp.service';
+import { DevDispService, ofDevDispConnection } from '../dev-disp.service';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 
 // TODO: Move to a shared utilities library
@@ -40,8 +31,7 @@ function slidingWindow<T>(size: number): OperatorFunction<T, T[]> {
   templateUrl: './screen.component.html',
   styleUrl: './screen.component.scss',
 })
-export class ScreenComponent implements AfterViewInit {
-  private readonly injector = inject(INJECTOR);
+export class ScreenComponent {
   private readonly devDispService = inject(DevDispService);
   readonly canvas = viewChild<ElementRef<HTMLCanvasElement>>('screen');
 
@@ -52,10 +42,9 @@ export class ScreenComponent implements AfterViewInit {
     shareReplay(1)
   );
 
-  // TODO: Correctly display data
-  readonly data$ = this.offscreenCanvas$.pipe(
+  readonly connection$ = this.offscreenCanvas$.pipe(
     switchMap((offscreenCanvas) =>
-      fromDevDispConnection(() =>
+      ofDevDispConnection(() =>
         this.devDispService.connect(
           `${window.location.hostname}:56789`,
           offscreenCanvas
@@ -73,7 +62,8 @@ export class ScreenComponent implements AfterViewInit {
   );
 
   readonly dataEpoch = toSignal(
-    this.data$.pipe(
+    this.connection$.pipe(
+      switchMap((conn) => conn.decodedFrame$),
       scan((acc) => {
         return acc + 1;
       }, 0)
@@ -82,9 +72,11 @@ export class ScreenComponent implements AfterViewInit {
   );
 
   readonly fps = toSignal(
-    this.data$.pipe(
+    this.connection$.pipe(
+      switchMap((conn) => conn.decodedFrame$),
       map(() => performance.now()),
       slidingWindow(30),
+      throttleTime(50, undefined, { leading: true, trailing: true }),
       map((times) => {
         if (times.length < 2) {
           return 0;
@@ -95,6 +87,4 @@ export class ScreenComponent implements AfterViewInit {
     ),
     { initialValue: 0 }
   );
-
-  ngAfterViewInit(): void {}
 }

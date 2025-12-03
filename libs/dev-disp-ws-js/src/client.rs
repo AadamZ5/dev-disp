@@ -5,8 +5,8 @@ use dev_disp_comm::websocket::messages::{
     EncoderPossibleConfiguration, WsMessageFromClient, WsMessageFromSource,
 };
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use js_sys::{Promise, Uint8Array};
-use log::{debug, warn};
+use js_sys::{Promise, SharedArrayBuffer, Uint8Array};
+use log::{debug, trace, warn};
 use wasm_bindgen::{JsCast, JsError, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use ws_stream_wasm::WsMessage;
@@ -51,13 +51,25 @@ pub async fn listen_ws_messages<T, S>(
     mut stream: T,
     mut response_tx: S,
     handlers: WsHandlers,
+    shared_buffer: Option<SharedArrayBuffer>,
 ) -> Result<(), JsError>
 where
     T: Stream<Item = WsMessage> + Unpin,
     S: Sink<WsMessage> + Unpin,
     S::Error: Debug,
 {
-    let mut screen_buffer = Vec::<u8>::new();
+    let have_shared_buf = shared_buffer.is_some();
+    debug!(
+        "WebSocket incoming message listener task starting, shared buffer provided: {}",
+        have_shared_buf
+    );
+
+    let buffer = shared_buffer
+        .map(|sab| Uint8Array::new(&sab))
+        .unwrap_or_else(|| {
+            // I don't know how much memory we could get.
+            Uint8Array::new_with_length(512 * 1024 * 1024)
+        });
 
     while let Some(data) = stream.next().await {
         match data {
@@ -140,17 +152,16 @@ where
                         }
                     }
                     WsMessageFromSource::Core(dev_disp_message_from_source) => {
-                        debug!("Received Core message: {}", dev_disp_message_from_source);
-
-                        let js_repr = serde_wasm_bindgen::to_value(&dev_disp_message_from_source)
-                            .map_err(|e| {
-                            JsError::new(&format!(
-                                "Failed to convert Core message to JsValue: {:?}",
-                                e
-                            ))
-                        })?;
-
                         if let Some(func) = &handlers.on_core {
+                            let js_repr =
+                                serde_wasm_bindgen::to_value(&dev_disp_message_from_source)
+                                    .map_err(|e| {
+                                        JsError::new(&format!(
+                                            "Failed to convert Core message to JsValue: {:?}",
+                                            e
+                                        ))
+                                    })?;
+
                             let event = DevDispEvent {
                                 error: None,
                                 data: Some(js_repr),
@@ -160,13 +171,28 @@ where
 
                         match dev_disp_message_from_source {
                             DevDispMessageFromSource::PutScreenData(screen_data) => {
-                                debug!(
-                                    "Handling ScreenData message with {} bytes",
+                                trace!(
+                                    "Handling PutScreenData message with {} bytes",
                                     screen_data.len()
                                 );
+
+                                // Copy the screen data into the shared buffer
+                                let newdata = buffer.subarray(0, screen_data.len() as u32);
+
+                                newdata.copy_from(&screen_data[..]);
+
+                                let js_val = if have_shared_buf {
+                                    // Send the length of the screen data, so they can collect it from the
+                                    // shared array buffer.
+                                    JsValue::from(screen_data.len())
+                                } else {
+                                    // Send the uint8array directly
+                                    JsValue::from(newdata)
+                                };
+
                                 let event = DevDispEvent {
                                     error: None,
-                                    data: Some(JsValue::from(Uint8Array::from(screen_data))),
+                                    data: Some(js_val),
                                 };
                                 let _ = handlers
                                     .handle_screen_data

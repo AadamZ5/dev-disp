@@ -33,6 +33,7 @@ web-sys = { version = "0.3.82", features = [
   "WebSocket",
   "OffscreenCanvas",
   "CanvasRenderingContext2d",
+  "Window",
 ] }
 ws_stream_wasm = "0.7.5"
 
