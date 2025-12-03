@@ -12,6 +12,7 @@ import {
   Observable,
   ReplaySubject,
   share,
+  Subject,
   Subscription,
 } from 'rxjs';
 import { SearchCodecResult, searchSupportedVideoDecoders } from 'web-decoders';
@@ -37,8 +38,8 @@ export type DevDispEventDisconnect = {
 export class DevDispConnection {
   private readonly dispatchers: WsDispatchers;
 
-  private readonly _screenData$ = new ReplaySubject<ArrayBuffer | undefined>(1);
-  public readonly screenData$ = this._screenData$.asObservable();
+  private readonly _decodedFrame$ = new Subject<void>();
+  public readonly decodedFrame$ = this._decodedFrame$.asObservable();
 
   private readonly _connected$ = new BehaviorSubject<boolean>(false);
   public readonly connected$ = this._connected$.asObservable();
@@ -112,15 +113,24 @@ export class DevDispConnection {
         if (!e?.data) {
           return;
         }
+
+        let data: Uint8Array;
+        if (this.dispatchers.screenData) {
+          // Use the shared buffer if available
+          const sharedBuffer = this.dispatchers.screenData;
+          data = new Uint8Array(sharedBuffer.slice(0, e.data as number));
+        } else {
+          data = new Uint8Array(e.data);
+        }
+
         const chunk = new EncodedVideoChunk({
-          data: new Uint8Array(e?.data!),
+          data,
           timestamp: 0,
           // I don't know what this is doing
           type: 'key',
         });
         decode.decode(chunk);
-
-        this._screenData$.next(e?.data);
+        this._decodedFrame$.next();
       },
       handleRequestDisplayParameters: (e) => {
         console.log('Dev-disp display parameters requested', e);
@@ -200,7 +210,7 @@ export class DevDispConnection {
             return {
               encoderName: configuration.sentConfig.encoderName,
               encoderFamily: configuration.supportedDecoder.definition.codec,
-              encodedResolution: supportRes,
+              encodedResolution: supportRes as [number, number],
               parameters: configuration.sentConfig.parameters,
             } satisfies JsEncoderPossibleConfiguration;
           });
@@ -263,16 +273,16 @@ export class DevDispConnection {
   }
 
   private _complete() {
-    this._screenData$.complete();
+    this._decodedFrame$.complete();
     this._disconnect$.complete();
     this._connected$.complete();
   }
 }
 
-export function fromDevDispConnection(
+export function ofDevDispConnection(
   factory: () => DevDispConnection
-): Observable<ArrayBuffer | undefined> {
-  return new Observable<ArrayBuffer | undefined>((subscriber) => {
+): Observable<DevDispConnection> {
+  return new Observable<DevDispConnection>((subscriber) => {
     const devDispConnection = factory();
 
     const disconnectSub = devDispConnection.disconnect$.subscribe({
@@ -282,26 +292,29 @@ export function fromDevDispConnection(
             new Error('Dev-disp connection disconnected unexpectedly')
           );
         }
-      },
-    });
-
-    const screenDataSub = devDispConnection.screenData$.subscribe({
-      next: (data) => {
-        subscriber.next(data);
+        subscriber.complete();
       },
       error: (err) => {
         subscriber.error(err);
       },
-      complete: () => {
-        subscriber.complete();
-      },
     });
 
-    const allSub = new Subscription(() => {
-      devDispConnection.disconnect();
+    let syncDone = false;
+    const connectionSub = devDispConnection.connected$.subscribe({
+      next: (connected) => {
+        if (connected) {
+          subscriber.next(devDispConnection);
+          if (syncDone) {
+            connectionSub.unsubscribe();
+          }
+        }
+      },
     });
+    syncDone = true;
+
+    const allSub = new Subscription();
     allSub.add(disconnectSub);
-    allSub.add(screenDataSub);
+    allSub.add(connectionSub);
 
     return allSub;
   }).pipe(share());

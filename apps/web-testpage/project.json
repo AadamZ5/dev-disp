@@ -52,6 +52,10 @@
       "options": {
         "prebundle": {
           "exclude": ["dev-disp-ws-js"]
+        },
+        "headers": {
+          "Cross-Origin-Opener-Policy": "same-origin",
+          "Cross-Origin-Embedder-Policy": "require-corp"
         }
       },
       "configurations": {

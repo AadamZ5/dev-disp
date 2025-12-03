@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use dev_disp_comm::websocket::messages::{
     DisplayParameters, EncoderPossibleConfiguration, WsMessageDeviceInfo,
 };
-use js_sys::Function;
+use js_sys::{Function, SharedArrayBuffer};
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
@@ -57,6 +57,41 @@ mod serialize_option_function {
     {
         match func {
             Some(f) => serde_wasm_bindgen::preserve::serialize(f, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+}
+
+mod serialize_option_sab {
+    use js_sys::SharedArrayBuffer;
+    use serde::{Deserializer, Serializer};
+    use wasm_bindgen::{JsCast, JsValue};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<SharedArrayBuffer>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_wasm_bindgen::preserve::deserialize::<D, JsValue>(deserializer)?;
+        if value.is_undefined() || value.is_null() {
+            Ok(None)
+        } else {
+            let sab: SharedArrayBuffer = value.dyn_into().map_err(|e| {
+                serde::de::Error::custom(format!(
+                    "Expected a SharedArrayBuffer, got a {}",
+                    e.js_typeof().as_string().unwrap_or_default()
+                ))
+            })?;
+            Ok(Some(sab))
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn serialize<S>(sab: &Option<SharedArrayBuffer>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match sab {
+            Some(s) => serde_wasm_bindgen::preserve::serialize(s, serializer),
             None => serializer.serialize_none(),
         }
     }
@@ -226,4 +261,7 @@ pub struct WsDispatchers {
     #[serde(with = "serialize_function")]
     #[tsify(type = "WsDispatcherUpdateDisplayParameters")]
     pub update_display_parameters: Function,
+
+    #[serde(with = "serialize_option_sab")]
+    pub screen_data: Option<SharedArrayBuffer>,
 }

@@ -1,6 +1,7 @@
 use std::{net::SocketAddr, panic, str::FromStr};
 
 use futures::{channel::mpsc, stream::FuturesUnordered, FutureExt, SinkExt, StreamExt};
+use js_sys::SharedArrayBuffer;
 use log::{debug, error, info, warn};
 use wasm_bindgen::prelude::*;
 use web_sys::OffscreenCanvas;
@@ -41,6 +42,10 @@ pub fn connect_dev_disp_server(
     let mut cancel_token = cancel_tx.clone();
     let mut cancel_token_outer = cancel_tx.clone();
 
+    let shared_buffer = SharedArrayBuffer::new(512 * 1024 * 1024); // 512 MB
+
+    let shared_buffer_clone = shared_buffer.clone();
+
     let task_main = async move {
         let handlers = handlers_1;
         info!("Connecting to WebSocket at ws://{}", address);
@@ -62,14 +67,19 @@ pub fn connect_dev_disp_server(
 
         let task_rx_update_display_params =
             listen_dispatchers(update_display_params_rx, ws_fwd_tx.clone()).boxed_local();
-        let task_rx = listen_ws_messages(ws_rx, ws_fwd_tx, handlers.clone())
-            .then(|r| async move {
-                // Call cancel token
-                let _ = cancel_token.send(()).await;
+        let task_rx = listen_ws_messages(
+            ws_rx,
+            ws_fwd_tx,
+            handlers.clone(),
+            Some(shared_buffer_clone),
+        )
+        .then(|r| async move {
+            // Call cancel token
+            let _ = cancel_token.send(()).await;
 
-                r
-            })
-            .boxed_local();
+            r
+        })
+        .boxed_local();
 
         let task_forward_tx = async move {
             let mut ws_tx = ws_tx_original;
@@ -165,6 +175,7 @@ pub fn connect_dev_disp_server(
     let dispatchers = WsDispatchers {
         close_connection: cancel_closure.into_js_value().into(),
         update_display_parameters: update_display_params_closure.into_js_value().into(),
+        screen_data: Some(shared_buffer),
     };
 
     Ok(dispatchers)
