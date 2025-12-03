@@ -13,6 +13,6 @@ pub fn ffmpeg_format_from_internal_format(
 
         // EVDI is reporting ABGR, but really giving us BGRA data
         // TODO: Investigate and fix!
-        VirtualScreenPixelFormat::Abgr8888 => ffmpeg::format::Pixel::BGRA,
+        VirtualScreenPixelFormat::Abgr8888 => ffmpeg::format::Pixel::RGBA,
     }
 }
