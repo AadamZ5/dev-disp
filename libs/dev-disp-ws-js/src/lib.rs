@@ -26,7 +26,6 @@ mod util;
 pub fn connect_dev_disp_server(
     address: String,
     handlers: &WsHandlers,
-    canvas: OffscreenCanvas,
 ) -> Result<WsDispatchers, JsError> {
     // Create cancel channels
     let (cancel_tx, mut cancel_rx) = mpsc::unbounded::<()>();

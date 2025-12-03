@@ -258,7 +258,7 @@ export class DevDispConnection {
       },
     };
 
-    this.dispatchers = connectDevDispServer(address, handlers, canvas);
+    this.dispatchers = connectDevDispServer(address, handlers);
   }
 
   disconnect() {
