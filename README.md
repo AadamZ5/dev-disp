@@ -2,6 +2,9 @@
 
 I have an Android device with a screen, why can't I use it as another display for my laptop?!? This repository aims to create a virtual screen-extension utility that can be easily cast to other devices.
 
+![Preview animation](assets/dev-disp-preview.gif)
+_(Web PoC pictured above with software encoding)_
+
 ## Goal
 
 The goal of this utility is to use the EVDI sub-system developed for the DisplayLink driver to create a virtual display that represents the geometry of the device connected, then transmit that virtual display information to the device via some transport. Device Display will use a companion app to receive high-quality and low-latency data. While this is not targeted at an ultra-low-latency use-case such as gaming, it should
