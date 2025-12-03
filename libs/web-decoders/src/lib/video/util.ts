@@ -20,6 +20,8 @@ export type SearchCodecResult = {
   definition: (typeof VIDEO_CODEC_DEFINITIONS)[number];
 };
 
+export const DEBUG_DECODER_SEARCH = { value: true };
+
 /**
  * Given a codec name and a set of parameters, search through the known video codec
  * definitions and return those that are supported by the current environment.
@@ -30,7 +32,9 @@ export type SearchCodecResult = {
  */
 export async function searchSupportedVideoDecoders(
   codec: string,
-  parameters?: Record<string, string | number>
+  parameters?: Record<string, string | number>,
+  codedWidth?: number,
+  codedHeight?: number
 ): Promise<SearchCodecResult[]> {
   if (!('VideoDecoder' in window)) {
     console.warn('VideoDecoder is not supported in this environment');
@@ -45,10 +49,22 @@ export async function searchSupportedVideoDecoders(
           definition.toParamString as CodecParameterStringFn
         )(definition.codec, parameters ?? null);
         const fullCodecString = paramString;
-
+        if (DEBUG_DECODER_SEARCH.value) {
+          console.log(
+            `Checking support for codec string: "${fullCodecString}"`
+          );
+        }
         const support = await VideoDecoder.isConfigSupported({
           codec: fullCodecString,
+          codedWidth,
+          codedHeight,
         });
+        if (DEBUG_DECODER_SEARCH.value) {
+          console.log(
+            `Support for codec string "${fullCodecString}":`,
+            support
+          );
+        }
         return { support, definition };
       }
     )

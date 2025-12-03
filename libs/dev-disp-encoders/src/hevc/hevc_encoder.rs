@@ -42,6 +42,7 @@ impl Debug for HevcEncoderState {
     }
 }
 
+// TODO: Rename me! I am no longer just an HEVC encoder, but a generic FFmpeg-based encoder!
 #[derive(Debug, Default)]
 pub struct HevcEncoder {
     state: Option<HevcEncoderState>,
@@ -121,7 +122,7 @@ impl DevDispEncoder for HevcEncoder {
                 Err(_) => None,
             })
             .map(|(encoder, config, _)| {
-                let codec_params = get_relevant_codec_parameters(&config.encoder_family, &encoder);
+                let codec_params = get_relevant_codec_parameters(&config, &encoder);
 
                 EncoderPossibleConfiguration {
                     encoder_name: config.encoder_name,
@@ -182,10 +183,8 @@ impl DevDispEncoder for HevcEncoder {
                             configuration.encoder_name
                         );
 
-                        let codec_params = get_relevant_codec_parameters(
-                            &configuration.encoder_family,
-                            &state.encoder,
-                        );
+                        let codec_params =
+                            get_relevant_codec_parameters(&configuration, &state.encoder);
 
                         let configuration = EncoderPossibleConfiguration {
                             encoder_name: configuration.encoder_name,

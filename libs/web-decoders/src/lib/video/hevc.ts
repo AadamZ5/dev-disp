@@ -3,6 +3,7 @@ import { CodecDefinition } from './common';
 /**
  * Parameter string:
  *   1. Section E.3 of https://www.iso.org/standard/79312.html
+ *   2. https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/codecs_parameter#hevc_mp4_quicktime_matroska
  */
 export type CodecHevcParameters = {
   /**
@@ -10,9 +11,9 @@ export type CodecHevcParameters = {
    *  - 2 = Main 10 profile
    *  - Others unknown
    */
-  profile: number;
+  profile: number | string;
   /** Bitmask indicating other profiles compatible */
-  compatibility: number;
+  compatibility: number | string;
   /**
    * 'L' = Main Tier
    * 'H' = High Tier
@@ -28,7 +29,7 @@ export type CodecHevcParameters = {
    * Level 4.1 is specified as 123.
    * Level 5.1 is specified as 153.
    */
-  level: number;
+  level: number | string;
   /**
    * BE Bitmask of constraint bytes
    *
@@ -38,7 +39,7 @@ export type CodecHevcParameters = {
    *  - `interlaced_source`
    *  - Others unknown
    */
-  constraintBytes: number;
+  constraints: number | string;
 };
 
 export type CodecHevc = CodecDefinition<CodecHevcParameters, 'hvc1' | 'hev1'>;
@@ -48,7 +49,7 @@ function hevcParamString(codec: 'hvc1' | 'hev1', params: CodecHevcParameters) {
   acc += `.${params.profile.toString()}`;
   acc += `.${params.compatibility.toString()}`;
   acc += `.${params.tier}${params.level.toString().padStart(2, '0')}`;
-  acc += `.${params.constraintBytes.toString(16).padStart(2, '0')}`;
+  acc += `.${params.constraints.toString(16).padStart(2, '0')}`;
   return acc;
 }
 

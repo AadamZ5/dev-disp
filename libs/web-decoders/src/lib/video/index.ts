@@ -1,8 +1,8 @@
 import { CODEC_AV1 } from './av1';
 import { CODEC_VP09 } from './vp09';
 import { CODEC_VP8 } from './vp8';
+import { CODEC_HEV1, CODEC_HVC1 } from './hevc';
 
-// import { CODEC_HEV1, CODEC_HVC1 } from './hevc';
 // import { CODEC_AVC1, CODEC_AVC3 } from './avc';
 
 export * from './util';
@@ -17,11 +17,11 @@ export const VIDEO_CODEC_DEFINITIONS = [
   CODEC_AV1,
   CODEC_VP8,
   CODEC_VP09,
+  CODEC_HEV1,
+  CODEC_HVC1,
   // These aren't supported yet, because we don't know the parameters!
   // CODEC_AVC1,
   // CODEC_AVC3,
-  // CODEC_HEV1,
-  // CODEC_HVC1,
 ] as const;
 
 export type VideoCodecDefinition = (typeof VIDEO_CODEC_DEFINITIONS)[number];

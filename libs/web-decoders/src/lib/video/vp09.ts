@@ -6,14 +6,14 @@ import { CodecDefinition } from './common';
  *   2. https://www.webmproject.org/vp9/mp4/#codecs-parameter-string
  */
 export type CodecVp09Parameters = {
-  profile: number; // 0..3
-  level: number; // 10..63
-  bitDepth: number; // 8, 10, 12
-  chromaSubsampling?: number; // 0..3
-  videoFullRangeFlag?: 0 | 1;
-  colourPrimaries?: number; // 0..255
-  transferCharacteristics?: number; // 0..255
-  matrixCoefficients?: number; // 0..255
+  profile: number | string; // 0..3
+  level: number | string; // 10..63
+  bitDepth: number | string; // 8, 10, 12
+  chromaSubsampling?: number | string; // 0..3
+  videoFullRangeFlag?: 0 | 1 | string;
+  colourPrimaries?: number | string; // 0..255
+  transferCharacteristics?: number | string; // 0..255
+  matrixCoefficients?: number | string; // 0..255
 };
 
 export function vp09ToParamString(codec: 'vp09', params: CodecVp09Parameters) {

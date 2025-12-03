@@ -6,6 +6,7 @@ import {
   WsHandlers,
   connectDevDispServer,
 } from 'dev-disp-ws-js';
+import { CodecParameterStringFn } from 'libs/web-decoders/src/lib/video/common';
 import {
   BehaviorSubject,
   Observable,
@@ -49,6 +50,8 @@ export class DevDispConnection {
 
   constructor(public readonly address: string, canvas?: OffscreenCanvas) {
     const context2d = canvas?.getContext('2d');
+
+    let supportedDecoderConfigurations: SearchCodecResult[] = [];
 
     const decode = new VideoDecoder({
       output: (frame) => {
@@ -109,7 +112,7 @@ export class DevDispConnection {
         const chunk = new EncodedVideoChunk({
           data: new Uint8Array(e?.data!),
           timestamp: 0,
-          type: 'key',
+          type: 'delta',
         });
         decode.decode(chunk);
 
@@ -130,7 +133,9 @@ export class DevDispConnection {
             const parameters = Object.fromEntries(cfg.parameters);
             const supportedDecoders = await searchSupportedVideoDecoders(
               cfg.encoderFamily,
-              parameters
+              parameters,
+              cfg.encodedResolution[0],
+              cfg.encodedResolution[1]
             );
             return {
               supportedDecoders,
@@ -139,7 +144,9 @@ export class DevDispConnection {
           })
         );
 
-        return compatibleConfigResults
+        supportedDecoderConfigurations = [];
+
+        const flattenedResults = compatibleConfigResults
           .filter(
             (
               result
@@ -147,6 +154,17 @@ export class DevDispConnection {
               supportedDecoders: SearchCodecResult[];
               sentConfig: JsEncoderPossibleConfiguration;
             }> => {
+              if (result.status === 'rejected') {
+                console.error(`Decoding check failed`, result.reason);
+              } else if (
+                result.status === 'fulfilled' &&
+                result.value.supportedDecoders.length <= 0
+              ) {
+                console.log(
+                  `Decoding not supported for "${result.value.sentConfig.encoderFamily}"`
+                );
+              }
+
               return (
                 result.status === 'fulfilled' &&
                 result.value.supportedDecoders.length > 0
@@ -154,6 +172,10 @@ export class DevDispConnection {
             }
           )
           .flatMap((result) => {
+            supportedDecoderConfigurations.push(
+              ...result.value.supportedDecoders
+            );
+
             return result.value.supportedDecoders.map((supportedDecoder) => {
               return {
                 supportedDecoder,
@@ -178,12 +200,41 @@ export class DevDispConnection {
               parameters: configuration.sentConfig.parameters,
             } satisfies JsEncoderPossibleConfiguration;
           });
+
+        flattenedResults.forEach((result) => {
+          console.log(
+            `Supported encoding found for ${result.encoderFamily}`,
+            result
+          );
+        });
+
+        return flattenedResults;
       },
       handleSetEncoding: (encodingConfig) => {
         console.log('Dev-disp set encoding requested', encodingConfig);
 
+        const correspondingDecoder = supportedDecoderConfigurations.find(
+          (decodingConfig) =>
+            decodingConfig.definition.codec === encodingConfig.encoderFamily
+        );
+        if (!correspondingDecoder) {
+          console.error(
+            `No supported decoder found for requested encoding:`,
+            encodingConfig
+          );
+          return;
+        }
+
+        console.log(`Using decoder configuration:`, correspondingDecoder);
+
         decode.configure({
-          codec: encodingConfig.encoderFamily,
+          codec: (
+            correspondingDecoder.definition
+              .toParamString as CodecParameterStringFn
+          )(
+            correspondingDecoder.definition.codec,
+            Object.fromEntries(encodingConfig.parameters)
+          ),
           codedHeight: encodingConfig.encodedResolution[0],
           codedWidth: encodingConfig.encodedResolution[1],
         });
