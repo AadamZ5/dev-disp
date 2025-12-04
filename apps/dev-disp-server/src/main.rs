@@ -6,7 +6,7 @@ use dev_disp_core::{
     core::handle_display_host,
     host::{ConnectableDevice, DeviceDiscovery, ScreenProvider, StreamingDeviceDiscovery},
 };
-use dev_disp_encoders::hevc::HevcEncoderProvider;
+use dev_disp_encoders::ffmpeg::FfmpegEncoderProvider;
 use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::{
     FutureExt, StreamExt,
@@ -143,7 +143,8 @@ where
         let provider_1 = provider.clone();
 
         let _ = tokio::task::spawn_local(async move {
-            let handle_result = handle_display_host(provider_1, HevcEncoderProvider, display).await;
+            let handle_result =
+                handle_display_host(provider_1, FfmpegEncoderProvider, display).await;
 
             if let Err((_, e)) = handle_result {
                 error!("Error handling display host: {}", e);
@@ -180,7 +181,7 @@ where
 
             let _ = tokio::task::spawn_local(async move {
                 let handle_result =
-                    handle_display_host(provider_1, HevcEncoderProvider, display).await;
+                    handle_display_host(provider_1, FfmpegEncoderProvider, display).await;
 
                 if let Err((_, e)) = handle_result {
                     error!("Error handling display host: {}", e);

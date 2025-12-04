@@ -15,13 +15,13 @@ use futures::FutureExt;
 use log::{debug, info, trace};
 
 use crate::{
-    hevc::configurations::{
+    ffmpeg::configurations::{
         FfmpegEncoderConfiguration, get_encoders, get_relevant_codec_parameters,
     },
     util::ffmpeg_format_from_internal_format,
 };
 
-struct HevcEncoderState {
+struct FfmpegEncoderState {
     encoder: VideoEncoder,
     scaler: Option<ScalingContext>,
     encoder_fmt: Pixel,
@@ -30,7 +30,7 @@ struct HevcEncoderState {
     out_buf: Vec<u8>,
 }
 
-impl Debug for HevcEncoderState {
+impl Debug for FfmpegEncoderState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HevcEncoderState")
             .field("encoder_fmt", &self.encoder_fmt)
@@ -42,20 +42,19 @@ impl Debug for HevcEncoderState {
     }
 }
 
-// TODO: Rename me! I am no longer just an HEVC encoder, but a generic FFmpeg-based encoder!
 #[derive(Debug, Default)]
-pub struct HevcEncoder {
-    state: Option<HevcEncoderState>,
+pub struct FfmpegEncoder {
+    state: Option<FfmpegEncoderState>,
 }
 
-pub fn get_encoder(
+pub fn setup_ffmpeg_encoder(
     parameters: &EncoderParameters,
     configuration: &FfmpegEncoderConfiguration,
 ) -> Result<VideoEncoder, String> {
     let mut codec = ffmpeg::encoder::find_by_name(&configuration.encoder_name)
         .ok_or_else(|| format!("Encoder '{}' not found", configuration.encoder_name))?;
 
-    debug!("Initializing HEVC encoder: {}", codec.name(),);
+    debug!("Initializing ffmpeg encoder: {}", codec.name(),);
 
     let mut context = ffmpeg::codec::context::Context::new_with_codec(codec)
         .encoder()
@@ -73,13 +72,13 @@ pub fn get_encoder(
         .map_err(|e| format!("Failed to open encoder: {}", e))
 }
 
-impl HevcEncoder {
+impl FfmpegEncoder {
     fn try_init(
         &mut self,
         parameters: EncoderParameters,
         configuration: FfmpegEncoderConfiguration,
-    ) -> Result<HevcEncoderState, String> {
-        let encoder = get_encoder(&parameters, &configuration)?;
+    ) -> Result<FfmpegEncoderState, String> {
+        let encoder = setup_ffmpeg_encoder(&parameters, &configuration)?;
 
         let src_format =
             ffmpeg_format_from_internal_format(&parameters.encoder_input_parameters.format);
@@ -107,13 +106,13 @@ impl HevcEncoder {
             encoder.codec().unwrap().video().unwrap().description()
         );
 
-        let state = HevcEncoderState {
+        let state = FfmpegEncoderState {
             encoder,
             scaler,
             given_params: parameters,
             frame_index: 0,
             encoder_fmt: configuration.pixel_format,
-            // 16 KB initial buffer size for HEVC output
+            // 16 KB initial buffer size for output
             out_buf: Vec::with_capacity(1024 * 16),
         };
 
@@ -121,13 +120,13 @@ impl HevcEncoder {
     }
 }
 
-impl DevDispEncoder for HevcEncoder {
+impl DevDispEncoder for FfmpegEncoder {
     fn get_supported_configurations(
         &mut self,
         parameters: &EncoderParameters,
     ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
         let supported_configurations: Vec<_> = get_encoders()
-            .filter_map(|config| match get_encoder(parameters, &config) {
+            .filter_map(|config| match setup_ffmpeg_encoder(parameters, &config) {
                 Ok(encoder) => Some((encoder, config, parameters)),
                 Err(_) => None,
             })
@@ -158,7 +157,7 @@ impl DevDispEncoder for HevcEncoder {
 
             match preferred_encoders {
                 None => {
-                    info!("No preferred encoders specified, will try all available HEVC encoders.");
+                    info!("No preferred encoders specified, will try all configured ffmpeg encoders.");
                     encoders = Box::new(get_encoders());
                 }
                 Some(ref prefs) => {
@@ -227,7 +226,7 @@ impl DevDispEncoder for HevcEncoder {
                 }
             }
 
-            Err("Failed to find an HEVC codec to use!".to_string())
+            Err("Failed to find a codec to use!".to_string())
         }
         .boxed_local()
     }
@@ -242,7 +241,7 @@ impl DevDispEncoder for HevcEncoder {
         async move {
             let state = self.state.as_mut().ok_or("Encoder not initialized")?;
 
-            // Perform HEVC encoding on the raw data
+            // Perform encoding on the raw data
             // Return the encoded data
 
             let start = Instant::now();
@@ -342,12 +341,12 @@ impl DevDispEncoder for HevcEncoder {
     }
 }
 
-pub struct HevcEncoderProvider;
+pub struct FfmpegEncoderProvider;
 
-impl EncoderProvider for HevcEncoderProvider {
-    type EncoderType = HevcEncoder;
+impl EncoderProvider for FfmpegEncoderProvider {
+    type EncoderType = FfmpegEncoder;
 
     fn create_encoder(&self) -> Result<Self::EncoderType, String> {
-        Ok(HevcEncoder::default())
+        Ok(FfmpegEncoder::default())
     }
 }
