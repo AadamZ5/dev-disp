@@ -6,4 +6,17 @@ body {
   padding: 0;
   height: 100%;
   width: 100%;
+
+  background-color: #0b0d12;
+  color: #d4d7e4;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.code-span {
+  font-family: monospace;
+  font-weight: 600;
+  padding: 2px 4px;
+  background-color: #5056674c;
+  border-radius: 4px;
+  font-size: 90%;
 }

@@ -5,7 +5,7 @@ use std::{
 
 use futures::{future, join};
 use futures_util::FutureExt;
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 
 use crate::{
     client::{DisplayHost, ScreenTransport},
@@ -298,7 +298,7 @@ where
                             bad_transmission_start = None;
                             bad_transmission_count = 0;
                             let kbs = encoded_data.len() as f64 / 1024.0 / send_time.as_secs_f64();
-                            debug!(
+                            trace!(
                                 "Sent {} bytes to display host in {}ms ({:.2} KB/s, encode time: {}ms, send time: {}ms)",
                                 encoded_data.len(),
                                 send_time.as_millis(),

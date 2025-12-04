@@ -202,11 +202,27 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         FfmpegEncoderConfigurationSet::new(
             "hevc_nvenc",
             "hvc1",
-            vec![HashMap::from([("preset", "p1"), ("tune", "ull")])],
+            vec![HashMap::from([
+                ("preset", "llhq"),
+                ("tune", "ull"),
+                // ("profile", "main"),
+                ("delay", "0"),
+                ("rc", "vbr_hq"),
+                ("rc-lookahead", "0"),
+                ("tier", "high"),
+                ("multipass", "0"),
+                ("cq", "20"),
+                ("spatial-aq", "0"),
+                ("temporal-aq", "0"),
+                ("zerolatency", "1"),
+            ])],
             vec![
+                // Putting RGB-like formats first so that any pixel conversion/scaling
+                // can be done by the GPU instead of by ffmpeg software scaler.
+                Pixel::RGBA,
+                Pixel::BGRA,
                 Pixel::YUV420P,
                 Pixel::YUV444P,
-                Pixel::RGBA,
                 Pixel::YUV444P16LE,
                 Pixel::NV12,
                 Pixel::P010LE,
@@ -222,12 +238,13 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
                 ("scenario", "displayremoting"),
             ])],
             vec![
+                Pixel::RGBA,
+                Pixel::BGRA,
                 Pixel::YUYV422,
                 Pixel::NV12,
                 Pixel::P010LE,
                 Pixel::P012LE,
                 Pixel::QSV,
-                Pixel::BGRA,
                 Pixel::VUYX,
             ],
         ),
@@ -294,6 +311,30 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
             vec![Pixel::YUV420P],
         ),
         FfmpegEncoderConfigurationSet::new(
+            "libx264",
+            "h264",
+            vec![HashMap::new()],
+            vec![Pixel::YUV420P],
+        ),
+        FfmpegEncoderConfigurationSet::new(
+            "vp9_qsv",
+            "vp09",
+            vec![HashMap::new()],
+            vec![
+                Pixel::NV12,
+                Pixel::P010LE,
+                Pixel::VUYX,
+                Pixel::QSV,
+                Pixel::XV30LE,
+            ],
+        ),
+        FfmpegEncoderConfigurationSet::new(
+            "vp9_vaapi",
+            "vp09",
+            vec![HashMap::default()],
+            vec![Pixel::VAAPI],
+        ),
+        FfmpegEncoderConfigurationSet::new(
             "libvpx-vp9",
             "vp09",
             // Tuned with realtime screen encoding by following
@@ -332,7 +373,7 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
                 ("lag-in-frames", "0"),
                 ("cpu-used", "5"),
             ])],
-            vec![Pixel::YUVA420P, Pixel::YUV420P],
+            vec![Pixel::YUV420P, Pixel::YUVA420P],
         ),
         FfmpegEncoderConfigurationSet::new(
             "libaom-av1",
@@ -385,10 +426,10 @@ pub fn get_relevant_codec_parameters(
                 ("profile".to_string(), profile.to_string()),
                 ("level".to_string(), level.to_string()),
                 ("bitDepth".to_string(), bit_depth.to_string()),
-                (
-                    "chromaSubsampling".to_string(),
-                    chroma_subsampling.to_string(),
-                ),
+                // (
+                //     "chromaSubsampling".to_string(),
+                //     chroma_subsampling.to_string(),
+                // ),
             ])
         },
         "vp8" => HashMap::new(),

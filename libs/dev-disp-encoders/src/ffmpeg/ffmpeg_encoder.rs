@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, time::Instant};
+use std::{collections::HashMap, fmt::Debug, time::{Duration, Instant}};
 
 use dev_disp_core::{
     host::{
@@ -12,25 +12,25 @@ use ffmpeg_next::{
     frame::Video, software::scaling::Context as ScalingContext,
 };
 use futures::FutureExt;
-use log::{debug, info};
+use log::{debug, info, trace};
 
 use crate::{
-    hevc::configurations::{
+    ffmpeg::configurations::{
         FfmpegEncoderConfiguration, get_encoders, get_relevant_codec_parameters,
     },
     util::ffmpeg_format_from_internal_format,
 };
 
-struct HevcEncoderState {
+struct FfmpegEncoderState {
     encoder: VideoEncoder,
-    scaler: ScalingContext,
+    scaler: Option<ScalingContext>,
     encoder_fmt: Pixel,
     given_params: EncoderParameters,
     frame_index: u64,
     out_buf: Vec<u8>,
 }
 
-impl Debug for HevcEncoderState {
+impl Debug for FfmpegEncoderState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HevcEncoderState")
             .field("encoder_fmt", &self.encoder_fmt)
@@ -42,20 +42,19 @@ impl Debug for HevcEncoderState {
     }
 }
 
-// TODO: Rename me! I am no longer just an HEVC encoder, but a generic FFmpeg-based encoder!
 #[derive(Debug, Default)]
-pub struct HevcEncoder {
-    state: Option<HevcEncoderState>,
+pub struct FfmpegEncoder {
+    state: Option<FfmpegEncoderState>,
 }
 
-pub fn get_encoder(
+pub fn setup_ffmpeg_encoder(
     parameters: &EncoderParameters,
     configuration: &FfmpegEncoderConfiguration,
 ) -> Result<VideoEncoder, String> {
     let mut codec = ffmpeg::encoder::find_by_name(&configuration.encoder_name)
         .ok_or_else(|| format!("Encoder '{}' not found", configuration.encoder_name))?;
 
-    debug!("Initializing HEVC encoder: {}", codec.name(),);
+    debug!("Initializing ffmpeg encoder: {}", codec.name(),);
 
     let mut context = ffmpeg::codec::context::Context::new_with_codec(codec)
         .encoder()
@@ -73,37 +72,47 @@ pub fn get_encoder(
         .map_err(|e| format!("Failed to open encoder: {}", e))
 }
 
-impl HevcEncoder {
+impl FfmpegEncoder {
     fn try_init(
         &mut self,
         parameters: EncoderParameters,
         configuration: FfmpegEncoderConfiguration,
-    ) -> Result<HevcEncoderState, String> {
-        let encoder = get_encoder(&parameters, &configuration)?;
+    ) -> Result<FfmpegEncoderState, String> {
+        let encoder = setup_ffmpeg_encoder(&parameters, &configuration)?;
 
-        let scaler = ScalingContext::get(
-            ffmpeg_format_from_internal_format(&parameters.encoder_input_parameters.format),
-            parameters.encoder_input_parameters.width,
-            parameters.encoder_input_parameters.height,
-            configuration.pixel_format,
-            parameters.width,
-            parameters.height,
-            ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
-        )
-        .map_err(|e| format!("Failed to create scaler: {}", e))?;
+        let src_format =
+            ffmpeg_format_from_internal_format(&parameters.encoder_input_parameters.format);
+        let dst_format = configuration.pixel_format;
+
+        let scaler = if dst_format == src_format {
+            None
+        } else {
+            Some(
+                ScalingContext::get(
+                    src_format,
+                    parameters.encoder_input_parameters.width,
+                    parameters.encoder_input_parameters.height,
+                    configuration.pixel_format,
+                    parameters.width,
+                    parameters.height,
+                    ffmpeg::software::scaling::flag::Flags::POINT,
+                )
+                .map_err(|e| format!("Failed to create scaler: {}", e))?,
+            )
+        };
 
         info!(
             "Initialized encoder: {}",
             encoder.codec().unwrap().video().unwrap().description()
         );
 
-        let state = HevcEncoderState {
+        let state = FfmpegEncoderState {
             encoder,
             scaler,
             given_params: parameters,
             frame_index: 0,
             encoder_fmt: configuration.pixel_format,
-            // 16 KB initial buffer size for HEVC output
+            // 16 KB initial buffer size for output
             out_buf: Vec::with_capacity(1024 * 16),
         };
 
@@ -111,13 +120,13 @@ impl HevcEncoder {
     }
 }
 
-impl DevDispEncoder for HevcEncoder {
+impl DevDispEncoder for FfmpegEncoder {
     fn get_supported_configurations(
         &mut self,
         parameters: &EncoderParameters,
     ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
         let supported_configurations: Vec<_> = get_encoders()
-            .filter_map(|config| match get_encoder(parameters, &config) {
+            .filter_map(|config| match setup_ffmpeg_encoder(parameters, &config) {
                 Ok(encoder) => Some((encoder, config, parameters)),
                 Err(_) => None,
             })
@@ -148,7 +157,7 @@ impl DevDispEncoder for HevcEncoder {
 
             match preferred_encoders {
                 None => {
-                    info!("No preferred encoders specified, will try all available HEVC encoders.");
+                    info!("No preferred encoders specified, will try all configured ffmpeg encoders.");
                     encoders = Box::new(get_encoders());
                 }
                 Some(ref prefs) => {
@@ -178,9 +187,20 @@ impl DevDispEncoder for HevcEncoder {
 
                 match self.try_init(parameters.clone(), configuration.clone()) {
                     Ok(state) => {
+
+                        let has_scaler_str = match &state.scaler {
+                            Some(s) => {
+                                let input_format = s.input().format;
+                                let output_format = s.output().format;
+                                format!("with scaler ({:?} -> {:?})", input_format, output_format)
+                            },
+                            None => "without scaler".to_string(),
+                        };
+
                         debug!(
-                            "Successfully initialized encoder: {}",
-                            configuration.encoder_name
+                            "Successfully initialized encoder: {} {}",
+                            configuration.encoder_name,
+                            has_scaler_str
                         );
 
                         let codec_params =
@@ -206,7 +226,7 @@ impl DevDispEncoder for HevcEncoder {
                 }
             }
 
-            Err("Failed to find an HEVC codec to use!".to_string())
+            Err("Failed to find a codec to use!".to_string())
         }
         .boxed_local()
     }
@@ -221,7 +241,7 @@ impl DevDispEncoder for HevcEncoder {
         async move {
             let state = self.state.as_mut().ok_or("Encoder not initialized")?;
 
-            // Perform HEVC encoding on the raw data
+            // Perform encoding on the raw data
             // Return the encoded data
 
             let start = Instant::now();
@@ -259,28 +279,34 @@ impl DevDispEncoder for HevcEncoder {
             let copy_time = copy_start.elapsed();
 
             // The output frame after scaling.
-            let mut yuv_frame = Video::new(
-                state.encoder_fmt,
-                state.given_params.width,
-                state.given_params.height,
-            );
+            let mut scale_time = Duration::from_secs(0);
+            let formatted_frame = if let Some(scaler) = state.scaler.as_mut() {
+                let mut formatted_frame = Video::new(
+                    state.encoder_fmt,
+                    state.given_params.width,
+                    state.given_params.height,
+                );
+                // Scale the input frame to the encoder's input format
+                let scale_start = Instant::now();
+                scaler
+                    .run(&input_frame, &mut formatted_frame)
+                    .map_err(|e| format!("Failed to scale frame: {}", e))?;
 
-            // Scale the input frame to the encoder's input format
-            let scale_start = Instant::now();
-            state
-                .scaler
-                .run(&input_frame, &mut yuv_frame)
-                .map_err(|e| format!("Failed to scale frame: {}", e))?;
+                formatted_frame.set_pts(Some(state.frame_index as i64));
+                state.frame_index += 1;
+                scale_time = scale_start.elapsed();
+                formatted_frame
 
-            yuv_frame.set_pts(Some(state.frame_index as i64));
-            state.frame_index += 1;
-            let scale_time = scale_start.elapsed();
+            } else {
+                input_frame
+            };
+            
 
             // Send for encoding
             let encode_start = Instant::now();
             state
                 .encoder
-                .send_frame(&yuv_frame)
+                .send_frame(&formatted_frame)
                 .map_err(|e| format!("Failed to send frame to encoder: {}", e))?;
 
             state.out_buf.clear();
@@ -298,7 +324,7 @@ impl DevDispEncoder for HevcEncoder {
             }
 
             let encode_time = encode_start.elapsed();
-            debug!(
+            trace!(
                 "Alloc input time: {}ms   Copy time: {}ms   Scale time: {}ms   Encode time: {}ms (round trip)",
                 alloc_input_frame.as_millis(),
                 copy_time.as_millis(),
@@ -315,12 +341,12 @@ impl DevDispEncoder for HevcEncoder {
     }
 }
 
-pub struct HevcEncoderProvider;
+pub struct FfmpegEncoderProvider;
 
-impl EncoderProvider for HevcEncoderProvider {
-    type EncoderType = HevcEncoder;
+impl EncoderProvider for FfmpegEncoderProvider {
+    type EncoderType = FfmpegEncoder;
 
     fn create_encoder(&self) -> Result<Self::EncoderType, String> {
-        Ok(HevcEncoder::default())
+        Ok(FfmpegEncoder::default())
     }
 }

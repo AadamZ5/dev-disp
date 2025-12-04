@@ -1,3 +1,4 @@
+import { isNullish } from '../util';
 import { CodecDefinition } from './common';
 
 /**
@@ -23,11 +24,11 @@ export function vp09ToParamString(codec: 'vp09', params: CodecVp09Parameters) {
   acc += `.${params.bitDepth.toString().padStart(2, '0')}`;
   // If none of the optional parameters are set, return early
   if (
-    typeof params.chromaSubsampling !== 'number' &&
-    typeof params.videoFullRangeFlag !== 'number' &&
-    typeof params.colourPrimaries !== 'number' &&
-    typeof params.transferCharacteristics !== 'number' &&
-    typeof params.matrixCoefficients !== 'number'
+    isNullish(params.chromaSubsampling) &&
+    isNullish(params.videoFullRangeFlag) &&
+    isNullish(params.colourPrimaries) &&
+    isNullish(params.transferCharacteristics) &&
+    isNullish(params.matrixCoefficients)
   ) {
     return acc;
   }

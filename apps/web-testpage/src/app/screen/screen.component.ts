@@ -1,6 +1,7 @@
 import { Component, ElementRef, inject, viewChild } from '@angular/core';
 import {
   distinctUntilChanged,
+  endWith,
   map,
   OperatorFunction,
   retry,
@@ -39,17 +40,17 @@ export class ScreenComponent {
     distinctUntilChanged(),
     map((canvas) => canvas?.nativeElement.transferControlToOffscreen()),
     distinctUntilChanged(),
-    shareReplay(1)
+    shareReplay(1),
   );
 
-  readonly connection$ = this.offscreenCanvas$.pipe(
+  readonly client$ = this.offscreenCanvas$.pipe(
     switchMap((offscreenCanvas) =>
       ofDevDispConnection(() =>
         this.devDispService.connect(
           `${window.location.hostname}:56789`,
-          offscreenCanvas
-        )
-      )
+          offscreenCanvas,
+        ),
+      ),
     ),
 
     tap({
@@ -58,33 +59,57 @@ export class ScreenComponent {
       },
     }),
     retry({ delay: 5000 }),
-    share()
+    share(),
   );
 
   readonly dataEpoch = toSignal(
-    this.connection$.pipe(
-      switchMap((conn) => conn.decodedFrame$),
-      scan((acc) => {
-        return acc + 1;
-      }, 0)
+    this.client$.pipe(
+      switchMap((client) =>
+        client.decodedFrame$.pipe(
+          scan((acc) => {
+            return acc + 1;
+          }, 0),
+          endWith(-1),
+        ),
+      ),
     ),
-    { initialValue: -1 }
+    { initialValue: -1 },
   );
 
   readonly fps = toSignal(
-    this.connection$.pipe(
-      switchMap((conn) => conn.decodedFrame$),
-      map(() => performance.now()),
-      slidingWindow(30),
-      throttleTime(50, undefined, { leading: true, trailing: true }),
-      map((times) => {
-        if (times.length < 2) {
-          return 0;
-        }
-        const duration = times[0] - times[times.length - 1];
-        return ((times.length - 1) * 1000) / duration;
-      })
+    this.client$.pipe(
+      switchMap((client) =>
+        client.decodedFrame$.pipe(
+          map(() => performance.now()),
+          slidingWindow(30),
+          throttleTime(50, undefined, { leading: true, trailing: true }),
+          map((times) => {
+            if (times.length < 2) {
+              return 0;
+            }
+            const duration = times[0] - times[times.length - 1];
+            return ((times.length - 1) * 1000) / duration;
+          }),
+          endWith(0),
+        ),
+      ),
     ),
-    { initialValue: 0 }
+    { initialValue: 0 },
+  );
+
+  readonly configuredEncoding = toSignal(
+    this.client$.pipe(
+      switchMap((conn) => conn.configuredEncoding$.pipe(endWith(null))),
+    ),
+    { initialValue: null },
+  );
+
+  readonly connected = toSignal(
+    this.client$.pipe(
+      switchMap((client) =>
+        client.connected$.pipe(distinctUntilChanged(), endWith(false)),
+      ),
+    ),
+    { initialValue: false },
   );
 }

@@ -1,0 +1,30 @@
+<div class="receiver-root">
+  <div class="controls-container">
+    <p>
+      Frame: <span class="code-span">{{ screen.dataEpoch() }}</span>
+    </p>
+    <p>
+      FPS(?):
+      <span class="code-span">{{ screen.fps() | number: '1.0-0' }}</span>
+    </p>
+    <p>
+      Encoding:
+      @if (screen.configuredEncoding(); as encoding) {
+        {{ encoding.encoderName }} - {{ encoding.encodedResolution[0] }}x{{
+          encoding.encodedResolution[1]
+        }}
+        <span class="code-span">"{{ encoding.webCodecString }}"</span>
+      } @else {
+        Not Configured
+      }
+    </p>
+    <p>Connected: {{ screen.connected() ? 'Yes' : 'No' }}</p>
+  </div>
+
+  <div
+    class="screen-container"
+    [class.waiting]="!screen.connected() || !screen.configuredEncoding()"
+  >
+    <app-screen #screen></app-screen>
+  </div>
+</div>

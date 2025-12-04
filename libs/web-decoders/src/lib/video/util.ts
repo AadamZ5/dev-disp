@@ -10,7 +10,7 @@ import { CodecParameterStringFn } from './common';
  * @returns true if the codec is defined in this library
  */
 export function isDefinedVideoCodec<T extends string>(
-  codec: string
+  codec: string,
 ): codec is VideoCodecId {
   return VIDEO_CODEC_DEFINITIONS.some((def) => def.codec === codec);
 }
@@ -20,7 +20,7 @@ export type SearchCodecResult = {
   definition: (typeof VIDEO_CODEC_DEFINITIONS)[number];
 };
 
-export const DEBUG_DECODER_SEARCH = { value: true };
+export const DEBUG_DECODER_SEARCH = { value: false };
 
 /**
  * Given a codec name and a set of parameters, search through the known video codec
@@ -34,7 +34,7 @@ export async function searchSupportedVideoDecoders(
   codec: string,
   parameters?: Record<string, string | number>,
   codedWidth?: number,
-  codedHeight?: number
+  codedHeight?: number,
 ): Promise<SearchCodecResult[]> {
   if (!('VideoDecoder' in window)) {
     console.warn('VideoDecoder is not supported in this environment');
@@ -51,7 +51,7 @@ export async function searchSupportedVideoDecoders(
         const fullCodecString = paramString;
         if (DEBUG_DECODER_SEARCH.value) {
           console.log(
-            `Checking support for codec string: "${fullCodecString}"`
+            `Checking support for codec string: "${fullCodecString}"`,
           );
         }
         const support = await VideoDecoder.isConfigSupported({
@@ -62,18 +62,19 @@ export async function searchSupportedVideoDecoders(
         if (DEBUG_DECODER_SEARCH.value) {
           console.log(
             `Support for codec string "${fullCodecString}":`,
-            support
+            support,
           );
         }
         return { support, definition };
-      }
-    )
+      },
+    ),
   );
 
   const supportedCodecs = supportResults
     .filter(
       (result): result is typeof result & { status: 'fulfilled' } =>
-        result.status === 'fulfilled' && result.value.support.supported === true
+        result.status === 'fulfilled' &&
+        result.value.support.supported === true,
     )
     .map((result) => {
       return {

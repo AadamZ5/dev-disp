@@ -1,3 +1,4 @@
+import { isNullish } from '../util';
 import { CodecDefinition } from './common';
 
 /**
@@ -38,12 +39,12 @@ export function av1ToParamString(codec: 'av01', params: CodevAv1Parameters) {
   acc += `.${params.bitDepth.toString().padStart(2, '0')}`;
   // If none of the optional parameters are set, return early
   if (
-    typeof params.monochrome !== 'number' &&
-    typeof params.chromaSubsampling !== 'number' &&
-    typeof params.colorPrimaries !== 'number' &&
-    typeof params.transferCharacteristics !== 'number' &&
-    typeof params.matrixCoefficients !== 'number' &&
-    typeof params.videoFullRangeFlag !== 'number'
+    isNullish(params.monochrome) &&
+    isNullish(params.chromaSubsampling) &&
+    isNullish(params.colorPrimaries) &&
+    isNullish(params.transferCharacteristics) &&
+    isNullish(params.matrixCoefficients) &&
+    isNullish(params.videoFullRangeFlag)
   ) {
     return acc;
   }
