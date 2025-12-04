@@ -48,19 +48,23 @@ export class DevDispConnection {
   private readonly dispatchers: WsDispatchers;
 
   private readonly _decodedFrame$ = new Subject<void>();
+  /** Just a notification that a frame has been decoded */
   public readonly decodedFrame$ = this._decodedFrame$.asObservable();
 
   private readonly _connected$ = new BehaviorSubject<boolean>(false);
+  /** Connected state */
   public readonly connected$ = this._connected$.asObservable();
 
   private readonly _disconnect$ = new ReplaySubject<DevDispEventDisconnect>(1);
+  /** Emits on disconnection */
   public readonly disconnect$ = this._disconnect$.asObservable();
 
   private readonly _configuredEncoding$ = new ReplaySubject<DevDispEncoding>(1);
+  /** Emits after the encoding has been negotiated and agreed on */
   public readonly configuredEncoding$ =
     this._configuredEncoding$.asObservable();
 
-  private readonly canvasContext?: OffscreenCanvasRenderingContext2D | null;
+  private readonly drawer?: ((frame: VideoFrame) => void) | null;
   private readonly decoder = new VideoDecoder({
     output: this.onDecode.bind(this),
     error: this.onDecodeError.bind(this),
@@ -73,7 +77,7 @@ export class DevDispConnection {
     public readonly address: string,
     private readonly canvas: OffscreenCanvas = new OffscreenCanvas(2, 2),
   ) {
-    this.canvasContext = canvas?.getContext('2d');
+    this.drawer = this._getDrawer(this.canvas);
 
     const handlers: WsHandlers = {
       onConnect: this.onConnect.bind(this),
@@ -87,6 +91,20 @@ export class DevDispConnection {
     };
 
     this.dispatchers = connectDevDispServer(address, handlers);
+  }
+
+  private _getDrawer(canvas: OffscreenCanvas) {
+    const contextWebGl2 = canvas.getContext('webgl2');
+    if (contextWebGl2) {
+      return contextWebgl2Drawer(contextWebGl2);
+    }
+
+    const context2d = canvas.getContext('2d');
+    if (context2d) {
+      return context2dDrawer(context2d);
+    }
+
+    return null;
   }
 
   disconnect() {
@@ -108,13 +126,7 @@ export class DevDispConnection {
   }
 
   private onDecode(frame: VideoFrame) {
-    this.canvasContext?.drawImage(
-      frame,
-      0,
-      0,
-      frame.displayWidth,
-      frame.displayHeight,
-    );
+    this.drawer?.(frame);
     frame.close();
     this._decodedFrame$.next();
   }
@@ -203,8 +215,6 @@ export class DevDispConnection {
       }),
     );
 
-    this.supportedDecoderConfigurations = [];
-
     const flattenedResults = compatibleConfigResults
       .filter(
         (
@@ -231,43 +241,44 @@ export class DevDispConnection {
         },
       )
       .flatMap((result) => {
-        this.supportedDecoderConfigurations.push(
-          ...result.value.supportedDecoders,
-        );
-
         return result.value.supportedDecoders.map((supportedDecoder) => {
           return {
             supportedDecoder,
             sentConfig: result.value.sentConfig,
           };
         });
-      })
-      .map((configuration) => {
-        const supportRes = configuration.supportedDecoder.decoderConfig
-          ? ([
-              configuration.supportedDecoder.decoderConfig.codedWidth ??
-                configuration.sentConfig.encodedResolution[0],
-              configuration.supportedDecoder.decoderConfig.codedHeight ??
-                configuration.sentConfig.encodedResolution[1],
-            ] as const)
-          : configuration.sentConfig.encodedResolution;
-
-        return {
-          encoderName: configuration.sentConfig.encoderName,
-          encoderFamily: configuration.supportedDecoder.definition.codec,
-          encodedResolution: supportRes as [number, number],
-          parameters: configuration.sentConfig.parameters,
-        } satisfies JsEncoderPossibleConfiguration;
       });
 
-    flattenedResults.forEach((result) => {
+    this.supportedDecoderConfigurations = flattenedResults.map(
+      (r) => r.supportedDecoder,
+    );
+
+    const possibleConfigurations = flattenedResults.map((configuration) => {
+      const supportRes = configuration.supportedDecoder.decoderConfig
+        ? ([
+            configuration.supportedDecoder.decoderConfig.codedWidth ??
+              configuration.sentConfig.encodedResolution[0],
+            configuration.supportedDecoder.decoderConfig.codedHeight ??
+              configuration.sentConfig.encodedResolution[1],
+          ] as const)
+        : configuration.sentConfig.encodedResolution;
+
+      return {
+        encoderName: configuration.sentConfig.encoderName,
+        encoderFamily: configuration.supportedDecoder.definition.codec,
+        encodedResolution: supportRes as [number, number],
+        parameters: configuration.sentConfig.parameters,
+      } satisfies JsEncoderPossibleConfiguration;
+    });
+
+    possibleConfigurations.forEach((result) => {
       console.log(
         `Supported encoding found for ${result.encoderFamily}`,
         result,
       );
     });
 
-    return flattenedResults;
+    return possibleConfigurations;
   }
 
   private handleSetEncoding(encodingConfig: JsEncoderPossibleConfiguration) {
@@ -356,4 +367,113 @@ export function ofDevDispConnection(
 
     return allSub;
   }).pipe(share());
+}
+
+export function context2dDrawer(
+  context: OffscreenCanvasRenderingContext2D,
+): (frame: VideoFrame) => void {
+  return (frame: VideoFrame) => {
+    context.canvas.width = frame.displayWidth;
+    context.canvas.height = frame.displayHeight;
+    context.drawImage(frame, 0, 0, frame.displayWidth, frame.displayHeight);
+    frame.close();
+  };
+}
+
+export function contextWebgl2Drawer(
+  gl: WebGL2RenderingContext,
+): (frame: VideoFrame) => void {
+  const vertextShader = `#version 300 es
+  in vec2 a_position;
+  in vec2 a_texCoord;
+  out vec2 v_texCoord;
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+    v_texCoord = a_texCoord;
+  }
+  `;
+
+  const fragmentShader = `#version 300 es
+  precision mediump float;
+  in vec2 v_texCoord;
+  uniform sampler2D u_texture;
+  out vec4 outColor;
+  void main() {
+    outColor = texture(u_texture, v_texCoord);
+  }
+  `;
+
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  if (!vs) {
+    throw new Error('Failed to create vertex shader');
+  }
+  gl.shaderSource(vs, vertextShader);
+  gl.compileShader(vs);
+  if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+    console.error('Vertex shader error:', gl.getShaderInfoLog(vs));
+  }
+
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
+  if (!fs) {
+    throw new Error('Failed to create fragment shader');
+  }
+  gl.shaderSource(fs, fragmentShader);
+  gl.compileShader(fs);
+  if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+    console.error('Fragment shader error:', gl.getShaderInfoLog(fs));
+  }
+
+  const program = gl.createProgram();
+  if (!program) {
+    throw new Error('Failed to create program');
+  }
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error('Program link error:', gl.getProgramInfoLog(program));
+    throw new Error('Failed to link program');
+  }
+
+  const vertices = new Float32Array([
+    -1, -1, 0, 1, 1, -1, 1, 1, -1, 1, 0, 0, 1, 1, 1, 0,
+  ]);
+
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  const vertexBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+  const aPositionLoc = gl.getAttribLocation(program, 'a_position');
+  gl.enableVertexAttribArray(aPositionLoc);
+  gl.vertexAttribPointer(aPositionLoc, 2, gl.FLOAT, false, 16, 0);
+
+  const aTexCoordLoc = gl.getAttribLocation(program, 'a_texCoord');
+  gl.enableVertexAttribArray(aTexCoordLoc);
+  gl.vertexAttribPointer(aTexCoordLoc, 2, gl.FLOAT, false, 16, 8);
+
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  return (frame: VideoFrame) => {
+    gl.viewport(0, 0, frame.codedWidth, frame.codedHeight);
+
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    frame.close();
+  };
 }
