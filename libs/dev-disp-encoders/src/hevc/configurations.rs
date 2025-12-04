@@ -202,11 +202,18 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         FfmpegEncoderConfigurationSet::new(
             "hevc_nvenc",
             "hvc1",
-            vec![HashMap::from([("preset", "p1"), ("tune", "ull")])],
+            vec![HashMap::from([
+                ("preset", "p4"),
+                ("tune", "ll"),
+                ("profile", "main10"),
+            ])],
             vec![
+                // Putting RGB-like formats first so that any pixel conversion/scaling
+                // can be done by the GPU instead of by ffmpeg software scaler.
+                Pixel::RGBA,
+                Pixel::BGRA,
                 Pixel::YUV420P,
                 Pixel::YUV444P,
-                Pixel::RGBA,
                 Pixel::YUV444P16LE,
                 Pixel::NV12,
                 Pixel::P010LE,
@@ -385,10 +392,10 @@ pub fn get_relevant_codec_parameters(
                 ("profile".to_string(), profile.to_string()),
                 ("level".to_string(), level.to_string()),
                 ("bitDepth".to_string(), bit_depth.to_string()),
-                (
-                    "chromaSubsampling".to_string(),
-                    chroma_subsampling.to_string(),
-                ),
+                // (
+                //     "chromaSubsampling".to_string(),
+                //     chroma_subsampling.to_string(),
+                // ),
             ])
         },
         "vp8" => HashMap::new(),

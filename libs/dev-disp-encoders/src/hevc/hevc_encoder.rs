@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, time::Instant};
+use std::{collections::HashMap, fmt::Debug, time::{Duration, Instant}};
 
 use dev_disp_core::{
     host::{
@@ -12,7 +12,7 @@ use ffmpeg_next::{
     frame::Video, software::scaling::Context as ScalingContext,
 };
 use futures::FutureExt;
-use log::{debug, info};
+use log::{debug, info, trace};
 
 use crate::{
     hevc::configurations::{
@@ -23,7 +23,7 @@ use crate::{
 
 struct HevcEncoderState {
     encoder: VideoEncoder,
-    scaler: ScalingContext,
+    scaler: Option<ScalingContext>,
     encoder_fmt: Pixel,
     given_params: EncoderParameters,
     frame_index: u64,
@@ -81,16 +81,26 @@ impl HevcEncoder {
     ) -> Result<HevcEncoderState, String> {
         let encoder = get_encoder(&parameters, &configuration)?;
 
-        let scaler = ScalingContext::get(
-            ffmpeg_format_from_internal_format(&parameters.encoder_input_parameters.format),
-            parameters.encoder_input_parameters.width,
-            parameters.encoder_input_parameters.height,
-            configuration.pixel_format,
-            parameters.width,
-            parameters.height,
-            ffmpeg::software::scaling::flag::Flags::POINT,
-        )
-        .map_err(|e| format!("Failed to create scaler: {}", e))?;
+        let src_format =
+            ffmpeg_format_from_internal_format(&parameters.encoder_input_parameters.format);
+        let dst_format = configuration.pixel_format;
+
+        let scaler = if dst_format == src_format {
+            None
+        } else {
+            Some(
+                ScalingContext::get(
+                    src_format,
+                    parameters.encoder_input_parameters.width,
+                    parameters.encoder_input_parameters.height,
+                    configuration.pixel_format,
+                    parameters.width,
+                    parameters.height,
+                    ffmpeg::software::scaling::flag::Flags::POINT,
+                )
+                .map_err(|e| format!("Failed to create scaler: {}", e))?,
+            )
+        };
 
         info!(
             "Initialized encoder: {}",
@@ -178,9 +188,20 @@ impl DevDispEncoder for HevcEncoder {
 
                 match self.try_init(parameters.clone(), configuration.clone()) {
                     Ok(state) => {
+
+                        let has_scaler_str = match &state.scaler {
+                            Some(s) => {
+                                let input_format = s.input().format;
+                                let output_format = s.output().format;
+                                format!("with scaler ({:?} -> {:?})", input_format, output_format)
+                            },
+                            None => "without scaler".to_string(),
+                        };
+
                         debug!(
-                            "Successfully initialized encoder: {}",
-                            configuration.encoder_name
+                            "Successfully initialized encoder: {} {}",
+                            configuration.encoder_name,
+                            has_scaler_str
                         );
 
                         let codec_params =
@@ -259,28 +280,34 @@ impl DevDispEncoder for HevcEncoder {
             let copy_time = copy_start.elapsed();
 
             // The output frame after scaling.
-            let mut yuv_frame = Video::new(
-                state.encoder_fmt,
-                state.given_params.width,
-                state.given_params.height,
-            );
+            let mut scale_time = Duration::from_secs(0);
+            let formatted_frame = if let Some(scaler) = state.scaler.as_mut() {
+                let mut formatted_frame = Video::new(
+                    state.encoder_fmt,
+                    state.given_params.width,
+                    state.given_params.height,
+                );
+                // Scale the input frame to the encoder's input format
+                let scale_start = Instant::now();
+                scaler
+                    .run(&input_frame, &mut formatted_frame)
+                    .map_err(|e| format!("Failed to scale frame: {}", e))?;
 
-            // Scale the input frame to the encoder's input format
-            let scale_start = Instant::now();
-            state
-                .scaler
-                .run(&input_frame, &mut yuv_frame)
-                .map_err(|e| format!("Failed to scale frame: {}", e))?;
+                formatted_frame.set_pts(Some(state.frame_index as i64));
+                state.frame_index += 1;
+                scale_time = scale_start.elapsed();
+                formatted_frame
 
-            yuv_frame.set_pts(Some(state.frame_index as i64));
-            state.frame_index += 1;
-            let scale_time = scale_start.elapsed();
+            } else {
+                input_frame
+            };
+            
 
             // Send for encoding
             let encode_start = Instant::now();
             state
                 .encoder
-                .send_frame(&yuv_frame)
+                .send_frame(&formatted_frame)
                 .map_err(|e| format!("Failed to send frame to encoder: {}", e))?;
 
             state.out_buf.clear();
@@ -298,7 +325,7 @@ impl DevDispEncoder for HevcEncoder {
             }
 
             let encode_time = encode_start.elapsed();
-            debug!(
+            trace!(
                 "Alloc input time: {}ms   Copy time: {}ms   Scale time: {}ms   Encode time: {}ms (round trip)",
                 alloc_input_frame.as_millis(),
                 copy_time.as_millis(),
