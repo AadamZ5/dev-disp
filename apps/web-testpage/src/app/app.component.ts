@@ -7,8 +7,8 @@ import { CommonModule } from '@angular/common';
 @Component({
   imports: [RouterModule, CommonModule, ScreenComponent, ReactiveFormsModule],
   selector: 'app-root',
-  templateUrl: './app.html',
-  styleUrl: './app.scss',
+  templateUrl: './app.component.html',
+  styleUrl: './app.component.scss',
 })
 export class App {
   protected title = 'web-testpage';

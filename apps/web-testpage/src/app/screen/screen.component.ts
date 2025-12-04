@@ -43,7 +43,7 @@ export class ScreenComponent {
     shareReplay(1),
   );
 
-  readonly connection$ = this.offscreenCanvas$.pipe(
+  readonly client$ = this.offscreenCanvas$.pipe(
     switchMap((offscreenCanvas) =>
       ofDevDispConnection(() =>
         this.devDispService.connect(
@@ -63,9 +63,9 @@ export class ScreenComponent {
   );
 
   readonly dataEpoch = toSignal(
-    this.connection$.pipe(
-      switchMap((conn) =>
-        conn.decodedFrame$.pipe(
+    this.client$.pipe(
+      switchMap((client) =>
+        client.decodedFrame$.pipe(
           scan((acc) => {
             return acc + 1;
           }, 0),
@@ -77,9 +77,9 @@ export class ScreenComponent {
   );
 
   readonly fps = toSignal(
-    this.connection$.pipe(
-      switchMap((conn) =>
-        conn.decodedFrame$.pipe(
+    this.client$.pipe(
+      switchMap((client) =>
+        client.decodedFrame$.pipe(
           map(() => performance.now()),
           slidingWindow(30),
           throttleTime(50, undefined, { leading: true, trailing: true }),
@@ -98,9 +98,18 @@ export class ScreenComponent {
   );
 
   readonly configuredEncoding = toSignal(
-    this.connection$.pipe(
+    this.client$.pipe(
       switchMap((conn) => conn.configuredEncoding$.pipe(endWith(null))),
     ),
     { initialValue: null },
+  );
+
+  readonly connected = toSignal(
+    this.client$.pipe(
+      switchMap((client) =>
+        client.connected$.pipe(distinctUntilChanged(), endWith(false)),
+      ),
+    ),
+    { initialValue: false },
   );
 }
