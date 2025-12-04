@@ -383,7 +383,7 @@ export function context2dDrawer(
 export function contextWebgl2Drawer(
   gl: WebGL2RenderingContext,
 ): (frame: VideoFrame) => void {
-  const vertextShader = `#version 300 es
+  const vertexShader = `#version 300 es
   in vec2 a_position;
   in vec2 a_texCoord;
   out vec2 v_texCoord;
@@ -407,7 +407,7 @@ export function contextWebgl2Drawer(
   if (!vs) {
     throw new Error('Failed to create vertex shader');
   }
-  gl.shaderSource(vs, vertextShader);
+  gl.shaderSource(vs, vertexShader);
   gl.compileShader(vs);
   if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
     console.error('Vertex shader error:', gl.getShaderInfoLog(vs));
