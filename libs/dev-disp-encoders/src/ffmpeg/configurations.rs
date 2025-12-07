@@ -6,6 +6,46 @@ use ffmpeg_next::{
     format::Pixel,
 };
 use log::warn;
+use serde::{Deserialize, Serialize};
+
+mod pixel_serialization {
+    use std::str::FromStr;
+
+    use ffmpeg_next::format::Pixel;
+    use log::warn;
+    use serde::{self, Deserializer, Serializer};
+
+    pub fn serialize<S>(pixels: &Vec<Pixel>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let pixel_strings: Vec<String> = pixels
+            .iter()
+            .map(|p| format!("{:?}", p).to_lowercase())
+            .collect();
+        serde::Serialize::serialize(&pixel_strings, serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Pixel>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let pixel_strings: Vec<String> = serde::Deserialize::deserialize(deserializer)?;
+
+        let pixels = pixel_strings
+            .into_iter()
+            .filter_map(|s| match Pixel::from_str(&s) {
+                Ok(pix) => Some(pix),
+                Err(_) => {
+                    warn!("Unknown pixel format string during deserialization: {}", s);
+                    None
+                }
+            })
+            .collect();
+
+        Ok(pixels)
+    }
+}
 
 // The defined encoder families.
 #[derive(Debug, Clone)]
@@ -41,17 +81,34 @@ impl FfmpegEncoderFamily {
     }
 }
 
-/// A set of FFmpeg encoder configurations to try for a particular encoder.
+/// Combines lists of FFmpeg encoder options and pixel formats
+/// to try for a particular encoder.
+///
+/// The `FfmpegEncoderConfigurationSet` can be used as an iterator and will
+/// iterate over all pixel formats for each set of encoder options. Once
+/// the pixel formats are exhausted for a given option set, it will move
+/// on to the next option set and retry all pixel formats again.
 ///
 /// You can deduce encoders and options by running
 /// `ffmpeg -encoders` and `ffmpeg -h encoder=ENCODER_NAME`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct FfmpegEncoderConfigurationSet {
+    /// The encoder's FFmpeg name, e.g. "hevc_nvenc".
     pub encoder_name: String,
+    /// The encoder family, e.g. "hvc1".
     pub encoder_family: String,
-    pub encoder_option_sets: Vec<HashMap<&'static str, &'static str>>,
+    /// A list of options to try this encoder with. More desired
+    /// combinations should be placed first.
+    pub encoder_option_sets: Vec<HashMap<String, String>>,
+    /// A list of pixel formats to try this encoder with. More desired
+    /// formats should be placed first.
+    #[serde(with = "pixel_serialization")]
     pub pixel_formats: Vec<Pixel>,
+
+    #[serde(skip)]
     encoder_option_set_index: usize,
+    #[serde(skip)]
     pixel_format_index: usize,
 }
 
@@ -59,7 +116,7 @@ impl FfmpegEncoderConfigurationSet {
     pub fn new<T>(
         encoder_name: T,
         encoder_family: T,
-        encoder_option_sets: Vec<HashMap<&'static str, &'static str>>,
+        encoder_option_sets: Vec<HashMap<String, String>>,
         pixel_formats: Vec<Pixel>,
     ) -> Self
     where
@@ -119,7 +176,7 @@ impl Iterator for FfmpegEncoderConfigurationSet {
 pub struct FfmpegEncoderConfiguration {
     pub encoder_name: String,
     pub encoder_family: String,
-    pub encoder_options: HashMap<&'static str, &'static str>,
+    pub encoder_options: HashMap<String, String>,
     pub pixel_format: Pixel,
 }
 
@@ -183,6 +240,30 @@ impl Iterator for FfmpegEncoderBruteForceIterator {
     }
 }
 
+struct StringMapBuilder {
+    inner: HashMap<String, String>,
+}
+
+impl StringMapBuilder {
+    fn new() -> Self {
+        StringMapBuilder {
+            inner: HashMap::new(),
+        }
+    }
+
+    fn insert<T>(mut self, key: T, value: T) -> Self
+    where
+        T: Into<String>,
+    {
+        self.inner.insert(key.into(), value.into());
+        self
+    }
+
+    fn build(self) -> HashMap<String, String> {
+        self.inner
+    }
+}
+
 pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
     // These are provided in order of preference, top to bottom left to right.
     FfmpegEncoderBruteForceIterator::new(vec![
@@ -190,10 +271,12 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         FfmpegEncoderConfigurationSet::new(
             "hevc",
             "hvc1",
-            vec![HashMap::from([
-                ("preset", "ultrafast"),
-                ("tune", "zerolatency"),
-            ])],
+            vec![
+                StringMapBuilder::new()
+                    .insert("preset", "ultrafast")
+                    .insert("tune", "zerolatency")
+                    .build(),
+            ],
             vec![Pixel::YUV420P],
         ),
         // Nvidia NVENC
@@ -202,20 +285,22 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         FfmpegEncoderConfigurationSet::new(
             "hevc_nvenc",
             "hvc1",
-            vec![HashMap::from([
-                ("preset", "llhq"),
-                ("tune", "ull"),
-                // ("profile", "main"),
-                ("delay", "0"),
-                ("rc", "vbr_hq"),
-                ("rc-lookahead", "0"),
-                ("tier", "high"),
-                ("multipass", "0"),
-                ("cq", "20"),
-                ("spatial-aq", "0"),
-                ("temporal-aq", "0"),
-                ("zerolatency", "1"),
-            ])],
+            vec![
+                StringMapBuilder::new()
+                    .insert("preset", "llhq")
+                    .insert("tune", "ull")
+                    // ("profile", "main"),
+                    .insert("delay", "0")
+                    .insert("rc", "vbr_hq")
+                    .insert("rc-lookahead", "0")
+                    .insert("tier", "high")
+                    .insert("multipass", "0")
+                    .insert("cq", "20")
+                    .insert("spatial-aq", "0")
+                    .insert("temporal-aq", "0")
+                    .insert("zerolatency", "1")
+                    .build(),
+            ],
             vec![
                 // Putting RGB-like formats first so that any pixel conversion/scaling
                 // can be done by the GPU instead of by ffmpeg software scaler.
@@ -233,10 +318,12 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         FfmpegEncoderConfigurationSet::new(
             "hevc_qsv",
             "hvc1",
-            vec![HashMap::from([
-                ("preset", "veryfast"),
-                ("scenario", "displayremoting"),
-            ])],
+            vec![
+                StringMapBuilder::new()
+                    .insert("preset", "veryfast")
+                    .insert("scenario", "displayremoting")
+                    .build(),
+            ],
             vec![
                 Pixel::RGBA,
                 Pixel::BGRA,
@@ -254,21 +341,25 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         FfmpegEncoderConfigurationSet::new(
             "hevc_vulkan",
             "hvc1",
-            vec![HashMap::from([
-                ("usage", "stream"),
-                ("tune", "ull"),
-                ("content", "desktop"),
-            ])],
+            vec![
+                StringMapBuilder::new()
+                    .insert("usage", "stream")
+                    .insert("tune", "ull")
+                    .insert("content", "desktop")
+                    .build(),
+            ],
             vec![Pixel::VULKAN],
         ),
         // CPU-based software encoders
         FfmpegEncoderConfigurationSet::new(
             "libx265",
             "hvc1",
-            vec![HashMap::from([
-                ("preset", "ultrafast"),
-                ("tune", "zerolatency"),
-            ])],
+            vec![
+                StringMapBuilder::new()
+                    .insert("preset", "ultrafast")
+                    .insert("tune", "zerolatency")
+                    .build(),
+            ],
             vec![Pixel::YUV420P],
         ),
         // Don't think this exists
@@ -296,11 +387,13 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         FfmpegEncoderConfigurationSet::new(
             "h264_vulkan",
             "h264",
-            vec![HashMap::from([
-                ("tuning", "ll"),
-                ("usage", "stream"),
-                ("content", "desktop"),
-            ])],
+            vec![
+                StringMapBuilder::new()
+                    .insert("tuning", "ll")
+                    .insert("usage", "stream")
+                    .insert("content", "desktop")
+                    .build(),
+            ],
             vec![Pixel::VULKAN],
         ),
         // CPU-based software h264 encoder
@@ -339,21 +432,23 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
             "vp09",
             // Tuned with realtime screen encoding by following
             // https://developers.google.com/media/vp9/live-encoding
-            vec![HashMap::from([
-                ("deadline", "realtime"),
-                ("quality", "realtime"),
-                ("speed", "8"),
-                ("tile-columns", "3"),
-                ("frame-parallel", "1"),
-                ("threads", "8"),
-                ("static-thresh", "0"),
-                ("max-intra-rate", "300"),
-                ("lag-in-frames", "0"),
-                ("qmin", "4"),
-                ("qmax", "50"),
-                ("row-mt", "1"),
-                ("error-resilient", "1"),
-            ])],
+            vec![
+                StringMapBuilder::new()
+                    .insert("deadline", "realtime")
+                    .insert("quality", "realtime")
+                    .insert("speed", "8")
+                    .insert("tile-columns", "3")
+                    .insert("frame-parallel", "1")
+                    .insert("threads", "8")
+                    .insert("static-thresh", "0")
+                    .insert("max-intra-rate", "300")
+                    .insert("lag-in-frames", "0")
+                    .insert("qmin", "4")
+                    .insert("qmax", "50")
+                    .insert("row-mt", "1")
+                    .insert("error-resilient", "1")
+                    .build(),
+            ],
             vec![
                 Pixel::YUV420P,
                 Pixel::YUV422P,
@@ -366,19 +461,30 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         FfmpegEncoderConfigurationSet::new(
             "libvpx",
             "vp8",
-            vec![HashMap::from([
-                ("deadline", "realtime"),
-                ("quality", "realtime"),
-                ("vp8flags", "altref"),
-                ("lag-in-frames", "0"),
-                ("cpu-used", "5"),
-            ])],
+            vec![
+                StringMapBuilder::new()
+                    .insert("deadline", "realtime")
+                    .insert("quality", "realtime")
+                    .insert("vp8flags", "altref")
+                    .insert("lag-in-frames", "0")
+                    .insert("cpu-used", "5")
+                    .build(),
+            ],
             vec![Pixel::YUV420P, Pixel::YUVA420P],
         ),
         FfmpegEncoderConfigurationSet::new(
             "libaom-av1",
             "av1",
-            vec![HashMap::from([("usage", "realtime"), ("cpu-used", "4")])],
+            vec![
+                StringMapBuilder::new()
+                    .insert("cpu-used", "8")
+                    .insert("threads", "8")
+                    .insert("tile-columns", "3")
+                    .insert("row-mt", "1")
+                    .insert("end-usage", "cbr")
+                    .insert("lag-in-frames", "0")
+                    .build(),
+            ],
             vec![Pixel::YUV420P],
         ),
     ])
@@ -408,6 +514,7 @@ pub fn get_relevant_codec_parameters(
                 AVPixelFormat::AV_PIX_FMT_YUV420P => (8, 1),
                 AVPixelFormat::AV_PIX_FMT_YUV422P => (8, 2),
                 AVPixelFormat::AV_PIX_FMT_YUV444P => (8, 3),
+                AVPixelFormat::AV_PIX_FMT_YUV440P => (8, 0),
                 AVPixelFormat::AV_PIX_FMT_YUVA420P => (8, 1),
                 AVPixelFormat::AV_PIX_FMT_YUV420P10LE => (10, 1),
                 AVPixelFormat::AV_PIX_FMT_YUV422P10LE => (10, 2),
@@ -422,15 +529,15 @@ pub fn get_relevant_codec_parameters(
                 }
             };
 
-            HashMap::from([
-                ("profile".to_string(), profile.to_string()),
-                ("level".to_string(), level.to_string()),
-                ("bitDepth".to_string(), bit_depth.to_string()),
+            StringMapBuilder::new()
+                .insert("profile", &profile.to_string())
+                .insert("level", &level.to_string())
+                .insert("bitDepth", &bit_depth.to_string())
                 // (
                 //     "chromaSubsampling".to_string(),
                 //     chroma_subsampling.to_string(),
                 // ),
-            ])
+                .build()
         },
         "vp8" => HashMap::new(),
         "hvc1" => {
@@ -458,13 +565,13 @@ pub fn get_relevant_codec_parameters(
 
                 let constraints = 0xB0;
 
-                HashMap::from([
-                    ("profile".to_string(), profile.to_string()),
-                    ("compatibility".to_string(), format!("{:02X}", compat)),
-                    ("level".to_string(), level.to_string()),
-                    ("tier".to_string(), tier_letter.to_string()),
-                    ("constraints".to_string(), format!("{:02X}", constraints)),
-                ])
+                StringMapBuilder::new()
+                    .insert("profile", &profile.to_string())
+                    .insert("compatibility", &format!("{:02X}", compat))
+                    .insert("level", &level.to_string())
+                    .insert("tier", &tier_letter.to_string())
+                    .insert("constraints", &format!("{:02X}", constraints))
+                    .build()
             }
         }
         _ => {

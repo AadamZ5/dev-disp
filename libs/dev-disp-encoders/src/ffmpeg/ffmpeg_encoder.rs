@@ -15,9 +15,9 @@ use futures::FutureExt;
 use log::{debug, info, trace};
 
 use crate::{
-    ffmpeg::configurations::{
-        FfmpegEncoderConfiguration, get_encoders, get_relevant_codec_parameters,
-    },
+    ffmpeg::{config_file::FfmpegConfiguration, configurations::{
+        FfmpegEncoderBruteForceIterator, FfmpegEncoderConfiguration, FfmpegEncoderConfigurationSet, get_encoders, get_relevant_codec_parameters
+    }},
     util::ffmpeg_format_from_internal_format,
 };
 
@@ -45,13 +45,14 @@ impl Debug for FfmpegEncoderState {
 #[derive(Debug, Default)]
 pub struct FfmpegEncoder {
     state: Option<FfmpegEncoderState>,
+    configuration: FfmpegConfiguration,
 }
 
 pub fn setup_ffmpeg_encoder(
     parameters: &EncoderParameters,
     configuration: &FfmpegEncoderConfiguration,
 ) -> Result<VideoEncoder, String> {
-    let mut codec = ffmpeg::encoder::find_by_name(&configuration.encoder_name)
+    let codec = ffmpeg::encoder::find_by_name(&configuration.encoder_name)
         .ok_or_else(|| format!("Encoder '{}' not found", configuration.encoder_name))?;
 
     debug!("Initializing ffmpeg encoder: {}", codec.name(),);
@@ -73,6 +74,14 @@ pub fn setup_ffmpeg_encoder(
 }
 
 impl FfmpegEncoder {
+
+    fn new(configuration: FfmpegConfiguration) -> Self {
+        FfmpegEncoder {
+            state: None,
+            configuration,
+        }
+    }
+
     fn try_init(
         &mut self,
         parameters: EncoderParameters,
@@ -121,14 +130,30 @@ impl FfmpegEncoder {
 }
 
 impl DevDispEncoder for FfmpegEncoder {
+
     fn get_supported_configurations(
         &mut self,
         parameters: &EncoderParameters,
     ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
-        let supported_configurations: Vec<_> = get_encoders()
+
+        // TODO: Try encoders in the provider, not here on every connection!
+
+        let supported_configurations: Vec<_> = FfmpegEncoderBruteForceIterator::new(self.configuration.encoder_configurations.clone())
             .filter_map(|config| match setup_ffmpeg_encoder(parameters, &config) {
-                Ok(encoder) => Some((encoder, config, parameters)),
-                Err(_) => None,
+                Ok(encoder) => {
+                    debug!(
+                        "Encoder configuration {} supported",
+                        config.encoder_name
+                    );
+                    Some((encoder, config, parameters))
+                },
+                Err(e) => {
+                    debug!(
+                        "Encoder configuration {} not supported: {}",
+                        config.encoder_name, e
+                    );
+                    None
+                },
             })
             .map(|(encoder, config, _)| {
                 let codec_params = get_relevant_codec_parameters(&config, &encoder);
@@ -341,12 +366,20 @@ impl DevDispEncoder for FfmpegEncoder {
     }
 }
 
-pub struct FfmpegEncoderProvider;
+pub struct FfmpegEncoderProvider {
+    configuration: FfmpegConfiguration,
+}
+
+impl FfmpegEncoderProvider {
+    pub fn new(configuration: FfmpegConfiguration) -> Self {
+        FfmpegEncoderProvider { configuration }
+    }
+}
 
 impl EncoderProvider for FfmpegEncoderProvider {
     type EncoderType = FfmpegEncoder;
 
     fn create_encoder(&self) -> Result<Self::EncoderType, String> {
-        Ok(FfmpegEncoder::default())
+        Ok(FfmpegEncoder::new(self.configuration.clone()))
     }
 }
