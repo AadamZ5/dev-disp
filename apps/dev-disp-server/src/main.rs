@@ -3,10 +3,10 @@ use std::{process::exit, time::Duration};
 use dev_disp_comm::{usb::discovery::UsbDiscovery, websocket::discovery::WsDiscovery};
 use dev_disp_core::{
     client::ScreenTransport,
-    core::handle_display_host,
+    core::{get_default_config_path_for, handle_display_host},
     host::{ConnectableDevice, DeviceDiscovery, ScreenProvider, StreamingDeviceDiscovery},
 };
-use dev_disp_encoders::ffmpeg::FfmpegEncoderProvider;
+use dev_disp_encoders::ffmpeg::{self, FfmpegEncoderProvider, config_file::FfmpegConfiguration};
 use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::{
     FutureExt, StreamExt,
@@ -15,6 +15,8 @@ use futures_util::{
 use log::{LevelFilter, error, info, trace, warn};
 use tokio::{net::TcpListener, signal::ctrl_c, task::LocalSet};
 use tokio_util::compat::TokioAsyncWriteCompatExt;
+
+mod util;
 
 const SAMSUNG_SERIAL: &str = "RFCT71HTZNL";
 
@@ -143,8 +145,35 @@ where
         let provider_1 = provider.clone();
 
         let _ = tokio::task::spawn_local(async move {
-            let handle_result =
-                handle_display_host(provider_1, FfmpegEncoderProvider, display).await;
+            let ffmpeg_config = match get_default_config_path_for::<FfmpegConfiguration>() {
+                Ok(path) => {
+                    match util::read_configuration_or_write_default_for::<FfmpegConfiguration>(
+                        &path,
+                    )
+                    .await
+                    {
+                        Ok(config) => config,
+                        Err(e) => {
+                            error!(
+                                "Failed to read or write FFmpeg configuration at {:?}: {:?}",
+                                path, e
+                            );
+                            FfmpegConfiguration::default()
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to get default FFmpeg configuration path: {}", e);
+                    FfmpegConfiguration::default()
+                }
+            };
+
+            let handle_result = handle_display_host(
+                provider_1,
+                FfmpegEncoderProvider::new(ffmpeg_config),
+                display,
+            )
+            .await;
 
             if let Err((_, e)) = handle_result {
                 error!("Error handling display host: {}", e);
@@ -164,6 +193,28 @@ where
     T: ScreenTransport + 'static,
 {
     let mut discovery = discovery.into_stream();
+
+    // TODO: Make this configuration hot-reloadable with a file watcher!
+    let ffmpeg_config = match get_default_config_path_for::<FfmpegConfiguration>() {
+        Ok(path) => {
+            match util::read_configuration_or_write_default_for::<FfmpegConfiguration>(&path).await
+            {
+                Ok(config) => config,
+                Err(e) => {
+                    error!(
+                        "Failed to read or write FFmpeg configuration at {:?}: {:?}",
+                        path, e
+                    );
+                    FfmpegConfiguration::default()
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to get default FFmpeg configuration path: {}", e);
+            FfmpegConfiguration::default()
+        }
+    };
+
     while let Some(devices) = discovery.next().await {
         info!("Discovered {} device(s)", devices.len());
         for device in devices {
@@ -179,9 +230,14 @@ where
 
             let provider_1 = provider.clone();
 
+            let ffmpeg_config = ffmpeg_config.clone();
             let _ = tokio::task::spawn_local(async move {
-                let handle_result =
-                    handle_display_host(provider_1, FfmpegEncoderProvider, display).await;
+                let handle_result = handle_display_host(
+                    provider_1,
+                    FfmpegEncoderProvider::new(ffmpeg_config),
+                    display,
+                )
+                .await;
 
                 if let Err((_, e)) = handle_result {
                     error!("Error handling display host: {}", e);

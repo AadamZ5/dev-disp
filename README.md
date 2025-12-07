@@ -11,12 +11,21 @@ _(Web PoC pictured above with software encoding)_
 The goal of this utility is to use the EVDI sub-system developed for the DisplayLink driver to create a virtual display that represents the geometry of the device connected, then transmit that virtual display information to the device via some transport. Device Display will use a companion app to receive high-quality and low-latency data. While this is not targeted at an ultra-low-latency use-case such as gaming, it should
 function no worse than something like steam-link.
 
+While this does perform a large portion of what RDP programs might do, this project aims to be extensible, allowing lower-level transport methods like USB to be implemented without hosting an entire network stack for transporting data to existing RDP applications. Additionally, this project aims to directly interface with the data produced by the virtual screen drivers, requiring less capture overhead and moving straight to encoding.
+
 ### Proof of Concept Goals:
 
 - [x] Implement Domain via Core Library
 - [x] Implement PoC EVDI Subsystem [#25](https://github.com/AadamZ5/dev-disp/issues/25) (thanks to [evdi](https://github.com/dzfranklin/evdi-rs) crate! May need forked or contributed to)
 - [x] Implement PoC HEVC Encoding [#21](https://github.com/AadamZ5/dev-disp/issues/21) (thanks to [ffmpeg-next](https://github.com/zmwangx/rust-ffmpeg#readme) crate!)
 - [x] Implement PoC Web Test Page [#3](https://github.com/AadamZ5/dev-disp/issues/3)
+
+### Future Goals:
+
+- Implement proper screen size configuration with EDID protocol [#8](https://github.com/AadamZ5/dev-disp/issues/8)
+- Implement Windows IDD screen provider
+- Implement WebUSB in web testpage
+- Implement Android companion app
 
 ## General Function
 
@@ -26,7 +35,7 @@ The `dev-disp-server` should run on your host machine, and allow connections fro
 
 For encoding, this project currently uses `ffmpeg`.
 
-High-efficiency encoders usually need access to hardware to aid in encoding. Without any, this will currently fallback to a software CPU encoder like `libx265` or `libx264` which is pretty slow.
+High-efficiency encoders usually need access to hardware to aid in encoding. Without any, this will currently fallback to a software CPU encoder like `libx265` or `libx264` which is pretty slow, or `vp9` which has somewhat acceptable performance.
 
 ## Disclaimer
 

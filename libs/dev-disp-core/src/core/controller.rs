@@ -143,8 +143,8 @@ where
         width: format_params.width,
         height: format_params.height,
 
-        bitrate: 1000000, // TODO: Make this configurable
-        fps: 60,          // TODO: Make this configurable
+        bitrate: 1000000, // TODO: Make this configurable?
+        fps: 60,          // TODO: Make this configurable?
         encoder_input_parameters: format_params,
     };
 
@@ -159,6 +159,15 @@ where
         }
         Ok(configs) => configs,
     };
+
+    if supported_configurations.is_empty() {
+        error!("No supported encoder configurations available");
+        close_dev(&mut host).await;
+        return Err((
+            host,
+            "No supported encoder configurations available".to_string(),
+        ));
+    }
 
     let preferred_configurations = match host
         .get_preferred_encodings(supported_configurations.clone())

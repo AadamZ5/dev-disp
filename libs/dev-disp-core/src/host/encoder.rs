@@ -98,9 +98,7 @@ pub trait Encoder {
 pub trait EncoderProvider {
     type EncoderType: Encoder + 'static;
 
-    // TODO: Implement negotiation protocol here!
-
-    // TODO: Better error type
+    // TODO: Better error type, async!
     fn create_encoder(&self) -> Result<Self::EncoderType, String>;
 }
 
