@@ -11,7 +11,7 @@ _(Web PoC pictured above with software encoding)_
 The goal of this utility is to use the EVDI sub-system developed for the DisplayLink driver to create a virtual display that represents the geometry of the device connected, then transmit that virtual display information to the device via some transport. Device Display will use a companion app to receive high-quality and low-latency data. While this is not targeted at an ultra-low-latency use-case such as gaming, it should
 function no worse than something like steam-link.
 
-While this does perform a large portion of what RDP programs might do, this project is aimed to be extensible allowing lower-level transport methods like USB to be implemented without hosting an entire network stack to transport for existing RDP applications. Additionally, this project aims to directly interface with the data produced by the virtual screen drivers, requiring less capture overhead and moving straight to encoding.
+While this does perform a large portion of what RDP programs might do, this project aims to be extensible, allowing lower-level transport methods like USB to be implemented without hosting an entire network stack for transporting data to existing RDP applications. Additionally, this project aims to directly interface with the data produced by the virtual screen drivers, requiring less capture overhead and moving straight to encoding.
 
 ### Proof of Concept Goals:
 

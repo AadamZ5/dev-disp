@@ -194,6 +194,7 @@ where
 {
     let mut discovery = discovery.into_stream();
 
+    // TODO: Make this configuration hot-reloadable with a file watcher!
     let ffmpeg_config = match get_default_config_path_for::<FfmpegConfiguration>() {
         Ok(path) => {
             match util::read_configuration_or_write_default_for::<FfmpegConfiguration>(&path).await

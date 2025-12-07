@@ -251,9 +251,10 @@ impl StringMapBuilder {
         }
     }
 
-    fn insert<T>(mut self, key: T, value: T) -> Self
+    fn insert<T1, T2>(mut self, key: T1, value: T2) -> Self
     where
-        T: Into<String>,
+        T1: Into<String>,
+        T2: Into<String>,
     {
         self.inner.insert(key.into(), value.into());
         self
@@ -530,12 +531,12 @@ pub fn get_relevant_codec_parameters(
             };
 
             StringMapBuilder::new()
-                .insert("profile", &profile.to_string())
-                .insert("level", &level.to_string())
-                .insert("bitDepth", &bit_depth.to_string())
+                .insert("profile", profile.to_string())
+                .insert("level", level.to_string())
+                .insert("bitDepth", bit_depth.to_string())
                 // (
-                //     "chromaSubsampling".to_string(),
-                //     chroma_subsampling.to_string(),
+                //     "chromaSubsampling",
+                //     chroma_subsampling,
                 // ),
                 .build()
         },
@@ -566,11 +567,11 @@ pub fn get_relevant_codec_parameters(
                 let constraints = 0xB0;
 
                 StringMapBuilder::new()
-                    .insert("profile", &profile.to_string())
-                    .insert("compatibility", &format!("{:02X}", compat))
-                    .insert("level", &level.to_string())
-                    .insert("tier", &tier_letter.to_string())
-                    .insert("constraints", &format!("{:02X}", constraints))
+                    .insert("profile", profile.to_string())
+                    .insert("compatibility", format!("{:02X}", compat))
+                    .insert("level", level.to_string())
+                    .insert("tier", tier_letter)
+                    .insert("constraints", format!("{:02X}", constraints))
                     .build()
             }
         }

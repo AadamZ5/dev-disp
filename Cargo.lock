@@ -500,6 +500,7 @@ dependencies = [
  "evdi 0.8.0",
  "futures-util",
  "log",
+ "thiserror 2.0.17",
  "tokio",
  "tokio-util",
 ]

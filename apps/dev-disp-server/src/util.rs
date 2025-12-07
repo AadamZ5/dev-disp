@@ -2,9 +2,11 @@ use std::path::Path;
 
 use log::{debug, warn};
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ConfigurationFileError {
+    #[error("I/O error: {0}")]
     IoError(std::io::Error),
+    #[error("Serialization error: {0}")]
     SerializationError(Box<dyn std::error::Error>),
 }
 
