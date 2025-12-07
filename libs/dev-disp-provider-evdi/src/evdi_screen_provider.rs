@@ -25,7 +25,7 @@ use futures_util::FutureExt;
 use log::{debug, error, info, warn};
 use thiserror::Error;
 
-use crate::{edid_from_display_params, util::evdi_format_to_internal_format};
+use crate::{Edid, util::evdi_format_to_internal_format};
 
 const RECEIVE_INITIAL_MODE_TIMEOUT: Duration = Duration::from_secs(10);
 const UPDATE_BUFFER_TIMEOUT: Duration = Duration::from_secs(5);
@@ -71,7 +71,7 @@ impl ScreenProvider for EvdiScreenProvider {
     async fn get_screen(&self, params: DisplayParameters) -> Result<Self::ScreenType, String> {
         info!("Getting an EVDI screen for params {params}");
 
-        let edid = edid_from_display_params(&params);
+        let edid: Edid = params.clone().into();
 
         let device = match get_evdi_device() {
             Ok(dev) => dev,
@@ -81,7 +81,8 @@ impl ScreenProvider for EvdiScreenProvider {
             }
         };
 
-        let device_config = DeviceConfig::new(edid, params.resolution.0, params.resolution.1);
+        let device_config =
+            DeviceConfig::new(edid.to_bytes(), params.resolution.0, params.resolution.1);
         debug!("Using device config: {device_config:?}");
 
         let unconnected_handle = match device.open() {
