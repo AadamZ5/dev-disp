@@ -1,6 +1,8 @@
-mod detailed_timing_descriptor;
+mod detailed_timing;
+mod display_range_limits;
 
-pub use detailed_timing_descriptor::*;
+pub use detailed_timing::*;
+pub use display_range_limits::*;
 
 #[derive(Debug, Clone)]
 pub enum EdidDescriptor {
