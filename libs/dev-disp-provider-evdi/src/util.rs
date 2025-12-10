@@ -18,12 +18,6 @@ pub fn evdi_format_to_internal_format(
         name: "????".to_string(),
     })?;
 
-    debug!(
-        "Mapping EVDI FourCC format: {} ({})",
-        ToString::to_string(&result),
-        format
-    );
-
     match result {
         DrmFourcc::Rgba8888 => Ok(VirtualScreenPixelFormat::Rgba8888),
         DrmFourcc::Bgra8888 => Ok(VirtualScreenPixelFormat::Bgra8888),

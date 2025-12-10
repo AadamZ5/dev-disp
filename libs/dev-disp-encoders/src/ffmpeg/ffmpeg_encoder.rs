@@ -93,6 +93,8 @@ impl FfmpegEncoder {
             ffmpeg_format_from_internal_format(&parameters.encoder_input_parameters.format);
         let dst_format = configuration.pixel_format;
 
+        // If the source format matches the encoder's required format, no
+        // scaling required (since we are not changing resolution here).
         let scaler = if dst_format == src_format {
             None
         } else {

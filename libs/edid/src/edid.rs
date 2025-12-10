@@ -1,3 +1,5 @@
+use crate::descriptors::EdidDescriptor;
+
 #[derive(Debug, Clone, Copy, Default)]
 pub enum EdidDigitalBitDepth {
     Undefined = 0b000,
@@ -281,71 +283,6 @@ impl EdidStandardTiming {
         bytes[1] = aspect_ratio_bits | refresh_rate_bits;
 
         bytes
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct EdidDetailedTimingDescriptor {
-    /// Pixel clock. `00` = reserved; otherwise in 10 kHz units (0.01–655.35 MHz, little-endian).
-    pixel_clock: u16,
-
-    /// Horizontal active pixels, max 12-bit value
-    /// Values will be truncated to a 12-bit value.
-    horizontal_active_pixels: u16,
-
-    /// Horizontal blanking pixels, end of active pixels to
-    /// start of the next line. Max 12-bit value.
-    /// Values will be truncated to a 12-bit value.
-    horizontal_blanking_pixels: u16,
-
-    /// Vertical active lines per frame, max 12-bit value
-    /// Values will be truncated to a 12-bit value.
-    vertical_active_lines: u16,
-
-    /// Vertical blanking lines per frame, end of active lines
-    /// to start of the next frame. Max 12-bit value.
-    /// Values will be truncated to a 12-bit value.
-    vertical_blanking_lines: u16,
-
-    /// Horizontal sync offset (front porch), in pixels
-    /// Max 12-bit value.
-    /// Values will be truncated to a 12-bit value.
-    horizontal_sync_offset: u16,
-
-    /// Horizontal sync pulse width, in pixels
-    /// Max 12-bit value.
-    /// Values will be truncated to a 12-bit value.
-    horizontal_sync_pulse_width: u16,
-
-    /// Vertical sync offset (front porch), in lines
-    vertical_sync_offset: u8,
-
-    /// Vertical sync pulse width, in lines
-    vertical_sync_pulse_width: u8,
-
-    /// Horizontal image size, in millimeters
-    horizontal_image_size_mm: u16,
-
-    /// Vertical image size, in millimeters
-    vertical_image_size_mm: u16,
-
-    /// Horizontal border, in pixels (one side)
-    horizontal_border: u8,
-
-    /// Vertical border, in lines (one side)
-    vertical_border: u8,
-    // TODO: Rest of the fields
-}
-
-#[derive(Debug, Clone)]
-pub enum EdidDescriptor {
-    DetailedTiming(EdidDetailedTimingDescriptor),
-}
-
-impl EdidDescriptor {
-    pub fn to_bytes(&self) -> [u8; 18] {
-        let mut descriptor_bytes = [0u8; 18];
-        descriptor_bytes
     }
 }
 
