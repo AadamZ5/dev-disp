@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use edid::{Edid, EdidDigitalBitDepth, EdidDigitalVideoInterface, EdidEstablishedTimingSupport};
 use futures::{FutureExt, future};
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,19 @@ impl Display for DisplayParameters {
         let w = self.resolution.0;
         let h = self.resolution.1;
         write!(f, "{name} ({w}x{h})")
+    }
+}
+
+impl Into<Edid> for DisplayParameters {
+    fn into(self) -> Edid {
+        Edid {
+            timing_support_flags: EdidEstablishedTimingSupport {
+                t640x480_60hz: true,
+                ..Default::default()
+            },
+
+            ..Default::default()
+        }
     }
 }
 

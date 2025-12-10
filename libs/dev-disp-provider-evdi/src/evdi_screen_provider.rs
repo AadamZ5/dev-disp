@@ -12,6 +12,7 @@ use dev_disp_core::{
     },
     util::PinnedLocalFuture,
 };
+use edid::Edid;
 use evdi::{
     DrmFormat,
     buffer::{Buffer as EvdiBuffer, BufferId},
@@ -25,7 +26,7 @@ use futures_util::FutureExt;
 use log::{debug, error, info, warn};
 use thiserror::Error;
 
-use crate::{Edid, util::evdi_format_to_internal_format};
+use crate::util::evdi_format_to_internal_format;
 
 const RECEIVE_INITIAL_MODE_TIMEOUT: Duration = Duration::from_secs(10);
 const UPDATE_BUFFER_TIMEOUT: Duration = Duration::from_secs(5);
@@ -81,8 +82,16 @@ impl ScreenProvider for EvdiScreenProvider {
             }
         };
 
+        let edid_bytes = match edid.to_bytes() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error!("Failed to convert EDID to bytes: {}", e);
+                return Err(HandleClientError::Unknown.to_string());
+            }
+        };
+
         let device_config =
-            DeviceConfig::new(edid.to_bytes(), params.resolution.0, params.resolution.1);
+            DeviceConfig::new(&edid_bytes, params.resolution.0, params.resolution.1);
         debug!("Using device config: {device_config:?}");
 
         let unconnected_handle = match device.open() {
