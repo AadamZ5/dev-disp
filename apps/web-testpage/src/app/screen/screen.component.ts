@@ -39,12 +39,12 @@ export class ScreenComponent {
   readonly offscreenCanvas$ = toObservable(this.canvas).pipe(
     distinctUntilChanged(),
     map((canvas) => {
-      const offscreeen = canvas?.nativeElement.transferControlToOffscreen();
-      if (offscreeen && canvas) {
-        offscreeen.width = canvas.nativeElement.clientWidth;
-        offscreeen.height = canvas.nativeElement.clientHeight;
+      const offscreen = canvas?.nativeElement.transferControlToOffscreen();
+      if (offscreen && canvas) {
+        offscreen.width = canvas.nativeElement.clientWidth;
+        offscreen.height = canvas.nativeElement.clientHeight;
       }
-      return offscreeen;
+      return offscreen;
     }),
     distinctUntilChanged(),
     shareReplay(1),

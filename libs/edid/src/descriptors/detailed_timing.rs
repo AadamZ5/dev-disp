@@ -8,7 +8,7 @@ pub enum SignalInterfaceType {
 // TODO: This may be better represented as bitflags
 #[derive(Debug, Clone, Copy, Default)]
 pub enum StereoMode {
-    /// No stero timing mode
+    /// No stereo timing mode
     /// (bit 0 is don't care)
     #[default]
     None = 0b000,
@@ -57,7 +57,7 @@ pub struct DigitalSyncFlags {
     /// V-sync polarity
     /// - `true` = positive polarity
     /// - `false` = negative polarity
-    pub v_sync_polatity: bool,
+    pub v_sync_polarity: bool,
 
     /// H-sync polarity
     ///  - `true` = positive polarity
@@ -92,7 +92,7 @@ impl FeaturesMap {
         byte_value |= (self.signal_type as u8) << 7;
 
         // This is the weirdest fucking setup for packing bytes but whatever.
-        // Bit 1 and 2 of the steroe_mode go into bits 6 and 5 of the byte,
+        // Bit 1 and 2 of the stereo go into bits 6 and 5 of the byte,
         // but bit 0 of the stereo_mode goes into bit 0 of the byte.
         let mut stereo_mode_byte = ((self.stereo_mode as u8) << 4) & 0b0110_0000;
         stereo_mode_byte |= (self.stereo_mode as u8) & 0b0000_0001;
@@ -123,7 +123,7 @@ impl FeaturesMap {
             }
             SyncType::Digital(flags) => {
                 sync_bits |= 0b0001_0000; // Bit 4 is one and bit 3 is zero for digital separate
-                if flags.v_sync_polatity {
+                if flags.v_sync_polarity {
                     sync_bits |= 1 << 2;
                 }
                 if flags.h_sync_positive {

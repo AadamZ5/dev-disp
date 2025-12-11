@@ -31,8 +31,8 @@ impl Display for DisplayParameters {
     }
 }
 
-impl Into<Edid> for DisplayParameters {
-    fn into(self) -> Edid {
+impl From<DisplayParameters> for Edid {
+    fn from(params: DisplayParameters) -> Self {
         Edid {
             display_parameters: edid::EdidDisplayParameters::Digital((
                 EdidDigitalBitDepth::Eight,
@@ -41,11 +41,13 @@ impl Into<Edid> for DisplayParameters {
             descriptor_1: Some(EdidDescriptor::DetailedTiming(
                 edid::descriptors::EdidDetailedTimingDescriptor {
                     pixel_clock: 14850,
-                    horizontal_active_pixels: self.resolution.0 as u16,
-                    vertical_active_lines: self.resolution.1 as u16,
+                    horizontal_active_pixels: params.resolution.0 as u16,
+                    vertical_active_lines: params.resolution.1 as u16,
 
                     // I totally guessed with the rest of these values. They
                     // may not matter for our use case using a virtual display.
+                    // TODO: Properly calculate these values using a timing calculator!
+                    // https://edidcraft.com/?tab=timing-calculator-tab
                     horizontal_blanking_pixels: 100,
                     vertical_blanking_lines: 25,
                     horizontal_sync_offset: 10,

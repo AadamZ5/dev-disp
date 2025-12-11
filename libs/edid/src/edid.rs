@@ -1,4 +1,4 @@
-use crate::descriptors::EdidDescriptor;
+use crate::{descriptors::EdidDescriptor, edid};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub enum EdidDigitalBitDepth {
@@ -121,39 +121,9 @@ impl EdidDpmsFeatures {
     }
 }
 
-impl Into<u8> for EdidDpmsFeatures {
-    fn into(self) -> u8 {
-        self.to_byte()
-    }
-}
-
-impl Into<EdidDpmsFeatures> for u8 {
-    fn into(self) -> EdidDpmsFeatures {
-        let standby = (self & 0b1000_0000) != 0;
-        let suspend = (self & 0b0100_0000) != 0;
-        let active_off = (self & 0b0010_0000) != 0;
-
-        let display_type_bits = (self & 0b0001_1000) >> 3;
-        let display_type = match display_type_bits {
-            0b00 | 0b01 | 0b10 | 0b11 => {
-                EdidDpmsDisplayType::Digital(unsafe { std::mem::transmute(display_type_bits) })
-            }
-            _ => EdidDpmsDisplayType::Analog(unsafe { std::mem::transmute(display_type_bits) }),
-        };
-
-        let srgb_standard = (self & 0b0000_0100) != 0;
-        let preferred_timing_mode = (self & 0b0000_0010) != 0;
-        let continuous_frequency = (self & 0b0000_0001) != 0;
-
-        EdidDpmsFeatures {
-            standby,
-            suspend,
-            active_off,
-            display_type,
-            srgb_standard,
-            preferred_timing_mode,
-            continuous_frequency,
-        }
+impl From<EdidDpmsFeatures> for u8 {
+    fn from(features: EdidDpmsFeatures) -> u8 {
+        features.to_byte()
     }
 }
 
@@ -275,7 +245,9 @@ impl EdidStandardTiming {
     pub fn to_bytes(&self) -> [u8; 2] {
         let mut bytes = [0u8; 2];
 
-        bytes[0] = (self.horizontal_resolution / 8 - 31) as u8;
+        bytes[0] = ((self.horizontal_resolution / 8)
+            .checked_sub(31)
+            .unwrap_or(0)) as u8;
 
         let aspect_ratio_bits = (self.aspect_ratio as u8) << 6;
         let refresh_rate_bits = (self.refresh_rate - 60) & 0b0011_1111;
@@ -318,6 +290,8 @@ pub struct Edid {
     /// let aspect_ratio_value = (aspect_ratio.0 as f32) / (aspect_ratio.1 as f32);
     /// let byte_value = (aspect_ratio_value * 100.0).round() as u8 - 99;
     /// ```
+    /// TODO: Consider changing to enum to differentiate between aspect
+    /// ratio and physical size in cm.
     pub width: u8,
     pub height: u8,
 
@@ -361,15 +335,15 @@ const DEV_DISP_EDID_MANUFACTURER_ID: &str = "UND";
 /// is the position of the letter in the alphabet.
 /// For example, 'A' = 1, 'B' = 2, ..., 'Z' = 26.
 ///
-/// The returned bytes is a 2-byte value of 3 5-bit character values.
+/// The returned bytes is 2 bytes of 3 5-bit character values.
 ///
 /// Example:
 /// ```text
 ///    | CH1  |   CH2  |  CH3 |
 ///    |      |        |      |
-/// B  |00001   000 10   00011|
-///    |           |          |
-///    |  Byte 1   |  Byte 2  |
+///  |0 00001   00 010   00011|
+///  |            |           |
+///  |   Byte 1   |   Byte 2  |
 /// ```
 /// This layout above produces the manufacturer code of `"ABC"` in just two bytes.
 ///
@@ -378,7 +352,7 @@ fn manufacturer_id_to_bytes(manufacturer_id: &str) -> Result<[u8; 2], String> {
         return Err("Manufacturer ID must be exactly 3 characters".to_string());
     }
 
-    let mut mfr_id_value = 0 as u32;
+    let mut mfr_id_value = 0 as u16;
 
     let a_value = 'A' as usize;
     let z_value = 'Z' as usize;
@@ -392,7 +366,7 @@ fn manufacturer_id_to_bytes(manufacturer_id: &str) -> Result<[u8; 2], String> {
         }
 
         // Alphabet position is a 1-based index
-        let alphabet_position = ((c_value - a_value) + 1) as u32;
+        let alphabet_position = ((c_value - a_value) + 1) as u16;
 
         // This should be a 5-bit number.
         // The value desired is a 2-byte BE value of 3 5-bit character values
@@ -401,8 +375,8 @@ fn manufacturer_id_to_bytes(manufacturer_id: &str) -> Result<[u8; 2], String> {
         // We add `+1` here because there should be a 0 at the beginning
         // of the 2-byte value.
         // 0 01001 00010 01101
-        let in_place_value = alphabet_position >> ((3 - i) * 5) + 1;
-        mfr_id_value |= in_place_value;
+        let shifted_position_value = alphabet_position << ((2 - i) * 5);
+        mfr_id_value |= shifted_position_value;
     }
 
     let bytes: [u8; 2] = [(mfr_id_value << 0) as u8, (mfr_id_value << 8) as u8];
@@ -432,11 +406,11 @@ impl Edid {
             edid_bytes[i + 8] = *b;
         }
 
-        for (i, b) in self.product_code.to_be_bytes().iter().enumerate() {
+        for (i, b) in self.product_code.to_le_bytes().iter().enumerate() {
             edid_bytes[i + 10] = *b;
         }
 
-        for (i, b) in self.serial.to_be_bytes().iter().enumerate() {
+        for (i, b) in self.serial.to_le_bytes().iter().enumerate() {
             edid_bytes[i + 12] = *b;
         }
 
@@ -528,8 +502,8 @@ impl Default for Edid {
             version_edid: 1,
             version_rev: 4,
             display_parameters: EdidDisplayParameters::default(),
-            width: 16,
-            height: 9,
+            width: 78, // (16/9 - 1) * 100 = 78, per aspect ratio encoding
+            height: 0,
             gamma: 0,
             dpms_features: EdidDpmsFeatures::default(),
             color_characteristics: [0; 10],
@@ -542,5 +516,3 @@ impl Default for Edid {
         }
     }
 }
-
-const TEMPLATE_EDID: &[u8; 128] = include_bytes!("./Example_EDID.bin");
