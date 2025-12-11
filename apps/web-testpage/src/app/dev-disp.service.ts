@@ -75,8 +75,12 @@ export class DevDispConnection {
 
   constructor(
     public readonly address: string,
-    private readonly canvas: OffscreenCanvas = new OffscreenCanvas(2, 2),
+    private readonly canvas: OffscreenCanvas = new OffscreenCanvas(800, 640),
   ) {
+    console.log(
+      `Got canvas with size ${this.canvas.width}x${this.canvas.height}`,
+    );
+
     this.drawer = this._getDrawer(this.canvas);
 
     const handlers: WsHandlers = {

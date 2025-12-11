@@ -6,6 +6,6 @@ members = [
 	'libs/dev-disp-core',
 	'libs/dev-disp-client-lib',
 	'libs/dev-disp-provider-evdi',
-	'libs/dev-disp-ws-js', "libs/dev-disp-encoders",
+	'libs/dev-disp-ws-js', "libs/dev-disp-encoders", "libs/edid",
 ]
 resolver = '3'

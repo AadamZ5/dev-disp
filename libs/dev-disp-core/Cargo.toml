@@ -16,3 +16,4 @@ log = "0.4.28"
 serde = { version = "1.0.228", features = ["serde_derive"] }
 thiserror = "2.0.16"
 dirs = "6.0.0"
+edid = { path = "../edid" }

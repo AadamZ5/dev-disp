@@ -9,10 +9,11 @@ pub fn ffmpeg_format_from_internal_format(
         VirtualScreenPixelFormat::Bgr888 => ffmpeg::format::Pixel::BGR24,
         VirtualScreenPixelFormat::Rgba8888 => ffmpeg::format::Pixel::RGBA,
         VirtualScreenPixelFormat::Bgra8888 => ffmpeg::format::Pixel::BGRA,
-        VirtualScreenPixelFormat::Argb8888 => ffmpeg::format::Pixel::ARGB,
+        VirtualScreenPixelFormat::Abgr8888 => ffmpeg::format::Pixel::ABGR,
 
-        // EVDI is reporting ABGR, but really giving us BGRA data
-        // TODO: Investigate and fix!
-        VirtualScreenPixelFormat::Abgr8888 => ffmpeg::format::Pixel::RGBA,
+        // TODO: VP9 scaler/encoder seems to have issues with ARGB input? Make
+        // TODO: a "quirk" for specifically VP9 encoders that interpret ARGB as
+        // TODO: BGRA instead
+        VirtualScreenPixelFormat::Argb8888 => ffmpeg::format::Pixel::BGRA,
     }
 }

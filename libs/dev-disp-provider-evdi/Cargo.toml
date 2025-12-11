@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 evdi = "0.7.3"
 dev-disp-core = { path = "../dev-disp-core" }
+edid = { path = "../edid" }
 futures-util = { version = "0.3.31", features = ["sink"] }
 futures-timer = "3.0.3"
 log = "0.4.28"
