@@ -67,6 +67,11 @@ pub fn setup_ffmpeg_encoder(
     context.set_format(configuration.pixel_format);
     context.set_time_base((1, parameters.fps as i32));
 
+    //context.set_color_range(ffmpeg::util::color::Range::JPEG);
+    //context.set_colorspace(ffmpeg::util::color::Space::BT709);
+    context.set_flags(ffmpeg::codec::flag::Flags::LOW_DELAY);
+
+
     let options = Dictionary::from_iter(configuration.encoder_options.clone().into_iter());
     context
         .open_with(options)
@@ -195,7 +200,8 @@ impl DevDispEncoder for FfmpegEncoder {
                             .map(|e| e.encoder_name.clone())
                             .collect::<Vec<_>>()
                     );
-                    encoders = Box::new(get_encoders().filter(move |config| {
+                    let all_encoders = FfmpegEncoderBruteForceIterator::new(self.configuration.encoder_configurations.clone());
+                    encoders = Box::new(all_encoders.filter(move |config| {
                         prefs.iter().any(|preferred| {
                             preferred.encoder_name == config.encoder_name
                                 && preferred.encoder_family == config.encoder_family

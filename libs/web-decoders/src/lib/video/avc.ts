@@ -1,3 +1,4 @@
+import { isNullish } from '../util';
 import { CodecDefinition } from './common';
 
 /**
@@ -6,8 +7,10 @@ import { CodecDefinition } from './common';
  *  2. https://www.rfc-editor.org/rfc/rfc6381#section-3.4
  */
 export type CodecAvcParameters = {
-  // TODO: Get a document that explains the parameters!
-} & Record<string, string | number>;
+  profile: number | string;
+  constraintFlags: number | string;
+  level: number | string;
+};
 
 /**
  * Overview: https://www.w3.org/TR/webcodecs-av1-codec-registration/
@@ -23,8 +26,22 @@ export type CodecAvc1 = CodecDefinition<CodecAvcParameters, 'avc1'>;
 export type CodecAvc3 = CodecDefinition<CodecAvcParameters, 'avc3'>;
 
 function avcParamString(codec: 'avc1' | 'avc3', params: CodecAvcParameters) {
-  let acc = '' + codec;
-  // TODO: Implement the toParamString function for AVC
+  let acc = '' + codec + '.';
+  if (!isNullish(params.profile)) {
+    acc += Number(params.profile).toString(16).padStart(2, '0');
+  } else {
+    acc += '00';
+  }
+  if (!isNullish(params.constraintFlags)) {
+    acc += Number(params.constraintFlags).toString(16).padStart(2, '0');
+  } else {
+    acc += '00';
+  }
+  if (!isNullish(params.level)) {
+    acc += Number(params.level).toString(16).padStart(2, '0');
+  } else {
+    acc += '00';
+  }
   return acc;
 }
 

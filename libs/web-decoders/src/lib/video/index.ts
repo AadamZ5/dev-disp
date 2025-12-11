@@ -2,9 +2,9 @@ import { CODEC_AV1 } from './av1';
 import { CODEC_VP09 } from './vp09';
 import { CODEC_VP8 } from './vp8';
 import { CODEC_HEV1, CODEC_HVC1 } from './hevc';
+import { CODEC_AVC1, CODEC_AVC3 } from './avc';
 
-// import { CODEC_AVC1, CODEC_AVC3 } from './avc';
-
+export * from './common';
 export * from './util';
 
 export * from './av1';
@@ -20,20 +20,20 @@ export const VIDEO_CODEC_DEFINITIONS = [
   CODEC_HEV1,
   CODEC_HVC1,
   // These aren't supported yet, because we don't know the parameters!
-  // CODEC_AVC1,
-  // CODEC_AVC3,
+  CODEC_AVC1,
+  CODEC_AVC3,
 ] as const;
 
 export type VideoCodecDefinition = (typeof VIDEO_CODEC_DEFINITIONS)[number];
 
 // TODO: Better const-literal type
 export const VIDEO_CODEC_IDS = VIDEO_CODEC_DEFINITIONS.map(
-  (def) => def.codec
+  (def) => def.codec,
 ) as ReadonlyArray<VideoCodecDefinition['codec']>;
 
 export type VideoCodecId = (typeof VIDEO_CODEC_IDS)[number];
 
 // TODO: Better const-literal type
 export const VIDEO_CODEC_NAMES = VIDEO_CODEC_DEFINITIONS.map((def) =>
-  def.displayName ? def.displayName : def.codec
+  def.displayName ? def.displayName : def.codec,
 ) as ReadonlyArray<string>;
