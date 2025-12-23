@@ -453,6 +453,7 @@ dependencies = [
  "futures-timer",
  "futures-util",
  "log",
+ "rust-util",
  "serde",
  "thiserror 2.0.17",
 ]
@@ -502,6 +503,7 @@ dependencies = [
  "evdi 0.8.0",
  "futures-util",
  "log",
+ "rust-util",
  "thiserror 2.0.17",
  "tokio",
  "tokio-util",
@@ -1409,6 +1411,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caf4aa5b0f434c91fe5c7f1ecb6a5ece2130b02ad2a590589dda5146df959001"
 
 [[package]]
+name = "rust-util"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "futures-core",
+ "futures-locks",
+ "futures-util",
+ "shared_stream",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1546,6 +1559,16 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "shared_stream"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa1c6c095efaa0b509376134c818af805c74ee32e2e6699b74a670dd32562e79"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
 ]
 
 [[package]]

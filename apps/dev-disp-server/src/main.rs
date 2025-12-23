@@ -16,6 +16,8 @@ use log::{LevelFilter, error, info, trace, warn};
 use tokio::{net::TcpListener, signal::ctrl_c, task::LocalSet};
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
+use crate::util::connect_config_file_for;
+
 mod util;
 
 const SAMSUNG_SERIAL: &str = "RFCT71HTZNL";
@@ -195,25 +197,7 @@ where
     let mut discovery = discovery.into_stream();
 
     // TODO: Make this configuration hot-reloadable with a file watcher!
-    let ffmpeg_config = match get_default_config_path_for::<FfmpegConfiguration>() {
-        Ok(path) => {
-            match util::read_configuration_or_write_default_for::<FfmpegConfiguration>(&path).await
-            {
-                Ok(config) => config,
-                Err(e) => {
-                    error!(
-                        "Failed to read or write FFmpeg configuration at {:?}: {:?}",
-                        path, e
-                    );
-                    FfmpegConfiguration::default()
-                }
-            }
-        }
-        Err(e) => {
-            error!("Failed to get default FFmpeg configuration path: {}", e);
-            FfmpegConfiguration::default()
-        }
-    };
+    let ffmpeg_config = connect_config_file_for::<FfmpegConfiguration>(None, empty());
 
     while let Some(devices) = discovery.next().await {
         info!("Discovered {} device(s)", devices.len());

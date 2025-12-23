@@ -1,4 +1,6 @@
 use crate::util::PinnedLocalFuture;
+use futures::{FutureExt, Stream};
+use rust_util::computed_cell::{ComputedCell, ComputedResult};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -41,4 +43,57 @@ where
         .map(|path| path.join("dev-disp"))
         .ok_or(ConfigurationFilePathError::NotAvailable)?;
     T::get_default_path(project_config.as_path())
+}
+
+pub struct ConfigurationFileConnection<T>
+where
+    T: ConfigurationFile + Clone,
+{
+    inner: ComputedCell<
+        T,
+        Box<dyn Fn() -> PinnedLocalFuture<'static, T>>,
+        PinnedLocalFuture<'static, T>,
+        (),
+    >,
+}
+
+/// A connection that represents a configuration file that can be
+/// reloaded when invalidated.
+///
+/// TODO: Should we just refactor this to be a stream with latest value?
+impl<T> ConfigurationFileConnection<T>
+where
+    T: ConfigurationFile + Clone,
+{
+    pub fn new<F, Fut, I>(load_fn: F, invalidate_notifications: I) -> Self
+    where
+        F: Fn() -> Fut + 'static,
+        Fut: Future<Output = Result<T, Box<dyn std::error::Error>>> + 'static,
+        I: Stream<Item = ()> + Unpin + 'static,
+    {
+        let compute_fn = move || {
+            let fut = load_fn();
+            async move {
+                match fut.await {
+                    Ok(config) => config,
+                    Err(e) => {
+                        log::error!(
+                            "Failed to load configuration file {}: {}. Using default.",
+                            T::display_name(),
+                            e
+                        );
+                        T::default()
+                    }
+                }
+            }
+            .boxed_local()
+        };
+        Self {
+            inner: ComputedCell::new(Box::new(compute_fn), invalidate_notifications),
+        }
+    }
+
+    pub async fn get_configuration(&mut self) -> &ComputedResult<T> {
+        self.inner.get().await
+    }
 }
