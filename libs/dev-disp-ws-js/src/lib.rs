@@ -1,15 +1,15 @@
-use std::panic;
+use std::{cell::Cell, panic, rc::Rc};
 
 use futures::{channel::mpsc, stream::FuturesUnordered, FutureExt, SinkExt, StreamExt};
 use js_sys::{Reflect, SharedArrayBuffer};
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use wasm_bindgen::prelude::*;
 use ws_stream_wasm::{WsMessage, WsMeta};
 
 use crate::{
     client::{listen_dispatchers, listen_ws_messages},
     types::{DevDispEvent, JsDisplayParameters, WsDispatchers, WsHandlers},
-    util::OnDrop,
+    util::{shared_array_buffer_new_fallible, OnDrop},
 };
 
 mod client;
@@ -27,18 +27,18 @@ pub fn connect_dev_disp_server(
     handlers: &WsHandlers,
 ) -> Result<WsDispatchers, JsError> {
     // Create cancel channels
-    let (cancel_tx, mut cancel_rx) = mpsc::unbounded::<()>();
     let handlers = handlers.clone();
     let handlers_1 = handlers.clone();
 
     let (update_display_params_tx, update_display_params_rx) =
         mpsc::unbounded::<JsDisplayParameters>();
 
-    let mut closed = false;
+    let closed = Rc::new(Cell::new(false));
+    let closed_outer = closed.clone();
 
-    let _cancel_tx_always_alive = cancel_tx.clone();
+    let (cancel_tx, mut cancel_rx) = mpsc::unbounded::<()>();
     let mut cancel_token = cancel_tx.clone();
-    let mut cancel_token_outer = cancel_tx.clone();
+    let cancel_token_outer = cancel_tx.clone();
 
     // Try to allocate a 512 MB shared array buffer for screen data
     let shared_buffer = try_get_shared_array_buffer(512 * 1024 * 1024).ok();
@@ -106,8 +106,7 @@ pub fn connect_dev_disp_server(
 
     // Spawn this controller task on the JS event loop
     wasm_bindgen_futures::spawn_local(async move {
-        let _cancel_tx_always_alive = _cancel_tx_always_alive;
-        let cancel_fut = cancel_rx.next();
+        let mut cancel_fut = cancel_rx.next();
 
         futures::select! {
             res = task_main.fuse() => {
@@ -115,8 +114,8 @@ pub fn connect_dev_disp_server(
                     error!("WebSocket main task ended with error: {:?}", e);
                 }
             },
-            _ = cancel_fut.fuse() => {
-                closed = true;
+            _ = cancel_fut => {
+                closed.set(true);
                 debug!("WebSocket connection cancelled");
             },
         }
@@ -130,21 +129,37 @@ pub fn connect_dev_disp_server(
         }
     });
 
+    let dispatchers = create_dispatchers(
+        cancel_token_outer,
+        closed_outer,
+        update_display_params_tx,
+        shared_buffer,
+    );
+    Ok(dispatchers)
+}
+
+fn create_dispatchers(
+    cancel_token: mpsc::UnboundedSender<()>,
+    closed: Rc<Cell<bool>>,
+    update_display_params_tx: mpsc::UnboundedSender<JsDisplayParameters>,
+    shared_buffer: Option<SharedArrayBuffer>,
+) -> WsDispatchers {
     // Wrapper that will tell us when the JS side has GC'ed the closure
-    let mut cancel_on_drop_wrapped = OnDrop::new(
+    let cancel_on_drop_wrapped = OnDrop::new(
         || {
             debug!("Cancel closure dropped");
         },
         move || {
             // If this has already been called, do nothing.
-            // TODO: This isn't actually reading the value of closed, since
-            // TODO: it is copied into this closure.
-            if !closed {
+            if !closed.get() {
                 debug!("Closing websocket connection");
-                let _ = cancel_token_outer.send(());
-            } else {
-                warn!("Websocket connection already closed");
+                let mut cancel_token = cancel_token.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    cancel_token.send(()).await.ok();
+                    debug!("Close notification sent");
+                });
             }
+            // No-op if already closed
         },
     );
 
@@ -172,7 +187,7 @@ pub fn connect_dev_disp_server(
         screen_data: shared_buffer,
     };
 
-    Ok(dispatchers)
+    dispatchers
 }
 
 /// Attempt to get a shared array buffer only if it is defined in the browser context.
@@ -189,7 +204,7 @@ fn try_get_shared_array_buffer(buffer_size: u32) -> Result<SharedArrayBuffer, Js
         return Err(JsValue::from_str(error_msg));
     }
 
-    Ok(SharedArrayBuffer::new(buffer_size))
+    shared_array_buffer_new_fallible(buffer_size)
 }
 
 #[wasm_bindgen(start)]

@@ -137,6 +137,12 @@ export class DevDispConnection {
 
   private onDecodeError(e: DOMException) {
     console.error('VideoDecoder error:', e);
+    if (this.decoder.state === 'closed') {
+      console.warn('Decoder is closed, cannot recover from error');
+      // Do a non-intentional disconnect
+      this.intentionalDisconnect = false;
+      this.dispatchers.closeConnection();
+    }
   }
 
   private onConnect(e: unknown) {

@@ -107,7 +107,7 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         self.dev.reset().into_future().map(|_| Ok(())).boxed()
     }
 
-    fn get_preferred_encoding(
+    fn get_preferred_encodings(
         &mut self,
         _configurations: Vec<dev_disp_core::host::EncoderPossibleConfiguration>,
     ) -> PinnedFuture<

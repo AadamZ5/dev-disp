@@ -12,6 +12,7 @@ dev-disp-core = { path = "../../libs/dev-disp-core" }
 dev-disp-comm = { path = "../../libs/dev-disp-comm" }
 dev-disp-provider-evdi = { path = "../../libs/dev-disp-provider-evdi" }
 dev-disp-encoders = { path = "../../libs/dev-disp-encoders" }
+rust-util = { path = "../../libs/rust-util" }
 futures-util = "0.3.31"
 tokio-util = { version = "0.7.17", features = ["compat"] }
 thiserror = "2.0.17"

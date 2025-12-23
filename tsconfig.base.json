@@ -15,7 +15,8 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "web-decoders": ["libs/web-decoders/src/index.ts"]
+      "web-decoders": ["libs/web-decoders/src/index.ts"],
+      "web-util": ["libs/web-util/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

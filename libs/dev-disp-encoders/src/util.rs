@@ -9,11 +9,11 @@ pub fn ffmpeg_format_from_internal_format(
         VirtualScreenPixelFormat::Bgr888 => ffmpeg::format::Pixel::BGR24,
         VirtualScreenPixelFormat::Rgba8888 => ffmpeg::format::Pixel::RGBA,
         VirtualScreenPixelFormat::Bgra8888 => ffmpeg::format::Pixel::BGRA,
-        VirtualScreenPixelFormat::Abgr8888 => ffmpeg::format::Pixel::ABGR,
 
-        // TODO: VP9 scaler/encoder seems to have issues with ARGB input? Make
+        // TODO: VP9 scaler/encoder seems to have issues with ARGB, and/or ABGR input? Make
         // TODO: a "quirk" for specifically VP9 encoders that interpret ARGB as
         // TODO: BGRA instead
         VirtualScreenPixelFormat::Argb8888 => ffmpeg::format::Pixel::BGRA,
+        VirtualScreenPixelFormat::Abgr8888 => ffmpeg::format::Pixel::RGBA,
     }
 }

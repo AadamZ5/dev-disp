@@ -1,0 +1,11 @@
+[package]
+name = "rust-util"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures-util = { version = "0.3.31" }
+futures-core = "0.3.31"
+futures = "0.3.31"
+futures-locks = { version = "0.7.1", default-features = false }
+shared_stream = "0.2.1"

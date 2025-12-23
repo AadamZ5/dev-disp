@@ -41,8 +41,10 @@
         opacity: 0.6;
         transition:
           filter 0.3s ease,
-          opacity 0.3s ease;
+          opacity 0.3s ease,
+          scale 1s ease;
         border: 2px dashed #5056674c;
+        scale: 0.97;
       }
     }
   }

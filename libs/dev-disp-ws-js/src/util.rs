@@ -1,5 +1,8 @@
 use std::ops::{Deref, DerefMut};
 
+use js_sys::SharedArrayBuffer;
+use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+
 pub struct OnDropFn<F>
 where
     F: FnOnce(),
@@ -78,4 +81,12 @@ where
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
     }
+}
+
+#[wasm_bindgen]
+extern "C" {
+
+    #[wasm_bindgen(js_namespace = SharedArrayBuffer, js_name = new, catch)]
+    pub fn shared_array_buffer_new_fallible(size: u32) -> Result<SharedArrayBuffer, JsValue>;
+
 }

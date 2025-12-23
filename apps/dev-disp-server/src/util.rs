@@ -1,5 +1,9 @@
 use std::path::Path;
 
+use dev_disp_core::core::{
+    ConfigurationFile, ConfigurationFileConnection, get_default_config_path_for,
+};
+use futures_util::Stream;
 use log::{debug, warn};
 
 #[derive(Debug, thiserror::Error)]
@@ -109,4 +113,31 @@ where
             }
         }
     }
+}
+
+pub fn connect_config_file_for<T, I>(
+    path: Option<&Path>,
+    invalidate_stream: I,
+) -> ConfigurationFileConnection<T, I>
+where
+    T: ConfigurationFile + Default,
+    I: Stream<Item = ()> + Unpin,
+{
+    ConfigurationFileConnection::new(
+        || {
+            async {
+                if let Some(p) = path.or_else(|| get_default_config_path_for::<T>().ok()) {
+                    read_configuration_or_write_default_for::<T>(p).await
+                } else {
+                    warn!(
+                        "No configuration file path provided for {}, using default configuration",
+                        T::display_name()
+                    );
+                    Ok(T::default())
+                }
+            }
+            .boxed_local()
+        },
+        invalidate_stream,
+    )
 }
