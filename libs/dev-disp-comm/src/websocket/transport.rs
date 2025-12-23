@@ -225,7 +225,7 @@ where
         .boxed()
     }
 
-    fn get_preferred_encoding(
+    fn get_preferred_encodings(
         &mut self,
         configurations: Vec<EncoderPossibleConfiguration>,
     ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
