@@ -1419,6 +1419,7 @@ dependencies = [
  "futures-locks",
  "futures-util",
  "shared_stream",
+ "tokio",
 ]
 
 [[package]]

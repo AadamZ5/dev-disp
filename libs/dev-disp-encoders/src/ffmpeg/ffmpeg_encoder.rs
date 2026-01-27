@@ -242,7 +242,6 @@ impl DevDispEncoder for FfmpegEncoder {
                         let codec_params =
                             get_relevant_codec_parameters(&configuration, &state.encoder);
 
-                        if (codec_params != )
 
                         let configuration = EncoderPossibleConfiguration {
                             encoder_name: configuration.encoder_name,

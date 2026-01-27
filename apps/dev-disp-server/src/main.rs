@@ -6,17 +6,14 @@ use dev_disp_core::{
     core::{get_default_config_path_for, handle_display_host},
     host::{ConnectableDevice, DeviceDiscovery, ScreenProvider, StreamingDeviceDiscovery},
 };
-use dev_disp_encoders::ffmpeg::{self, FfmpegEncoderProvider, config_file::FfmpegConfiguration};
+use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
 use dev_disp_provider_evdi::EvdiScreenProvider;
-use futures_util::{
-    FutureExt, StreamExt,
-    stream::{self, empty},
-};
+use futures_util::{FutureExt, StreamExt, stream};
 use log::{LevelFilter, error, info, trace, warn};
 use tokio::{net::TcpListener, signal::ctrl_c, task::LocalSet};
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
-use crate::util::connect_config_file_for;
+use crate::util::default_path_read_or_write_default_config_for;
 
 mod util;
 
@@ -197,7 +194,13 @@ where
     let mut discovery = discovery.into_stream();
 
     // TODO: Make this configuration hot-reloadable with a file watcher!
-    let ffmpeg_config = connect_config_file_for::<FfmpegConfiguration>(None, empty());
+    let ffmpeg_config = default_path_read_or_write_default_config_for::<FfmpegConfiguration>()
+        .await
+        .map_err(|e| {
+            error!("Failed to read or write FFmpeg configuration: {}", e);
+            e
+        })
+        .unwrap_or_default();
 
     while let Some(devices) = discovery.next().await {
         info!("Discovered {} device(s)", devices.len());
