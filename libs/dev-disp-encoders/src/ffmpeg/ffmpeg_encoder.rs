@@ -1,14 +1,14 @@
-use std::{collections::HashMap, fmt::Debug, time::{Duration, Instant}};
+use std::{fmt::Debug, time::{Duration, Instant}};
 
 use dev_disp_core::{
     host::{
-        Encoder as DevDispEncoder, EncoderParameters, EncoderPossibleConfiguration,
-        EncoderProvider, VirtualScreenPixelFormat,
+        Encoder as DevDispEncoder, EncoderContentParameters, EncoderPossibleConfiguration,
+        EncoderProvider,
     },
     util::PinnedLocalFuture,
 };
 use ffmpeg_next::{
-    self as ffmpeg, Dictionary, codec::encoder::video::Encoder as VideoEncoder, format::Pixel,
+    self as ffmpeg, Dictionary, codec::{encoder::video::Encoder as VideoEncoder}, format::Pixel,
     frame::Video, software::scaling::Context as ScalingContext,
 };
 use futures::FutureExt;
@@ -16,7 +16,7 @@ use log::{debug, info, trace};
 
 use crate::{
     ffmpeg::{config_file::FfmpegConfiguration, configurations::{
-        FfmpegEncoderBruteForceIterator, FfmpegEncoderConfiguration, FfmpegEncoderConfigurationSet, get_encoders, get_relevant_codec_parameters
+        FfmpegEncoderBruteForceIterator, FfmpegEncoderConfiguration, get_encoders, get_relevant_codec_parameters
     }},
     util::ffmpeg_format_from_internal_format,
 };
@@ -25,7 +25,7 @@ struct FfmpegEncoderState {
     encoder: VideoEncoder,
     scaler: Option<ScalingContext>,
     encoder_fmt: Pixel,
-    given_params: EncoderParameters,
+    given_params: EncoderContentParameters,
     frame_index: u64,
     out_buf: Vec<u8>,
 }
@@ -49,7 +49,7 @@ pub struct FfmpegEncoder {
 }
 
 pub fn setup_ffmpeg_encoder(
-    parameters: &EncoderParameters,
+    parameters: &EncoderContentParameters,
     configuration: &FfmpegEncoderConfiguration,
 ) -> Result<VideoEncoder, String> {
     let codec = ffmpeg::encoder::find_by_name(&configuration.encoder_name)
@@ -66,6 +66,14 @@ pub fn setup_ffmpeg_encoder(
     context.set_width(parameters.width);
     context.set_format(configuration.pixel_format);
     context.set_time_base((1, parameters.fps as i32));
+
+    
+    
+
+    //context.set_color_range(ffmpeg::util::color::Range::JPEG);
+    //context.set_colorspace(ffmpeg::util::color::Space::BT709);
+    context.set_flags(ffmpeg::codec::flag::Flags::LOW_DELAY);
+
 
     let options = Dictionary::from_iter(configuration.encoder_options.clone().into_iter());
     context
@@ -84,7 +92,7 @@ impl FfmpegEncoder {
 
     fn try_init(
         &mut self,
-        parameters: EncoderParameters,
+        parameters: EncoderContentParameters,
         configuration: FfmpegEncoderConfiguration,
     ) -> Result<FfmpegEncoderState, String> {
         let encoder = setup_ffmpeg_encoder(&parameters, &configuration)?;
@@ -135,7 +143,7 @@ impl DevDispEncoder for FfmpegEncoder {
 
     fn get_supported_configurations(
         &mut self,
-        parameters: &EncoderParameters,
+        parameters: &EncoderContentParameters,
     ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
 
         // TODO: Try encoders in the provider, not here on every connection!
@@ -174,7 +182,7 @@ impl DevDispEncoder for FfmpegEncoder {
 
     fn init(
         &mut self,
-        parameters: EncoderParameters,
+        parameters: EncoderContentParameters,
         preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
     ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
         async move {
@@ -195,7 +203,8 @@ impl DevDispEncoder for FfmpegEncoder {
                             .map(|e| e.encoder_name.clone())
                             .collect::<Vec<_>>()
                     );
-                    encoders = Box::new(get_encoders().filter(move |config| {
+                    let all_encoders = FfmpegEncoderBruteForceIterator::new(self.configuration.encoder_configurations.clone());
+                    encoders = Box::new(all_encoders.filter(move |config| {
                         prefs.iter().any(|preferred| {
                             preferred.encoder_name == config.encoder_name
                                 && preferred.encoder_family == config.encoder_family
@@ -232,6 +241,7 @@ impl DevDispEncoder for FfmpegEncoder {
 
                         let codec_params =
                             get_relevant_codec_parameters(&configuration, &state.encoder);
+
 
                         let configuration = EncoderPossibleConfiguration {
                             encoder_name: configuration.encoder_name,
@@ -381,7 +391,7 @@ impl FfmpegEncoderProvider {
 impl EncoderProvider for FfmpegEncoderProvider {
     type EncoderType = FfmpegEncoder;
 
-    fn create_encoder(&self) -> Result<Self::EncoderType, String> {
-        Ok(FfmpegEncoder::new(self.configuration.clone()))
+    fn create_encoder(&self) -> PinnedLocalFuture<'_, Result<Self::EncoderType, String>> {
+        futures::future::ready(Ok(FfmpegEncoder::new(self.configuration.clone()))).boxed_local()
     }
 }

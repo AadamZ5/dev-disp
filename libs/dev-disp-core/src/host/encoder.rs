@@ -49,7 +49,7 @@ pub struct ScreenOutputParameters {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EncoderParameters {
+pub struct EncoderContentParameters {
     pub width: u32,
     pub height: u32,
     pub bitrate: u32,
@@ -73,7 +73,7 @@ pub struct EncoderPossibleConfiguration {
 pub trait Encoder {
     fn get_supported_configurations(
         &mut self,
-        parameters: &EncoderParameters,
+        parameters: &EncoderContentParameters,
     ) -> Result<Vec<EncoderPossibleConfiguration>, String>;
 
     /// Called first, to initialize the encoder with the given parameters.
@@ -81,7 +81,7 @@ pub trait Encoder {
     /// TODO: Better error type
     fn init(
         &mut self,
-        parameters: EncoderParameters,
+        parameters: EncoderContentParameters,
         preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
     ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>>;
 
@@ -98,8 +98,12 @@ pub trait Encoder {
 pub trait EncoderProvider {
     type EncoderType: Encoder + 'static;
 
+    fn init(&mut self) -> PinnedLocalFuture<'_, Result<(), String>> {
+        async move { Ok(()) }.boxed_local()
+    }
+
     // TODO: Better error type, async!
-    fn create_encoder(&self) -> Result<Self::EncoderType, String>;
+    fn create_encoder(&self) -> PinnedLocalFuture<'_, Result<Self::EncoderType, String>>;
 }
 
 pub struct RawEncoder;
@@ -107,7 +111,7 @@ pub struct RawEncoder;
 impl Encoder for RawEncoder {
     fn get_supported_configurations(
         &mut self,
-        screen_parameters: &EncoderParameters,
+        screen_parameters: &EncoderContentParameters,
     ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
         Ok(vec![EncoderPossibleConfiguration {
             encoder_name: "raw".to_string(),
@@ -119,7 +123,7 @@ impl Encoder for RawEncoder {
 
     fn init(
         &mut self,
-        screen_parameters: EncoderParameters,
+        screen_parameters: EncoderContentParameters,
         _preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
     ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
         async move {

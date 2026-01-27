@@ -10,8 +10,8 @@ use log::{debug, error, info, trace, warn};
 use crate::{
     client::{DisplayHost, ScreenTransport},
     host::{
-        DisplayHostResult, Encoder, EncoderParameters, EncoderProvider, Screen, ScreenProvider,
-        ScreenReadyStatus,
+        DisplayHostResult, Encoder, EncoderContentParameters, EncoderProvider, Screen,
+        ScreenProvider, ScreenReadyStatus,
     },
 };
 
@@ -124,7 +124,7 @@ where
     debug!("Created virtual screen.");
 
     debug!("Creating encoder...");
-    let mut encoder = match encoder_provider.create_encoder() {
+    let mut encoder = match encoder_provider.create_encoder().await {
         Err(e) => {
             error!("Failed to create encoder: {}", e);
             close_dev(&mut host).await;
@@ -138,7 +138,7 @@ where
     let format_params = screen.get_format_parameters();
     debug!("Got format parameters: {:?}", format_params);
 
-    let encoder_parameters = EncoderParameters {
+    let encoder_parameters = EncoderContentParameters {
         // Note here, formatting to the same width/height as the screen
         width: format_params.width,
         height: format_params.height,
@@ -169,23 +169,21 @@ where
         ));
     }
 
-    let preferred_configurations = match host
-        .get_preferred_encodings(supported_configurations.clone())
-        .await
-    {
-        Err(e) => {
-            error!(
-                "Failed to get preferred encoder configurations from host: {}",
-                e
-            );
-            close_dev(&mut host).await;
-            return Err((
-                host,
-                "Failed to get preferred encoder configurations".to_string(),
-            ));
-        }
-        Ok(configs) => configs,
-    };
+    let preferred_configurations =
+        match host.get_preferred_encodings(supported_configurations).await {
+            Err(e) => {
+                error!(
+                    "Failed to get preferred encoder configurations from host: {}",
+                    e
+                );
+                close_dev(&mut host).await;
+                return Err((
+                    host,
+                    "Failed to get preferred encoder configurations".to_string(),
+                ));
+            }
+            Ok(configs) => configs,
+        };
 
     debug!(
         "Got supported {} encoder configurations: {:#?}",

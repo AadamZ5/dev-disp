@@ -5,7 +5,7 @@ use ffmpeg_next::{
     ffi::{AVPixelFormat, FF_LEVEL_UNKNOWN, FF_PROFILE_UNKNOWN},
     format::Pixel,
 };
-use log::warn;
+use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 
 mod pixel_serialization {
@@ -491,6 +491,9 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
     ])
 }
 
+// TODO: This is pretty much getting codec parameters that the web codecs expect! Is there
+// TODO: a more elegant way to structure this or define the contracts? Should our encoders
+// TODO: crate define the supported codecs and parameters?
 pub fn get_relevant_codec_parameters(
     encoder_preset: &FfmpegEncoderConfiguration,
     encoder: &VideoEncoder,
@@ -498,16 +501,6 @@ pub fn get_relevant_codec_parameters(
     match encoder_preset.encoder_family.as_str() {
         "vp09" => unsafe {
             let ptr = encoder.as_ptr();
-
-            let profile = (*ptr).profile;
-            let profile = if profile == FF_PROFILE_UNKNOWN {
-                0
-            } else {
-                profile
-            };
-
-            let level = (*ptr).level;
-            let level = if level == FF_LEVEL_UNKNOWN { 10 } else { level };
 
             let pix_fmt = (*ptr).pix_fmt;
 
@@ -530,6 +523,27 @@ pub fn get_relevant_codec_parameters(
                 }
             };
 
+            let profile = (*ptr).profile;
+            let profile = if profile == FF_PROFILE_UNKNOWN {
+                let inferred = match (bit_depth, chroma_subsampling) {
+                    (8, 1) => 0,
+                    (8, _) => 1,
+                    (_, 1) => 2,
+                    (_, _) => 3,
+                };
+
+                debug!(
+                    "FF_PROFILE_UNKNOWN ({}): Inferring VP9 profile {} based on bit depth and chroma subsampling",
+                    profile, inferred
+                );
+                inferred
+            } else {
+                profile
+            };
+
+            let level = (*ptr).level;
+            let level = if level == FF_LEVEL_UNKNOWN { 10 } else { level };
+
             StringMapBuilder::new()
                 .insert("profile", profile.to_string())
                 .insert("level", level.to_string())
@@ -541,40 +555,68 @@ pub fn get_relevant_codec_parameters(
                 .build()
         },
         "vp8" => HashMap::new(),
-        "hvc1" => {
-            unsafe {
-                let ptr = encoder.as_ptr();
+        "hvc1" => unsafe {
+            let ptr = encoder.as_ptr();
 
-                let profile = (*ptr).profile;
-                let profile = if profile == FF_PROFILE_UNKNOWN {
-                    1
-                } else {
+            let profile = (*ptr).profile;
+            let profile = if profile == FF_PROFILE_UNKNOWN {
+                warn!(
+                    "FF_PROFILE_UNKNOWN ({}): Assuming default HEVC profile 1",
                     profile
-                };
+                );
+                1
+            } else {
+                profile
+            };
 
-                // Don't really know what this does, but people seem to
-                // hard-code this value for HEVC.
-                let compat = 0x06;
+            // Don't really know what this does, but people seem to
+            // hard-code this value for HEVC.
+            let compat = 0x06;
 
-                let level = (*ptr).level;
-                // Divide this int by 30 to get the level decimal number.
-                // Ex, 90 / 30 = 3.0
-                let level = if level == FF_LEVEL_UNKNOWN { 93 } else { level };
+            let level = (*ptr).level;
+            // Divide this int by 30 to get the level decimal number.
+            // Ex, 90 / 30 = 3.0
+            let level = if level == FF_LEVEL_UNKNOWN { 93 } else { level };
 
-                // TODO: Find out how to get this value properly.
-                let tier_letter = "L";
+            // TODO: Find out how to get this value properly.
+            let tier_letter = "L";
 
-                let constraints = 0xB0;
+            let constraints = 0xB0;
 
-                StringMapBuilder::new()
-                    .insert("profile", profile.to_string())
-                    .insert("compatibility", format!("{:02X}", compat))
-                    .insert("level", level.to_string())
-                    .insert("tier", tier_letter)
-                    .insert("constraints", format!("{:02X}", constraints))
-                    .build()
-            }
-        }
+            StringMapBuilder::new()
+                .insert("profile", profile.to_string())
+                .insert("compatibility", format!("{:02X}", compat))
+                .insert("level", level.to_string())
+                .insert("tier", tier_letter)
+                .insert("constraints", format!("{:02X}", constraints))
+                .build()
+        },
+
+        "avc1" | "avc3" | "h264" => unsafe {
+            let ptr = encoder.as_ptr();
+
+            let profile = (*ptr).profile;
+            let profile = if profile == FF_PROFILE_UNKNOWN {
+                warn!(
+                    "FF_PROFILE_UNKNOWN ({}): Assuming default AVC profile 66 (Baseline)",
+                    profile
+                );
+                66
+            } else {
+                profile
+            };
+
+            let level = (*ptr).level;
+            let level = if level == FF_LEVEL_UNKNOWN { 30 } else { level };
+
+            warn!("AVC encoder profile constraints flags not yet implemented!");
+
+            StringMapBuilder::new()
+                .insert("profile", profile.to_string())
+                .insert("level", level.to_string())
+                .insert("constraintFlags", "00")
+                .build()
+        },
         _ => {
             warn!(
                 "No parameter logic defined for encoder family {}",

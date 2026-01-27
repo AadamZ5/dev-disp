@@ -26,6 +26,18 @@
         ]
       }
     },
+    "link": {
+      "dependsOn": ["build"],
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          {
+            "description": "Link wasm pkg to example",
+            "command": "cd dist/libs/dev-disp-ws-js/pkg && npm link && cd ../../../../ && npm link dev-disp-ws-js"
+          }
+        ]
+      }
+    },
     "test": {
       "cache": true,
       "executor": "@monodon/rust:test",

@@ -62,7 +62,7 @@ where
         &mut self,
         configurations: Vec<EncoderPossibleConfiguration>,
     ) -> Result<Vec<EncoderPossibleConfiguration>, TransportError> {
-        self.transport.get_preferred_encoding(configurations).await
+        self.transport.get_preferred_encodings(configurations).await
     }
 
     pub async fn set_encoding(

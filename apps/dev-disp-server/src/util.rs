@@ -1,6 +1,10 @@
 use std::path::Path;
 
-use log::{debug, warn};
+use dev_disp_core::core::{
+    ConfigurationFile, ConfigurationFileConnection, get_default_config_path_for,
+};
+use futures_util::{FutureExt, Stream};
+use log::{debug, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigurationFileError {
@@ -109,4 +113,49 @@ where
             }
         }
     }
+}
+
+pub async fn default_path_read_or_write_default_config_for<T>() -> Result<T, ConfigurationFileError>
+where
+    T: dev_disp_core::core::ConfigurationFile + Default,
+{
+    let path = get_default_config_path_for::<T>().map_err(|e| {
+        ConfigurationFileError::IoError(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to get default configuration path: {}", e),
+        ))
+    })?;
+    read_configuration_or_write_default_for::<T>(&path).await
+}
+
+// TODO: Refactor for easier usage
+pub fn connect_config_file_for<T, I>(
+    path: Option<&Path>,
+    invalidate_stream: I,
+) -> ConfigurationFileConnection<T>
+where
+    T: ConfigurationFile + Default + Clone + 'static,
+    I: Stream<Item = ()> + Unpin + 'static,
+{
+    let path = path.map(|p| p.to_path_buf());
+    ConfigurationFileConnection::new(
+        move || {
+            let path = path.clone();
+            async {
+                if let Some(p) = path.or_else(|| get_default_config_path_for::<T>().ok()) {
+                    read_configuration_or_write_default_for::<T>(&p)
+                        .await
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+                } else {
+                    info!(
+                        "No configuration file path provided for {}, using default configuration",
+                        T::display_name()
+                    );
+                    Ok(T::default())
+                }
+            }
+            .boxed_local()
+        },
+        invalidate_stream,
+    )
 }

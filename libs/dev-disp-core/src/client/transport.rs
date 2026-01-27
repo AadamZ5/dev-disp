@@ -58,7 +58,7 @@ pub trait ScreenTransport {
         future::ready(Ok(())).boxed()
     }
 
-    fn get_preferred_encoding(
+    fn get_preferred_encodings(
         &mut self,
         configurations: Vec<EncoderPossibleConfiguration>,
     ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>>;
@@ -114,11 +114,11 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.notify_loading_screen()
     }
 
-    fn get_preferred_encoding(
+    fn get_preferred_encodings(
         &mut self,
         configurations: Vec<EncoderPossibleConfiguration>,
     ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
-        self.inner.get_preferred_encoding(configurations)
+        self.inner.get_preferred_encodings(configurations)
     }
 
     fn set_encoding(

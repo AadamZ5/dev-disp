@@ -1,30 +1,29 @@
-import { Component, ElementRef, inject, viewChild } from '@angular/core';
+import {
+  Component,
+  effect,
+  ElementRef,
+  inject,
+  viewChild,
+} from '@angular/core';
 import {
   distinctUntilChanged,
   endWith,
+  filter,
+  fromEvent,
   map,
-  OperatorFunction,
   retry,
   scan,
   share,
   shareReplay,
+  startWith,
+  Subscription,
   switchMap,
   tap,
   throttleTime,
 } from 'rxjs';
 import { DevDispService, ofDevDispConnection } from '../dev-disp.service';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-
-// TODO: Move to a shared utilities library
-function slidingWindow<T>(size: number): OperatorFunction<T, T[]> {
-  return scan((acc: T[], value: T) => {
-    acc.unshift(value);
-    if (acc.length > size) {
-      acc.pop();
-    }
-    return acc;
-  }, [] as T[]);
-}
+import { slidingWindow } from 'web-util';
 
 @Component({
   selector: 'app-screen',
@@ -34,15 +33,32 @@ function slidingWindow<T>(size: number): OperatorFunction<T, T[]> {
 })
 export class ScreenComponent {
   private readonly devDispService = inject(DevDispService);
+  private readonly wakeLocker = new WakeLocker();
   readonly canvas = viewChild<ElementRef<HTMLCanvasElement>>('screen');
 
-  readonly offscreenCanvas$ = toObservable(this.canvas).pipe(
+  private readonly canvas$ = toObservable(this.canvas);
+
+  private readonly resolution$ = this.canvas$.pipe(
+    filter((canvas): canvas is ElementRef<HTMLCanvasElement> => !!canvas),
+    // TODO: Use ResizeObserver to detect canvas size changes
+    map((canvas) => {
+      return [
+        canvas.nativeElement.clientWidth * window.devicePixelRatio,
+        canvas.nativeElement.clientHeight * window.devicePixelRatio,
+      ] as const;
+    }),
+    shareReplay(1),
+  );
+
+  readonly offscreenCanvas$ = this.canvas$.pipe(
     distinctUntilChanged(),
     map((canvas) => {
       const offscreen = canvas?.nativeElement.transferControlToOffscreen();
       if (offscreen && canvas) {
-        offscreen.width = canvas.nativeElement.clientWidth;
-        offscreen.height = canvas.nativeElement.clientHeight;
+        offscreen.width =
+          canvas.nativeElement.clientWidth * window.devicePixelRatio;
+        offscreen.height =
+          canvas.nativeElement.clientHeight * window.devicePixelRatio;
       }
       return offscreen;
     }),
@@ -119,4 +135,85 @@ export class ScreenComponent {
     ),
     { initialValue: false },
   );
+
+  constructor() {
+    this._effectConnectedLockScreen();
+  }
+
+  private _effectConnectedLockScreen() {
+    const documentVisible = toSignal(
+      fromEvent(document, 'visibilitychange').pipe(
+        map(() => document.visibilityState === 'visible'),
+        startWith(document.visibilityState === 'visible'),
+        distinctUntilChanged(),
+      ),
+      { initialValue: document.visibilityState === 'visible' },
+    );
+
+    effect(() => {
+      if (!documentVisible()) {
+        return;
+      }
+
+      if (this.connected()) {
+        this.wakeLocker
+          .lock()
+          .then(() => {
+            console.log('Wake lock acquired');
+          })
+          .catch((e) => {
+            console.error('Failed to acquire wake lock', e);
+          });
+      } else {
+        this.wakeLocker.unlock();
+      }
+    });
+  }
+}
+
+export class WakeLocker {
+  private wantLocked = false;
+  private wakeLock?: WakeLockSentinel;
+  private wakeLockReleaseSubscription?: Subscription;
+
+  get locked() {
+    return this.wakeLock?.released === false;
+  }
+
+  async lock() {
+    this.wantLocked = true;
+    if ('wakeLock' in navigator) {
+      this.wakeLockReleaseSubscription?.unsubscribe();
+      await this.wakeLock?.release();
+      this.wakeLock = await navigator.wakeLock.request('screen');
+      // If we unlocked across the await here, release the lock we just acquired
+      // and return
+      if (!this.wantLocked) {
+        await this.wakeLock.release();
+        return;
+      }
+
+      this.wakeLockReleaseSubscription = fromEvent(
+        this.wakeLock,
+        'release',
+      ).subscribe(() => {
+        if (this.wantLocked) {
+          console.warn(`Wake lock was released unexpectedly, re-acquiring`);
+          this.lock().catch((e) => {
+            console.error('Failed to re-acquire wake lock', e);
+          });
+        }
+      });
+    } else {
+      throw new Error('Wake Lock API not supported');
+    }
+  }
+
+  unlock() {
+    this.wantLocked = false;
+    this.wakeLock?.release();
+    this.wakeLockReleaseSubscription?.unsubscribe();
+    this.wakeLock = undefined;
+    this.wakeLockReleaseSubscription = undefined;
+  }
 }
