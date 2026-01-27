@@ -184,7 +184,7 @@ export class WakeLocker {
     this.wantLocked = true;
     if ('wakeLock' in navigator) {
       this.wakeLockReleaseSubscription?.unsubscribe();
-      this.wakeLock?.release();
+      await this.wakeLock?.release();
       this.wakeLock = await navigator.wakeLock.request('screen');
       // If we unlocked across the await here, release the lock we just acquired
       // and return

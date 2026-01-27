@@ -7,7 +7,7 @@
   "tags": [],
   "targets": {
     "build": {
-      "dependsOn": ["dev-disp-ws-js:link"],
+      "dependsOn": ["dev-disp-ws-js:build"],
       "executor": "@angular/build:application",
       "outputs": ["{options.outputPath}"],
       "options": {
@@ -48,7 +48,7 @@
       "defaultConfiguration": "production"
     },
     "serve": {
-      "dependsOn": ["dev-disp-ws-js:link"],
+      "dependsOn": ["dev-disp-ws-js:build"],
       "continuous": true,
       "executor": "@angular/build:dev-server",
       "options": {

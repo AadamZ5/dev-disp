@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 use ffmpeg_next::{
-    codec::{debug, encoder::video::Encoder as VideoEncoder},
+    codec::encoder::video::Encoder as VideoEncoder,
     ffi::{AVPixelFormat, FF_LEVEL_UNKNOWN, FF_PROFILE_UNKNOWN},
     format::Pixel,
 };

@@ -87,6 +87,7 @@ where
         }
     }
 
+    /// Returns true if invalidated
     pub fn test_invalidate(&mut self) -> bool {
         if let Some(_) = self.drain_notifications() {
             self.force_invalidate();
@@ -96,8 +97,10 @@ where
         }
     }
 
+    /// Returns true if the value is valid
     pub fn is_valid(&mut self) -> bool {
-        self.test_invalidate() && self.cached_value.is_some()
+        self.test_invalidate();
+        self.cached_value.is_some()
     }
 
     /// Gets the value, only if one exists
@@ -118,6 +121,7 @@ where
         F: Fn() -> Fut,
         Fut: Future<Output = T>,
     {
+        self.test_invalidate();
         let value = if self.cached_value.is_none() {
             compute_fn().await.into()
         } else {
