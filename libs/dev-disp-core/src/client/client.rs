@@ -39,6 +39,14 @@ where
         }
     }
 
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn get_client_id(&self) -> i32 {
+        self.client_id
+    }
+
     pub fn get_background_task<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>>
     where
         'a: 's,

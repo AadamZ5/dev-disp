@@ -16,9 +16,16 @@ pub struct ConnectableDeviceInfo {
     pub description: Option<String>,
 }
 
+/// A trait for something that can connect to a device and provide a host for screen
+/// extension.
 pub trait ConnectableDevice: Sized {
+    /// The underlying type of transport this device uses.
     type Transport: ScreenTransport;
 
+    /// Connect to the device and return a DisplayHost for it.
+    ///
+    /// The returned future resolves to a DisplayHost that can be used to manage
+    /// the connected device.
     fn connect(
         self,
     ) -> PinnedFuture<
@@ -26,19 +33,35 @@ pub trait ConnectableDevice: Sized {
         Result<DisplayHost<Self::Transport>, Box<dyn std::error::Error + Send + Sync>>,
     >;
 
+    /// Get information about this connectable device.
     fn get_info(&self) -> ConnectableDeviceInfo;
 }
 
+/// A trait for something that can discover connectable devices.
 pub trait DeviceDiscovery {
     type DeviceCandidate: ConnectableDevice;
 
+    /// Discover available devices.
+    ///
+    /// The returned future resolves to a list of available device candidates.
     fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>>;
+
+    /// Get a display name for this discovery service
+    fn get_display_name(&self) -> String;
 }
 
+/// Something that can discover devices and asynchronously automatically provide updates
+/// about new devices as they become available.
 pub trait StreamingDeviceDiscovery: DeviceDiscovery {
+    /// Convert this discovery into a stream of device lists.
+    ///
+    /// Each item yielded by the stream is a list of currently available devices.
+    /// The stream should yield a new list whenever the set of available devices changes.
     fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>>;
 }
 
+/// Helper struct that wraps a DeviceDiscovery and polls it at regular intervals
+/// to provide a streaming device discovery.
 pub struct PollingDeviceDiscovery<D>
 where
     D: DeviceDiscovery,
@@ -73,6 +96,10 @@ where
 
     fn discover_devices(&'_ self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>> {
         self.inner.discover_devices()
+    }
+
+    fn get_display_name(&self) -> String {
+        self.inner.get_display_name()
     }
 }
 
