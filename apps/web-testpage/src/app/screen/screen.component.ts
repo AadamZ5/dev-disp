@@ -175,20 +175,6 @@ export class WakeLocker {
   private wantLocked = false;
   private wakeLock?: WakeLockSentinel;
   private wakeLockReleaseSubscription?: Subscription;
-  // private readonly reaquireSubscription = fromEvent(
-  //   document,
-  //   'visibilitychange',
-  // )
-  //   .pipe(
-  //     filter(() => document.visibilityState === 'visible'),
-  //     switchMap(() => {
-  //       if (this.wantLocked && !this.locked) {
-  //         return this.lock();
-  //       }
-  //       return Promise.resolve();
-  //     }),
-  //   )
-  //   .subscribe();
 
   get locked() {
     return this.wakeLock?.released === false;
@@ -213,7 +199,9 @@ export class WakeLocker {
       ).subscribe(() => {
         if (this.wantLocked) {
           console.warn(`Wake lock was released unexpectedly, re-acquiring`);
-          this.lock();
+          this.lock().catch((e) => {
+            console.error('Failed to re-acquire wake lock', e);
+          });
         }
       });
     } else {
