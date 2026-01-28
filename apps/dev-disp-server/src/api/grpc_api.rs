@@ -1,3 +1,5 @@
+use dev_disp_core::util::PinnedStream;
+use futures_util::{FutureExt, StreamExt};
 use proto::dev_disp_service_server::DevDispService;
 use tonic::{Request, Response, Status};
 
@@ -31,6 +33,11 @@ impl<T> DevDispService for GrpcDevDispApiFacade<T>
 where
     T: DevDispApiFacade + Send + Sync + 'static,
 {
+    type ListenAvailableDevicesStream =
+        PinnedStream<'static, Result<proto::AvailableDevicesResponse, Status>>;
+    type ListenConnectedDevicesStream =
+        PinnedStream<'static, Result<proto::ConnectedDevicesResponse, Status>>;
+
     async fn list_available_devices(
         &self,
         request: Request<proto::ListAvailableDevicesRequest>,
@@ -69,11 +76,11 @@ where
 
     async fn connect_device(
         &self,
-        request: Request<proto::Device>,
+        request: Request<proto::ConnectDeviceRequest>,
     ) -> std::result::Result<Response<proto::ConnectDeviceResponse>, Status> {
-        let device = request.into_inner();
+        let req = request.into_inner();
         self.inner
-            .initialize_device(device.discovery_id, device.id)
+            .initialize_device(req.discovery_id, req.device_id)
             .await
             .map_err(|e| Status::internal(e))?;
 
@@ -85,11 +92,11 @@ where
 
     async fn disconnect_device(
         &self,
-        request: Request<proto::Device>,
+        request: Request<proto::DisconnectDeviceRequest>,
     ) -> std::result::Result<Response<proto::DisconnectDeviceResponse>, Status> {
-        let device = request.into_inner();
+        let req = request.into_inner();
         self.inner
-            .disconnect_device(device.discovery_id, device.id)
+            .disconnect_device(req.discovery_id, req.device_id)
             .await
             .map_err(|e| Status::internal(e))?;
 
@@ -97,5 +104,56 @@ where
             success: true,
             message: "".to_string(),
         }))
+    }
+
+    async fn listen_connected_devices(
+        &self,
+        request: Request<proto::ListConnectedDevicesRequest>,
+    ) -> std::result::Result<Response<Self::ListenConnectedDevicesStream>, Status> {
+        let mapped_stream = self.inner.stream_device_status().map(|device_status| {
+            let response = proto::ConnectedDevicesResponse {
+                devices: device_status
+                    .in_use_devices
+                    .into_iter()
+                    .map(|device_ref| proto::Device {
+                        name: device_ref.name,
+                        discovery_id: device_ref.interface_key,
+                        id: device_ref.id,
+                    })
+                    .collect(),
+            };
+            Ok(response)
+        });
+
+        Ok(Response::new(
+            mapped_stream.boxed() as Self::ListenConnectedDevicesStream
+        ))
+    }
+
+    async fn listen_available_devices(
+        &self,
+        request: Request<proto::ListAvailableDevicesRequest>,
+    ) -> std::result::Result<
+        Response<PinnedStream<'static, Result<proto::AvailableDevicesResponse, Status>>>,
+        Status,
+    > {
+        let mapped_stream = self.inner.stream_device_status().map(|device_status| {
+            let response = proto::AvailableDevicesResponse {
+                devices: device_status
+                    .connectable_devices
+                    .into_iter()
+                    .map(|device_ref| proto::Device {
+                        name: device_ref.name,
+                        discovery_id: device_ref.interface_key,
+                        id: device_ref.id,
+                    })
+                    .collect(),
+            };
+            Ok(response)
+        });
+
+        Ok(Response::new(
+            mapped_stream.boxed() as Self::ListenAvailableDevicesStream
+        ))
     }
 }

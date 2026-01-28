@@ -8,7 +8,7 @@ build = "build.rs"
 env_logger = "0.11.8"
 evdi = "0.8.0"
 log = "0.4.28"
-tokio = { version = "1.47.1", features = ["full", "signal"] }
+tokio = { version = "1.47.1", features = ["full", "signal", "sync"] }
 dev-disp-core = { path = "../../libs/dev-disp-core" }
 dev-disp-comm = { path = "../../libs/dev-disp-comm" }
 dev-disp-provider-evdi = { path = "../../libs/dev-disp-provider-evdi" }
@@ -16,7 +16,7 @@ dev-disp-encoders = { path = "../../libs/dev-disp-encoders" }
 rust-util = { path = "../../libs/rust-util" }
 futures-util = "0.3.31"
 tokio-util = { version = "0.7.17", features = ["compat"] }
-tokio-stream = "0.1.18"
+tokio-stream = { version = "0.1.18", features = ["sync"] }
 thiserror = "2.0.17"
 serde_json = "1.0.149"
 serde = { version = "1.0.228", features = ["derive"] }

@@ -1,4 +1,4 @@
-use dev_disp_core::util::{PinnedFuture, PinnedLocalFuture, PinnedLocalStream};
+use dev_disp_core::util::{PinnedFuture, PinnedStream};
 
 pub type DiscoveryId = String;
 pub type DisplayHostId = String;
@@ -17,19 +17,19 @@ pub struct DeviceCollectionStatus {
 }
 
 pub trait DevDispApiFacade {
-    fn get_device_status(&self) -> PinnedFuture<'_, DeviceCollectionStatus>;
-    fn stream_device_status(&self) -> PinnedLocalStream<'_, DeviceCollectionStatus>;
+    fn get_device_status(&self) -> PinnedFuture<'static, DeviceCollectionStatus>;
+    fn stream_device_status(&self) -> PinnedStream<'static, DeviceCollectionStatus>;
 
     /// TODO: Better error handling
     fn initialize_device(
         &self,
         discovery_id: DiscoveryId,
         device_id: DisplayHostId,
-    ) -> PinnedFuture<'_, Result<(), String>>;
+    ) -> PinnedFuture<'static, Result<(), String>>;
 
     fn disconnect_device(
         &self,
         discovery_id: DiscoveryId,
         device_id: DisplayHostId,
-    ) -> PinnedFuture<'_, Result<(), String>>;
+    ) -> PinnedFuture<'static, Result<(), String>>;
 }
