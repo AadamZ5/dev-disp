@@ -6,7 +6,10 @@ use dev_disp_core::{
     host::{ConnectableDevice, DeviceDiscovery, ScreenProvider},
 };
 use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
+use futures_util::stream::empty;
 use log::{error, info, trace};
+
+use crate::config;
 
 const SAMSUNG_SERIAL: &str = "RFCT71HTZNL";
 
@@ -56,7 +59,7 @@ where
         let _ = tokio::task::spawn_local(async move {
             let ffmpeg_config = match get_default_config_path_for::<FfmpegConfiguration>() {
                 Ok(path) => {
-                    match util::read_configuration_or_write_default_for::<FfmpegConfiguration>(
+                    match config::read_configuration_or_write_default_for::<FfmpegConfiguration>(
                         &path,
                     )
                     .await
@@ -81,6 +84,7 @@ where
                 provider_1,
                 FfmpegEncoderProvider::new(ffmpeg_config),
                 display,
+                empty(),
             )
             .await;
 

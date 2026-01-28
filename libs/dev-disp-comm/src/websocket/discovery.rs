@@ -401,6 +401,10 @@ where
         }
         .boxed()
     }
+
+    fn get_display_name(&self) -> String {
+        "WebSocket".to_string()
+    }
 }
 
 impl<S> StreamingDeviceDiscovery for WsDiscovery<S>

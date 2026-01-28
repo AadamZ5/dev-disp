@@ -15,4 +15,5 @@ dev-disp-encoders = { path = "../../libs/dev-disp-encoders" }
 rust-util = { path = "../../libs/rust-util" }
 futures-util = "0.3.31"
 tokio-util = { version = "0.7.17", features = ["compat"] }
+tokio-stream = "0.1.18"
 thiserror = "2.0.17"

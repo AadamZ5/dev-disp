@@ -68,12 +68,12 @@ where
 {
     inner: D,
     interval: Duration,
-    sleep_factory: SleepFactory,
+    sleep_factory: Box<SleepFactory>,
 }
 
 /// A factory function that creates a sleep future for the given duration.
 /// I need to get me one of these
-pub type SleepFactory = fn(Duration) -> Pin<Box<dyn Future<Output = ()> + Send>>;
+pub type SleepFactory = fn(Duration) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 impl<D> PollingDeviceDiscovery<D>
 where
@@ -83,7 +83,7 @@ where
         Self {
             inner,
             interval,
-            sleep_factory,
+            sleep_factory: Box::new(sleep_factory),
         }
     }
 }

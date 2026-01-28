@@ -4,9 +4,10 @@ use dev_disp_core::{
     host::{ConnectableDevice, ScreenProvider, StreamingDeviceDiscovery},
 };
 use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
+use futures_util::{StreamExt, stream::empty};
 use log::{error, info};
 
-use crate::util::default_path_read_or_write_default_config_for;
+use crate::config::default_path_read_or_write_default_config_for;
 
 pub async fn accept_all<P, D, C, T>(provider: P, discovery: D)
 where
@@ -47,6 +48,7 @@ where
                     provider_1,
                     FfmpegEncoderProvider::new(ffmpeg_config),
                     display,
+                    empty(),
                 )
                 .await;
 

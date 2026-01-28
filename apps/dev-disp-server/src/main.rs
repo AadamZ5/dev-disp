@@ -1,17 +1,17 @@
 use std::process::exit;
 
-use dev_disp_comm::websocket::discovery::WsDiscovery;
+use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
 use dev_disp_provider_evdi::EvdiScreenProvider;
-use futures_util::{FutureExt, StreamExt, stream};
+use futures_util::FutureExt;
 use log::{LevelFilter, error, info, warn};
-use tokio::{net::TcpListener, signal::ctrl_c, task::LocalSet};
-use tokio_util::compat::TokioAsyncWriteCompatExt;
+use tokio::{signal::ctrl_c, task::LocalSet};
 
-use crate::app::accept_all::accept_all;
+use crate::{app::App, config::default_path_read_or_write_default_config_for};
 
 mod api;
 mod app;
-mod util;
+mod config;
+mod websocket;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -26,33 +26,23 @@ async fn main() {
         .init();
 
     let evdi_provider = EvdiScreenProvider::new();
-    let evdi_provider_1 = evdi_provider.clone();
+
+    // TODO: Make this configuration hot-reloadable with a file watcher!
+    let ffmpeg_config = default_path_read_or_write_default_config_for::<FfmpegConfiguration>()
+        .await
+        .map_err(|e| {
+            error!("Failed to read or write FFmpeg configuration: {}", e);
+            e
+        })
+        .unwrap_or_default();
+    let ffmpeg_provider = FfmpegEncoderProvider::new(ffmpeg_config);
+
+    let app = App::new(evdi_provider.clone(), ffmpeg_provider);
 
     let local_set = LocalSet::new();
+    // TODO: Is this single-threaded work necessary?
     let single_thread_work = local_set.run_until(async move {
-        let ws_discovery = WsDiscovery::new();
-        let listener = TcpListener::bind("0.0.0.0:56789")
-            .await
-            .expect("Failed to bind to TCP port 56789");
-        info!("Listening for WebSocket connections on port 56789");
-
-        let incoming_client_stream = stream::unfold(listener, |listener| async {
-            let (stream, addr) = match listener.accept().await {
-                Ok(pair) => pair,
-                Err(e) => {
-                    error!("Failed to accept incoming TCP connection: {}", e);
-                    return None;
-                }
-            };
-
-            info!("Accepted connection from {}", addr);
-
-            Some((stream, listener))
-        })
-        .map(|stream| stream.compat_write())
-        .boxed();
-
-        let ws_listen = ws_discovery.listen(incoming_client_stream);
+        let (ws_discovery, ws_listen) = websocket::create_websocket_and_bg_task().await;
         let listen = tokio::task::spawn_local(ws_listen).map(|res| {
             if let Err(e) = res {
                 error!("Error setting up websocket listen task: {}", e);
@@ -62,7 +52,8 @@ async fn main() {
             Ok(())
         });
 
-        let logic_2 = tokio::task::spawn_local(accept_all(evdi_provider.clone(), ws_discovery));
+        let app_ws_discovery =
+            tokio::task::spawn_local(app.setup_discovery(ws_discovery, "websocket".to_string()));
 
         let ctrl_c_listener = tokio::task::spawn_local(async move {
             ctrl_c().await.expect("Failed to listen for Ctrl-C");
@@ -76,7 +67,7 @@ async fn main() {
 
         let res = futures_util::select_biased! {
             listen_result = listen.fuse() => listen_result,
-            logic_2_result = logic_2.fuse() => logic_2_result,
+            app_ws_discovery_result = app_ws_discovery.fuse() => app_ws_discovery_result,
             ctrl_c_result = ctrl_c_listener.fuse() => ctrl_c_result,
         };
 

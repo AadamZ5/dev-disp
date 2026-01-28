@@ -86,6 +86,10 @@ impl DeviceDiscovery for UsbDiscovery {
     fn discover_devices(&'_ self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>> {
         nusb_list_usb_candidates().boxed()
     }
+
+    fn get_display_name(&self) -> String {
+        "USB".to_string()
+    }
 }
 
 impl StreamingDeviceDiscovery for UsbDiscovery {
