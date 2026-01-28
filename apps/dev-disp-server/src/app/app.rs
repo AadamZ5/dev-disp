@@ -1,4 +1,3 @@
-use core::error;
 use dev_disp_core::{
     client::ScreenTransport,
     core::handle_display_host,
@@ -6,9 +5,8 @@ use dev_disp_core::{
         ConnectableDevice, DeviceDiscovery, EncoderProvider, PollingDeviceDiscovery,
         ScreenProvider, StreamingDeviceDiscovery,
     },
-    util::PinnedLocalFuture,
+    util::{PinnedFuture, PinnedLocalFuture},
 };
-use dev_disp_encoders::ffmpeg::FfmpegEncoderProvider;
 use futures_util::{FutureExt, StreamExt};
 use log::{debug, error, info};
 use std::{
@@ -21,8 +19,7 @@ use tokio::sync::{
 };
 use tokio_stream::wrappers::ReceiverStream;
 
-pub type DiscoveryId = String;
-pub type DisplayHostId = String;
+use crate::api::{DevDispApiFacade, DiscoveryId, DisplayHostId};
 
 #[derive(Debug, Clone)]
 pub struct ReadyDeviceRef {
@@ -276,14 +273,13 @@ where
     }
 
     /// Attempt to connect to an available device, using its discovery ID and device ID.
-    pub fn connect_device(
+    pub fn initialize_device(
         &self,
         from_discovery_id: DiscoveryId,
         device_id: DisplayHostId,
-    ) -> PinnedLocalFuture<'_, Result<(), ()>> {
-        let available_devices = self.available_devices.clone();
-
+    ) -> PinnedFuture<'_, Result<(), ()>> {
         // TODO: Better error types!
+        let available_devices = self.available_devices.clone();
         async move {
             let read_guard = available_devices.read().await;
             let device = read_guard
@@ -296,6 +292,97 @@ where
 
             Ok(())
         }
-        .boxed_local()
+        .boxed()
+    }
+
+    pub fn disconnect_device(
+        &self,
+        from_discovery_id: DiscoveryId,
+        device_id: DisplayHostId,
+    ) -> PinnedFuture<'_, Result<(), ()>> {
+        let in_use_devices = self.in_use_devices.clone();
+        async move {
+            let read_guard = in_use_devices.read().await;
+            let device = read_guard
+                .get(&from_discovery_id)
+                .and_then(|devices_map| devices_map.get(&device_id))
+                .cloned()
+                .ok_or(())?;
+
+            device.cancel().await.map_err(|_| ())?;
+
+            Ok(())
+        }
+        .boxed()
+    }
+}
+
+impl<S, E> DevDispApiFacade for App<S, E>
+where
+    S: ScreenProvider + Clone,
+    E: EncoderProvider + Clone,
+{
+    fn get_device_status(&self) -> PinnedFuture<'_, crate::api::DeviceCollectionStatus> {
+        let available_devices = self.available_devices.clone();
+        let in_use_devices = self.in_use_devices.clone();
+
+        async move {
+            let (available_guard, in_use_guard) =
+                tokio::join!(available_devices.read(), in_use_devices.read());
+
+            let connectable_devices = available_guard
+                .iter()
+                .flat_map(|(_, devices_map)| devices_map.values().cloned())
+                .map(|device_ref| crate::api::DeviceRef {
+                    name: device_ref.name,
+                    interface_key: device_ref.interface_key,
+                    interface_display: device_ref.interface_display,
+                    id: device_ref.id,
+                })
+                .collect();
+
+            let in_use_devices = in_use_guard
+                .iter()
+                .flat_map(|(_, devices_map)| devices_map.values().cloned())
+                .map(|device_ref| crate::api::DeviceRef {
+                    name: device_ref.name,
+                    interface_key: device_ref.interface_key,
+                    interface_display: device_ref.interface_display,
+                    id: device_ref.id,
+                })
+                .collect();
+
+            crate::api::DeviceCollectionStatus {
+                connectable_devices,
+                in_use_devices,
+            }
+        }
+        .boxed()
+    }
+
+    fn stream_device_status(
+        &self,
+    ) -> dev_disp_core::util::PinnedLocalStream<'_, crate::api::DeviceCollectionStatus> {
+        todo!()
+    }
+
+    fn initialize_device(
+        &self,
+        discovery_id: DiscoveryId,
+        device_id: DisplayHostId,
+    ) -> PinnedFuture<'_, Result<(), String>> {
+        self.initialize_device(discovery_id, device_id)
+            .map(|res| res.map_err(|_| "Failed to initialize device".to_string()))
+            .boxed()
+    }
+
+    fn disconnect_device(
+        &self,
+        discovery_id: DiscoveryId,
+        device_id: DisplayHostId,
+    ) -> PinnedFuture<'_, Result<(), String>> {
+        self.disconnect_device(discovery_id, device_id)
+            .map(|res| res.map_err(|_| "Failed to disconnect device".to_string()))
+            .boxed()
     }
 }

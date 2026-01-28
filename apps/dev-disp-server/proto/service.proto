@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package dev_disp_server;
+
+message Device {
+  string id           = 1;
+  string name         = 2;
+  string discovery_id = 3;
+}
+
+message ListAvailableDevicesRequest {
+  // Empty for now
+}
+
+// Devices that are available for connection
+message AvailableDevicesResponse {
+  repeated Device devices = 1;
+}
+
+message ListConnectedDevicesRequest {
+  // Empty for now
+}
+
+// Connected devices are those who are currently in-use
+message ConnectedDevicesResponse {
+  repeated Device devices = 1;
+}
+
+message ConnectDeviceResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message DisconnectDeviceResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+// DevDispService defines the RPC service for the Dev Disp Server.
+service DevDispService {
+  // List the available devices for connection
+  rpc ListAvailableDevices (ListAvailableDevicesRequest) returns (AvailableDevicesResponse);
+
+  // List the currently connected in-use devices
+  rpc ListConnectedDevices (ListConnectedDevicesRequest) returns (ConnectedDevicesResponse);
+
+  // Attempt to initialize a device and begin using it
+  rpc ConnectDevice(Device) returns (ConnectDeviceResponse);
+
+  // Disconnect a currently connected device
+  rpc DisconnectDevice(Device) returns (DisconnectDeviceResponse);
+}

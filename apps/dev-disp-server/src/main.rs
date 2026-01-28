@@ -5,8 +5,15 @@ use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::FutureExt;
 use log::{LevelFilter, error, info, warn};
 use tokio::{signal::ctrl_c, task::LocalSet};
+use tonic::transport::Server;
 
-use crate::{app::App, config::default_path_read_or_write_default_config_for};
+use crate::{
+    api::grpc_api::{
+        self, GrpcDevDispApiFacade, proto::dev_disp_service_server::DevDispServiceServer,
+    },
+    app::App,
+    config::default_path_read_or_write_default_config_for,
+};
 
 mod api;
 mod app;
@@ -38,6 +45,22 @@ async fn main() {
     let ffmpeg_provider = FfmpegEncoderProvider::new(ffmpeg_config);
 
     let app = App::new(evdi_provider.clone(), ffmpeg_provider);
+
+    let grpc_api = GrpcDevDispApiFacade::new(app.clone());
+
+    tokio::spawn(async move {
+        let reflection = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(grpc_api::proto::FILE_DESCRIPTOR_SET)
+            .build_v1()
+            .unwrap();
+
+        Server::builder()
+            .add_service(DevDispServiceServer::new(grpc_api))
+            .add_service(reflection)
+            .serve("[::1]:50051".parse().unwrap())
+            .await
+            .unwrap();
+    });
 
     let local_set = LocalSet::new();
     // TODO: Is this single-threaded work necessary?
