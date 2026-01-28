@@ -79,7 +79,7 @@ where
     async fn send_msg<'a>(&mut self, msg: WsMessageFromSource<'a>) -> Result<(), TransportError> {
         // TODO: Allocate a buffer once and reuse it! Avoid heap allocation on every send
         let bytes = bincode::serde::encode_to_vec(&msg, bincode::config::standard())
-            .map_err(|e| TransportError::SerializationError)?;
+            .map_err(|_| TransportError::SerializationError)?;
         self.ws_tx
             .send(Message::binary(bytes))
             .await

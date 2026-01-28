@@ -119,6 +119,8 @@ where
         }
     }
 
+    /// Given a device discovery instance, listen to the devices it discovers and hold
+    /// them in the available devices list.
     pub fn setup_discovery<D, C, T>(
         &self,
         discovery: D,

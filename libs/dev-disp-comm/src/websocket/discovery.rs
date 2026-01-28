@@ -228,9 +228,6 @@ where
     /// ensure we're talking to a client that follows the expected protocol.
     ///
     /// The returned future will live as long as the device is connected and not yet claimed.
-    ///
-    /// TODO: Do sanity checks for if the device is still connected while waiting to be claimed,
-    /// and remove the device if it disconnects!
     async fn pre_init(listen_ctx: &WsDiscoveryListenCtx<S>, mut ws_stream: WebSocketStream<S>) {
         // First talk to the websocket using the pre-init messages to figure
         // out details about the connecting device.
@@ -371,19 +368,32 @@ where
         let mut devices_update_tx = listen_ctx.connections_update_tx.clone();
         let _ = devices_update_tx.try_send(());
 
-        // TODO: Implement a listener of incoming data, so we can detect when the incoming
-        // data stream closes, and the device can be assumed disconnected while waiting
-        // to be claimed.
-
-        // Wait for someone to take the WebSocket
-        if let Some(get_ws_tx) = take_ws_rx.next().await {
-            debug!("Taking WebSocket connection for {}...", &id);
-            listen_ctx.current_connections.write().await.remove(&id);
-            let _ = get_ws_tx.send(ws_stream);
-            let _ = devices_update_tx.try_send(());
-            debug!("WebSocket connection for {} taken.", &id);
-        } else {
-            warn!("No one took the WebSocket connection from {}", id);
+        loop {
+            futures::select_biased! {
+                // Wait for someone to take the WebSocket
+                taker = take_ws_rx.next().fuse() => {
+                    if let Some(get_ws_tx) = taker {
+                        debug!("Taking WebSocket connection for \"{}\"...", &id);
+                        listen_ctx.current_connections.write().await.remove(&id);
+                        let _ = get_ws_tx.send(ws_stream);
+                        let _ = devices_update_tx.try_send(());
+                        debug!("WebSocket connection for \"{}\" taken.", &id);
+                    } else {
+                        warn!("No one took the WebSocket connection from \"{}\"", &id);
+                    }
+                    break;
+                },
+                // If the WebSocket closes before being taken, we should remove it from
+                // the available connections.
+                ws_message = ws_stream.next().fuse() => {
+                    if ws_message.is_none() {
+                        info!("WebSocket connection from \"{}\" closed before being taken.", &id);
+                        listen_ctx.current_connections.write().await.remove(&id);
+                        let _ = devices_update_tx.try_send(());
+                        break;
+                    }
+                },
+            }
         }
     }
 }
