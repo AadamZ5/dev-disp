@@ -10,9 +10,12 @@ use dev_disp_core::{
 use futures_util::{FutureExt, StreamExt};
 use log::{debug, error, info};
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{
-    RwLock, broadcast,
-    mpsc::{self, error::SendError},
+use tokio::{
+    sync::{
+        RwLock, broadcast,
+        mpsc::{self, error::SendError},
+    },
+    task::JoinSet,
 };
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
@@ -58,7 +61,7 @@ pub struct InUseDeviceRef {
     pub interface_key: String,
     pub interface_display: String,
     pub id: String,
-    canel_tx: mpsc::Sender<()>,
+    disconnect_tx: mpsc::Sender<()>,
 }
 
 impl InUseDeviceRef {
@@ -68,21 +71,22 @@ impl InUseDeviceRef {
         interface_display: String,
         id: String,
     ) -> (Self, mpsc::Receiver<()>) {
-        let (cancel_tx, cancel_rx) = mpsc::channel(1);
+        let (disconnect_tx, disconnect_rx) = mpsc::channel(1);
         (
             Self {
                 name,
                 interface_key,
                 interface_display,
                 id,
-                canel_tx: cancel_tx,
+                disconnect_tx,
             },
-            cancel_rx,
+            disconnect_rx,
         )
     }
 
-    pub async fn cancel(&self) -> Result<(), SendError<()>> {
-        self.canel_tx.send(()).await
+    pub async fn disconnect(&self) -> Result<(), SendError<()>> {
+        // TODO: Actually wait for the disconnection to complete!
+        self.disconnect_tx.send(()).await
     }
 }
 
@@ -114,6 +118,55 @@ where
             in_use_devices: Arc::new(RwLock::new(HashMap::new())),
             devices_change_tx,
         }
+    }
+
+    pub async fn shutdown(&self) {
+        info!("Shutting down app");
+        let available_devices = self.available_devices.read().await;
+        let in_use_devices = self.in_use_devices.read().await;
+        info!(
+            "Final device status: {} available devices, {} in-use devices",
+            available_devices
+                .values()
+                .map(|map| map.len())
+                .sum::<usize>(),
+            in_use_devices.values().map(|map| map.len()).sum::<usize>()
+        );
+
+        // Close all in-use devices
+        let mut disconnect_tasks = JoinSet::new();
+        for (_, devices_map) in in_use_devices.iter() {
+            for (_, device_ref) in devices_map.iter() {
+                let device_ref = device_ref.clone();
+                disconnect_tasks.spawn(async move {
+                    info!("Disconnecting device '{}'", device_ref.name);
+                    match device_ref.disconnect().await {
+                        Ok(_) => {
+                            info!("Device '{}' disconnected successfully", device_ref.name);
+                        }
+                        Err(e) => {
+                            error!("Error disconnecting device '{}': {}", device_ref.name, e);
+                        }
+                    }
+                });
+            }
+        }
+
+        // Make sure we don't keep read locks alive, disconnect tasks will want
+        // to write to the in-use devices list.
+        drop(available_devices);
+        drop(in_use_devices);
+
+        while let Some(res) = disconnect_tasks.join_next().await {
+            match res {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("Error in device disconnection task: {}", e);
+                }
+            }
+        }
+
+        info!("App shutdown complete");
     }
 
     /// Given a device discovery instance, listen to the devices it discovers and hold
@@ -368,7 +421,7 @@ where
                 .cloned()
                 .ok_or(())?;
 
-            device.cancel().await.map_err(|_| ())?;
+            device.disconnect().await.map_err(|_| ())?;
 
             Ok(())
         }
