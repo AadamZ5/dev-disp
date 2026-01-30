@@ -1,5 +1,5 @@
 [package]
-name = "dev_disp_client_lib"
+name = "dev_disp_flutter_lib"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,7 +8,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
-dev-disp-comm = { path = "../dev-disp-comm", default-features = false }
+dev-disp-transports = { path = "../dev-disp-transports", default-features = false }
 anyhow = "1.0"
 log = "0.4"
 once_cell = "1.21.3"

@@ -1,5 +1,5 @@
-use dev_disp_comm::websocket::discovery::WsDiscovery;
 use dev_disp_core::util::{PinnedLocalFuture, PinnedStream};
+use dev_disp_transports::websocket::discovery::WsDiscovery;
 use futures_util::{FutureExt, StreamExt, stream};
 use log::{error, info};
 use tokio::net::{TcpListener, TcpStream};

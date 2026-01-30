@@ -484,25 +484,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dev-disp-comm"
-version = "0.1.0"
-dependencies = [
- "async-tungstenite 0.32.0",
- "bincode",
- "dev-disp-core",
- "futures",
- "futures-locks",
- "futures-timer",
- "futures-util",
- "log",
- "nusb",
- "serde",
- "thiserror 2.0.17",
- "uuid",
- "ws_stream_tungstenite",
-]
-
-[[package]]
 name = "dev-disp-core"
 version = "0.1.0"
 dependencies = [
@@ -555,10 +536,10 @@ dependencies = [
 name = "dev-disp-server"
 version = "0.1.0"
 dependencies = [
- "dev-disp-comm",
  "dev-disp-core",
  "dev-disp-encoders",
  "dev-disp-provider-evdi",
+ "dev-disp-transports",
  "env_logger",
  "evdi 0.8.0",
  "futures-util",
@@ -579,11 +560,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "dev-disp-transports"
+version = "0.1.0"
+dependencies = [
+ "async-tungstenite 0.32.0",
+ "bincode",
+ "dev-disp-core",
+ "futures",
+ "futures-locks",
+ "futures-timer",
+ "futures-util",
+ "log",
+ "nusb",
+ "serde",
+ "thiserror 2.0.17",
+ "uuid",
+ "ws_stream_tungstenite",
+]
+
+[[package]]
 name = "dev-disp-ws-js"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "dev-disp-comm",
+ "dev-disp-transports",
  "futures",
  "futures-util",
  "js-sys",
@@ -599,11 +599,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "dev_disp_client_lib"
+name = "dev_disp_flutter_lib"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dev-disp-comm",
+ "dev-disp-transports",
  "flutter_rust_bridge",
  "log",
  "once_cell",

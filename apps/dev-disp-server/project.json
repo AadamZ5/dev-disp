@@ -1,7 +1,7 @@
 {
   "name": "dev-disp-server",
   "root": "apps/dev-disp-server",
-  "sourceRoot": "apps/dev_disp_server/src",
+  "sourceRoot": "apps/dev-disp-server/src",
   "projectType": "application",
   "targets": {
     "build": {

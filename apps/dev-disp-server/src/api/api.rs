@@ -16,7 +16,7 @@ pub struct DeviceCollectionStatus {
     pub in_use_devices: Vec<DeviceRef>,
 }
 
-pub trait DevDispApiFacade {
+pub trait DevDispApi {
     fn get_device_status(&self) -> PinnedFuture<'static, DeviceCollectionStatus>;
     fn stream_device_status(&self) -> PinnedStream<'static, DeviceCollectionStatus>;
 

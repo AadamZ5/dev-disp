@@ -1,6 +1,5 @@
 use std::process::exit;
 
-use dev_disp_comm::usb::discovery::UsbDiscovery;
 use dev_disp_core::host::{EncoderProvider, ScreenProvider};
 use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
 use dev_disp_provider_evdi::EvdiScreenProvider;
@@ -11,9 +10,10 @@ use tonic::transport::Server;
 
 use crate::{
     api::{
-        DevDispApiFacade,
-        grpc_api::{
-            self, GrpcDevDispApiFacade, proto::dev_disp_service_server::DevDispServiceServer,
+        DevDispApi,
+        grpc::{
+            self, proto::dev_disp_service_server::DevDispServiceServer,
+            server::GrpcDevDispApiFacade,
         },
     },
     app::App,
@@ -132,13 +132,13 @@ async fn get_encoder_provider() -> impl EncoderProvider + Clone + 'static {
 
 fn spawn_grpc_api<T>(api_facade: T)
 where
-    T: DevDispApiFacade + Send + Sync + 'static,
+    T: DevDispApi + Send + Sync + 'static,
 {
     let grpc_api = GrpcDevDispApiFacade::new(api_facade);
 
     tokio::spawn(async move {
         let reflection = tonic_reflection::server::Builder::configure()
-            .register_encoded_file_descriptor_set(grpc_api::proto::FILE_DESCRIPTOR_SET)
+            .register_encoded_file_descriptor_set(grpc::proto::FILE_DESCRIPTOR_SET)
             .build_v1()
             .unwrap();
 

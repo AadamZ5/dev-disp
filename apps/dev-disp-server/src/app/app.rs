@@ -19,7 +19,7 @@ use tokio::{
 };
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
-use crate::api::{DevDispApiFacade, DeviceCollectionStatus, DeviceRef, DiscoveryId, DisplayHostId};
+use crate::api::{DevDispApi, DeviceCollectionStatus, DeviceRef, DiscoveryId, DisplayHostId};
 
 #[derive(Debug, Clone)]
 pub struct ReadyDeviceRef {
@@ -429,7 +429,7 @@ where
     }
 }
 
-impl<S, E> DevDispApiFacade for App<S, E>
+impl<S, E> DevDispApi for App<S, E>
 where
     S: ScreenProvider + Clone,
     E: EncoderProvider + Clone,

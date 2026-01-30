@@ -1,27 +1,20 @@
+use super::proto::{self, dev_disp_service_server::DevDispService};
 use dev_disp_core::util::PinnedStream;
-use futures_util::{FutureExt, StreamExt};
-use proto::dev_disp_service_server::DevDispService;
+use futures_util::StreamExt;
 use tonic::{Request, Response, Status};
 
-use crate::api::DevDispApiFacade;
-
-pub mod proto {
-    tonic::include_proto!("dev_disp_server");
-
-    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
-        tonic::include_file_descriptor_set!("dev_disp_service_descriptor");
-}
+use crate::api::DevDispApi;
 
 pub struct GrpcDevDispApiFacade<T>
 where
-    T: DevDispApiFacade,
+    T: DevDispApi,
 {
     inner: T,
 }
 
 impl<T> GrpcDevDispApiFacade<T>
 where
-    T: DevDispApiFacade + Send + Sync + 'static,
+    T: DevDispApi + Send + Sync + 'static,
 {
     pub fn new(facade: T) -> Self {
         Self { inner: facade }
@@ -31,7 +24,7 @@ where
 #[tonic::async_trait]
 impl<T> DevDispService for GrpcDevDispApiFacade<T>
 where
-    T: DevDispApiFacade + Send + Sync + 'static,
+    T: DevDispApi + Send + Sync + 'static,
 {
     type ListenAvailableDevicesStream =
         PinnedStream<'static, Result<proto::AvailableDevicesResponse, Status>>;

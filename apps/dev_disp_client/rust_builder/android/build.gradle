@@ -51,6 +51,6 @@ android {
 
 apply from: "../cargokit/gradle/plugin.gradle"
 cargokit {
-    manifestDir = "../../../../libs/dev-disp-client-lib"
+    manifestDir = "../../../../libs/dev-disp-flutter-lib"
     libname = "rust_lib_flutter_boundgen"
 }
