@@ -1,22 +1,17 @@
 use std::process::exit;
 
-use dev_disp_core::host::{EncoderProvider, ScreenProvider};
+use dev_disp_core::{
+    daemon::endpoint::DevDispApiEndpoint,
+    host::{EncoderProvider, ScreenProvider},
+};
 use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
 use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::FutureExt;
 use log::{LevelFilter, error, info, warn};
 use tokio::{signal::ctrl_c, task::LocalSet};
-use tonic::transport::Server;
 
 use crate::{
-    api::{
-        DevDispApi,
-        grpc::{
-            self, proto::dev_disp_service_server::DevDispServiceServer,
-            server::GrpcDevDispApiFacade,
-        },
-    },
-    app::App,
+    api::grpc::endpoint::DevDispGrpcEndpoint, app::App,
     config::default_path_read_or_write_default_config_for,
 };
 
@@ -39,8 +34,10 @@ async fn main() {
 
     let screen_provider = get_screen_provider().await;
     let encoder_provider = get_encoder_provider().await;
+    let mut endpoint = get_endpoint().await;
     let app = App::new(screen_provider.clone(), encoder_provider);
-    spawn_grpc_api(app.clone());
+
+    tokio::spawn(endpoint.serve_api(app.clone()));
 
     let local_set = LocalSet::new();
     // TODO: Is this single-threaded work necessary?
@@ -130,23 +127,6 @@ async fn get_encoder_provider() -> impl EncoderProvider + Clone + 'static {
     ffmpeg_provider
 }
 
-fn spawn_grpc_api<T>(api_facade: T)
-where
-    T: DevDispApi + Send + Sync + 'static,
-{
-    let grpc_api = GrpcDevDispApiFacade::new(api_facade);
-
-    tokio::spawn(async move {
-        let reflection = tonic_reflection::server::Builder::configure()
-            .register_encoded_file_descriptor_set(grpc::proto::FILE_DESCRIPTOR_SET)
-            .build_v1()
-            .unwrap();
-
-        Server::builder()
-            .add_service(DevDispServiceServer::new(grpc_api))
-            .add_service(reflection)
-            .serve("[::1]:50051".parse().unwrap())
-            .await
-            .unwrap();
-    });
+async fn get_endpoint() -> impl DevDispApiEndpoint {
+    DevDispGrpcEndpoint
 }

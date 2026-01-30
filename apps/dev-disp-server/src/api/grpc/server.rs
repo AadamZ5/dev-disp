@@ -1,18 +1,16 @@
 use super::proto::{self, dev_disp_service_server::DevDispService};
-use dev_disp_core::util::PinnedStream;
+use dev_disp_core::{daemon::api::DevDispApi, util::PinnedStream};
 use futures_util::StreamExt;
 use tonic::{Request, Response, Status};
 
-use crate::api::DevDispApi;
-
-pub struct GrpcDevDispApiFacade<T>
+pub struct GrpcDevDispApiAdapter<T>
 where
     T: DevDispApi,
 {
     inner: T,
 }
 
-impl<T> GrpcDevDispApiFacade<T>
+impl<T> GrpcDevDispApiAdapter<T>
 where
     T: DevDispApi + Send + Sync + 'static,
 {
@@ -22,7 +20,7 @@ where
 }
 
 #[tonic::async_trait]
-impl<T> DevDispService for GrpcDevDispApiFacade<T>
+impl<T> DevDispService for GrpcDevDispApiAdapter<T>
 where
     T: DevDispApi + Send + Sync + 'static,
 {
@@ -33,7 +31,7 @@ where
 
     async fn list_available_devices(
         &self,
-        request: Request<proto::ListAvailableDevicesRequest>,
+        _request: Request<proto::ListAvailableDevicesRequest>,
     ) -> std::result::Result<Response<proto::AvailableDevicesResponse>, Status> {
         let device_stats = self.inner.get_device_status().await;
         Ok(Response::new(proto::AvailableDevicesResponse {
@@ -51,7 +49,7 @@ where
 
     async fn list_connected_devices(
         &self,
-        request: Request<proto::ListConnectedDevicesRequest>,
+        _request: Request<proto::ListConnectedDevicesRequest>,
     ) -> std::result::Result<Response<proto::ConnectedDevicesResponse>, Status> {
         let device_stats = self.inner.get_device_status().await;
         Ok(Response::new(proto::ConnectedDevicesResponse {
@@ -101,7 +99,7 @@ where
 
     async fn listen_connected_devices(
         &self,
-        request: Request<proto::ListConnectedDevicesRequest>,
+        _request: Request<proto::ListConnectedDevicesRequest>,
     ) -> std::result::Result<Response<Self::ListenConnectedDevicesStream>, Status> {
         let mapped_stream = self.inner.stream_device_status().map(|device_status| {
             let response = proto::ConnectedDevicesResponse {
@@ -125,7 +123,7 @@ where
 
     async fn listen_available_devices(
         &self,
-        request: Request<proto::ListAvailableDevicesRequest>,
+        _request: Request<proto::ListAvailableDevicesRequest>,
     ) -> std::result::Result<
         Response<PinnedStream<'static, Result<proto::AvailableDevicesResponse, Status>>>,
         Status,

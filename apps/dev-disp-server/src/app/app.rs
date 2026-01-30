@@ -1,6 +1,7 @@
 use dev_disp_core::{
     client::ScreenTransport,
     core::handle_display_host,
+    daemon::api::{DevDispApi, DeviceCollectionStatus, DeviceRef, DiscoveryId, DisplayHostId},
     host::{
         ConnectableDevice, DeviceDiscovery, EncoderProvider, PollingDeviceDiscovery,
         ScreenProvider, StreamingDeviceDiscovery,
@@ -18,8 +19,6 @@ use tokio::{
     task::JoinSet,
 };
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
-
-use crate::api::{DevDispApi, DeviceCollectionStatus, DeviceRef, DiscoveryId, DisplayHostId};
 
 #[derive(Debug, Clone)]
 pub struct ReadyDeviceRef {

@@ -1,4 +1,4 @@
-use dev_disp_core::util::{PinnedFuture, PinnedStream};
+use crate::util::{PinnedFuture, PinnedStream};
 
 pub type DiscoveryId = String;
 pub type DisplayHostId = String;
@@ -16,6 +16,7 @@ pub struct DeviceCollectionStatus {
     pub in_use_devices: Vec<DeviceRef>,
 }
 
+/// Represents the API for controlling and managing the dev disp application
 pub trait DevDispApi {
     fn get_device_status(&self) -> PinnedFuture<'static, DeviceCollectionStatus>;
     fn stream_device_status(&self) -> PinnedStream<'static, DeviceCollectionStatus>;
