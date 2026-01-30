@@ -5,23 +5,20 @@ use std::{
 };
 
 use dev_disp_core::{
-    client::{DisplayHost, ScreenTransport},
     host::{
-        DisplayHostResult, DisplayParameters, Screen, ScreenOutputParameters, ScreenProvider,
-        ScreenReadyStatus, VirtualScreenPixelFormat,
+        DisplayParameters, Screen, ScreenOutputParameters, ScreenProvider, ScreenReadyStatus,
+        VirtualScreenPixelFormat,
     },
     util::PinnedLocalFuture,
 };
 use edid::Edid;
 use evdi::{
-    DrmFormat,
-    buffer::{Buffer as EvdiBuffer, BufferId},
+    buffer::BufferId,
     device_node::{DeviceNodeStatus, OpenDeviceError},
     events::{AwaitEventError, Mode},
     handle::{Handle as EvdiHandle, RequestUpdateError},
     prelude::{DeviceConfig, DeviceNode},
 };
-use futures::stream;
 use futures_util::FutureExt;
 use log::{debug, error, info, warn};
 use thiserror::Error;
@@ -30,9 +27,6 @@ use crate::util::evdi_format_to_internal_format;
 
 const RECEIVE_INITIAL_MODE_TIMEOUT: Duration = Duration::from_secs(10);
 const UPDATE_BUFFER_TIMEOUT: Duration = Duration::from_secs(5);
-const BUFFER_NOT_AVAIL_DELAY: Duration = Duration::from_millis(750);
-const SEND_BUFFER_TIMEOUT: Duration = Duration::from_millis(20000);
-const SEND_BUFFER_TIMEOUT_MAX_COUNT: usize = 20;
 
 #[derive(Error, Debug)]
 pub enum HandleClientError {
@@ -152,11 +146,9 @@ impl ScreenProvider for EvdiScreenProvider {
 }
 
 pub struct EvdiScreen {
-    drop_count: u8,
     stop_flag: AtomicBool,
     handle: EvdiHandle,
     buffer_id: BufferId,
-    bytes: Option<EvdiBuffer>,
     mode: Mode,
     pixel_format: VirtualScreenPixelFormat,
 }
@@ -166,11 +158,9 @@ impl EvdiScreen {
         let buffer_id = handle.new_buffer(&mode);
 
         Self {
-            drop_count: 0,
             stop_flag: false.into(),
             handle,
             buffer_id,
-            bytes: None,
             mode,
             pixel_format,
         }
