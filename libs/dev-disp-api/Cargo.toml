@@ -11,6 +11,8 @@ prost = { version = "0.14.3", optional = true }
 tonic-prost = { version = "0.14.2", optional = true }
 tonic-reflection = { version = "0.14.2", optional = true }
 log = "0.4.29"
+futures-locks = { version = "0.7.1", default-features = false }
+futures = "0.3.31"
 
 [build-dependencies]
 tonic-build = { version = "0.14.2", optional = true }

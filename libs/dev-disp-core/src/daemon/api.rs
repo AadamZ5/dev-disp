@@ -18,7 +18,12 @@ pub struct DeviceCollectionStatus {
 
 /// Represents the API for controlling and managing the dev disp application
 pub trait DevDispApi {
-    fn get_device_status(&self) -> PinnedFuture<'static, DeviceCollectionStatus>;
+    fn get_device_status(
+        &self,
+    ) -> PinnedFuture<
+        'static,
+        Result<DeviceCollectionStatus, Box<dyn std::error::Error + Send + Sync>>,
+    >;
     fn stream_device_status(&self) -> PinnedStream<'static, DeviceCollectionStatus>;
 
     /// TODO: Better error handling

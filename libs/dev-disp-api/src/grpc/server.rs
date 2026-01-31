@@ -33,7 +33,11 @@ where
         &self,
         _request: Request<proto::ListAvailableDevicesRequest>,
     ) -> std::result::Result<Response<proto::AvailableDevicesResponse>, Status> {
-        let device_stats = self.inner.get_device_status().await;
+        let device_stats = self
+            .inner
+            .get_device_status()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
         Ok(Response::new(proto::AvailableDevicesResponse {
             devices: device_stats
                 .connectable_devices
@@ -41,6 +45,7 @@ where
                 .map(|device_ref| proto::Device {
                     name: device_ref.name,
                     discovery_id: device_ref.interface_key,
+                    discovery_display: device_ref.interface_display,
                     id: device_ref.id,
                 })
                 .collect(),
@@ -51,7 +56,11 @@ where
         &self,
         _request: Request<proto::ListConnectedDevicesRequest>,
     ) -> std::result::Result<Response<proto::ConnectedDevicesResponse>, Status> {
-        let device_stats = self.inner.get_device_status().await;
+        let device_stats = self
+            .inner
+            .get_device_status()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
         Ok(Response::new(proto::ConnectedDevicesResponse {
             devices: device_stats
                 .in_use_devices
@@ -59,6 +68,7 @@ where
                 .map(|device_ref| proto::Device {
                     name: device_ref.name,
                     discovery_id: device_ref.interface_key,
+                    discovery_display: device_ref.interface_display,
                     id: device_ref.id,
                 })
                 .collect(),
@@ -109,6 +119,7 @@ where
                     .map(|device_ref| proto::Device {
                         name: device_ref.name,
                         discovery_id: device_ref.interface_key,
+                        discovery_display: device_ref.interface_display,
                         id: device_ref.id,
                     })
                     .collect(),
@@ -136,6 +147,7 @@ where
                     .map(|device_ref| proto::Device {
                         name: device_ref.name,
                         discovery_id: device_ref.interface_key,
+                        discovery_display: device_ref.interface_display,
                         id: device_ref.id,
                     })
                     .collect(),

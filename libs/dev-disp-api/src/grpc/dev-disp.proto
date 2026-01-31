@@ -3,9 +3,14 @@ syntax = "proto3";
 package dev_disp_service;
 
 message Device {
-  string id           = 1;
-  string name         = 2;
+  /// Unique identifier for the device
+  string id = 1;
+  /// A display name for the device
+  string name = 2;
+  /// The discovery method ID that found this device
   string discovery_id = 3;
+  /// A display name for the discovery method (e.g., "USB", "WebSocket")
+  string discovery_display = 4;
 }
 
 message ListAvailableDevicesRequest {

@@ -488,6 +488,8 @@ name = "dev-disp-api"
 version = "0.1.0"
 dependencies = [
  "dev-disp-core",
+ "futures",
+ "futures-locks",
  "futures-util",
  "log",
  "prost",

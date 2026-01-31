@@ -433,7 +433,12 @@ where
     S: ScreenProvider + Clone,
     E: EncoderProvider + Clone,
 {
-    fn get_device_status(&self) -> PinnedFuture<'static, DeviceCollectionStatus> {
+    fn get_device_status(
+        &self,
+    ) -> PinnedFuture<
+        'static,
+        Result<DeviceCollectionStatus, Box<dyn std::error::Error + Send + Sync>>,
+    > {
         let available_devices = self.available_devices.clone();
         let in_use_devices = self.in_use_devices.clone();
 
@@ -463,10 +468,10 @@ where
                 })
                 .collect();
 
-            DeviceCollectionStatus {
+            Ok(DeviceCollectionStatus {
                 connectable_devices,
                 in_use_devices,
-            }
+            })
         }
         .boxed()
     }
