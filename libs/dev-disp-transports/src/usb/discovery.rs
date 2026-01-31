@@ -78,6 +78,7 @@ impl ConnectableDevice for UsbDeviceCandidate {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct UsbDiscovery;
 
 impl DeviceDiscovery for UsbDiscovery {
@@ -85,6 +86,10 @@ impl DeviceDiscovery for UsbDiscovery {
 
     fn discover_devices(&'_ self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>> {
         nusb_list_usb_candidates().boxed()
+    }
+
+    fn get_display_name(&self) -> String {
+        "USB".to_string()
     }
 }
 
@@ -99,7 +104,9 @@ impl StreamingDeviceDiscovery for UsbDiscovery {
 }
 
 async fn nusb_list_usb_candidates() -> Vec<UsbDeviceCandidate> {
-    // TODO: Filter out devices that are currently connected by us!?
+    // TODO: Filter out devices that are currently connected and devices
+    // that are not compatible! That requires logic to determine which
+    // devices/vendors are compatible.
     nusb::list_devices()
         .await
         .map(|dev| {

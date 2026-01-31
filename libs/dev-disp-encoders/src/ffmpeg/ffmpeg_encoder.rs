@@ -378,6 +378,7 @@ impl DevDispEncoder for FfmpegEncoder {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct FfmpegEncoderProvider {
     configuration: FfmpegConfiguration,
 }

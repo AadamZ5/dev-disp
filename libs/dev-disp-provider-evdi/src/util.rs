@@ -1,6 +1,5 @@
 use dev_disp_core::host::VirtualScreenPixelFormat;
 use drm_fourcc::DrmFourcc;
-use log::debug;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Error)]

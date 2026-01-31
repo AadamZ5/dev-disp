@@ -1,11 +1,7 @@
-use std::{
-    ops::{Deref, DerefMut},
-    pin::Pin,
-    sync::Arc,
-};
+use std::{ops::Deref, pin::Pin, sync::Arc};
 
 use futures::{FutureExt, Stream, StreamExt};
-use futures_locks::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use futures_locks::{RwLock, RwLockReadGuard};
 
 pub struct RwLockMappedReadGuard<'a, T, U> {
     _parent_guard: RwLockReadGuard<T>,
@@ -138,5 +134,4 @@ mod test {
             assert_eq!(latest_value_sink.get_latest_value_cloned().await, None);
         });
     }
-
 }

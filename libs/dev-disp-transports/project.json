@@ -1,0 +1,20 @@
+{
+  "name": "dev-disp-transports",
+  "root": "libs/dev-disp-transports",
+  "sourceRoot": "libs/dev-disp-transports/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@monodon/rust:build",
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "lint": {
+      "executor": "@monodon/rust:lint",
+      "options": {}
+    }
+  }
+}

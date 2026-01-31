@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use dev_disp_comm::websocket::messages::{
+use dev_disp_transports::websocket::messages::{
     DisplayParameters, EncoderPossibleConfiguration, WsMessageDeviceInfo,
 };
 use js_sys::{Function, SharedArrayBuffer};

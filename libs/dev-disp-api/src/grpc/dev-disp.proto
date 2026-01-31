@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package dev_disp_service;
+
+message Device {
+  /// Unique identifier for the device
+  string id = 1;
+  /// A display name for the device
+  string name = 2;
+  /// The discovery method ID that found this device
+  string discovery_id = 3;
+  /// A display name for the discovery method (e.g., "USB", "WebSocket")
+  string discovery_display = 4;
+}
+
+message ListAvailableDevicesRequest {
+  // Empty for now
+}
+
+// Devices that are available for connection
+message AvailableDevicesResponse {
+  repeated Device devices = 1;
+}
+
+message ListConnectedDevicesRequest {
+  // Empty for now
+}
+
+// Connected devices are those who are currently in-use
+message ConnectedDevicesResponse {
+  repeated Device devices = 1;
+}
+
+message ConnectDeviceRequest {
+  string device_id    = 1;
+  string discovery_id = 2;
+}
+
+message ConnectDeviceResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message DisconnectDeviceRequest {
+  string device_id    = 1;
+  string discovery_id = 2;
+}
+
+message DisconnectDeviceResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+// DevDispService defines the RPC service for the Dev Disp Server.
+service DevDispService {
+  // List the available devices for connection
+  rpc ListAvailableDevices (ListAvailableDevicesRequest) returns (AvailableDevicesResponse);
+
+  // List the currently connected in-use devices
+  rpc ListConnectedDevices (ListConnectedDevicesRequest) returns (ConnectedDevicesResponse);
+
+  rpc ListenAvailableDevices (ListAvailableDevicesRequest) returns (stream AvailableDevicesResponse);
+
+  rpc ListenConnectedDevices (ListConnectedDevicesRequest) returns (stream ConnectedDevicesResponse);
+
+  // Attempt to initialize a device and begin using it
+  rpc ConnectDevice(ConnectDeviceRequest) returns (ConnectDeviceResponse);
+
+  // Disconnect a currently connected device
+  rpc DisconnectDevice(DisconnectDeviceRequest) returns (DisconnectDeviceResponse);
+}

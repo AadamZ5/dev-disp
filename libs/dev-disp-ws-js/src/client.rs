@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use dev_disp_comm::websocket::messages::{
+use dev_disp_transports::websocket::messages::{
     DevDispMessageFromClient, DevDispMessageFromSource, DisplayParameters,
     EncoderPossibleConfiguration, WsMessageFromClient, WsMessageFromSource,
 };
@@ -119,7 +119,7 @@ where
                             .handle_request_device_info
                             .call1(&JsValue::NULL, &event.into());
                         let device_info = WsMessageFromClient::ResponseDeviceInformation(
-                            dev_disp_comm::websocket::messages::WsMessageDeviceInfo {
+                            dev_disp_transports::websocket::messages::WsMessageDeviceInfo {
                                 name: "WASM Device".to_string(),
                                 resolution: (800, 600),
                             },

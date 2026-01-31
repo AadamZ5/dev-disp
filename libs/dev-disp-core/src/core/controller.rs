@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::{future, join};
+use futures::{Stream, future, join};
 use futures_util::FutureExt;
 use log::{debug, error, info, trace, warn};
 
@@ -17,20 +17,22 @@ use crate::{
 
 const NOT_READY_DELAY: Duration = Duration::from_millis(100);
 
-pub async fn handle_display_host<T, P, E>(
+pub async fn handle_display_host<T, P, E, C>(
     screen_provider: P,
     encoder_provider: E,
     mut host: DisplayHost<T>,
+    _cancel_notification: C, // TODO: Use the cancel notification stream
 ) -> DisplayHostResult<T>
 where
     T: ScreenTransport + 'static,
     E: EncoderProvider + 'static,
     P: ScreenProvider + 'static,
+    C: Stream<Item = ()> + Unpin + 'static,
 {
     let stopped = Arc::new(AtomicBool::new(false));
 
     debug!("Getting background task for {host}...");
-    let background_stopped = stopped.clone();
+    let _background_stopped = stopped.clone();
     let host_name = host.to_string();
     let host_background_task = host
         .get_background_task()
@@ -113,7 +115,7 @@ where
     }
 
     debug!("Creating virtual screen...");
-    let mut screen = match screen_provider.get_screen(display_params).await {
+    let screen = match screen_provider.get_screen(display_params).await {
         Err(e) => {
             error!("Failed to create virtual screen: {}", e);
             close_dev(&mut host).await;

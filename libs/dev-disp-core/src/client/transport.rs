@@ -68,6 +68,7 @@ pub trait ScreenTransport {
         configuration: EncoderPossibleConfiguration,
     ) -> PinnedFuture<'_, Result<(), TransportError>>;
 
+    /// TODO: Consider changing the future to be non-boxed if possible for performance
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],

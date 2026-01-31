@@ -10,7 +10,7 @@
         "cwd": "apps/dev_disp_client",
         "commands": [
           {
-            "command": "flutter_rust_bridge_codegen generate --rust-root ../../libs/dev-disp-client-lib",
+            "command": "flutter_rust_bridge_codegen generate --rust-root ../../libs/dev-disp-flutter-lib",
             "description": "Generate Rust bindings"
           }
         ],

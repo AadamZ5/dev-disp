@@ -120,7 +120,7 @@ pub struct WsDiscovery<S> {
 impl<S> Default for WsDiscovery<S>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
- {
+{
     fn default() -> Self {
         Self::new()
     }
@@ -143,6 +143,13 @@ where
         }
     }
 
+    /// Listen for incoming WebSocket connections from devices.
+    ///
+    /// The provided stream should yield accepted TCP streams that
+    /// are ready to be upgraded to WebSocket connections.
+    ///
+    /// The resulting future should be run as it's own "background" task.
+    /// Without running this future, the discovery will not function.
     pub fn listen<'a, I>(
         &self,
         mut incoming_connections: I,
@@ -159,6 +166,11 @@ where
             // when a new connection comes in, to the main task loop.
             let (mut connection_task_tx, mut connection_task_rx) =
                 mpsc::channel::<Pin<Box<dyn Future<Output = ()>>>>(10);
+
+            // With this task set, we will:
+            // - Loop and accept incoming connections
+            // - For each incoming connection, spawn a new task to do the pre-initialization
+            //   handshake, and then register the device if successful.
             let mut tasks = FuturesUnordered::<Pin<Box<dyn Future<Output = ()>>>>::new();
 
             let listen_ctx_ref = &listen_ctx;
@@ -187,6 +199,9 @@ where
             loop {
                 futures::select! {
                     _ = tasks.next() => {
+                        // Tasks should only be empty if our incoming connections loop has
+                        // finished, which means we should expect no more incomming connections
+                        // and we can break this loop.
                         if tasks.is_empty() {
                             break;
                         }
@@ -206,6 +221,13 @@ where
         .boxed_local()
     }
 
+    /// Handles pre-initialization handshake for a new WebSocket connection.
+    ///
+    /// This function performs the necessary handshake to verify and gather
+    /// information about the connecting device before registering it for discovery, and
+    /// ensure we're talking to a client that follows the expected protocol.
+    ///
+    /// The returned future will live as long as the device is connected and not yet claimed.
     async fn pre_init(listen_ctx: &WsDiscoveryListenCtx<S>, mut ws_stream: WebSocketStream<S>) {
         // First talk to the websocket using the pre-init messages to figure
         // out details about the connecting device.
@@ -346,15 +368,32 @@ where
         let mut devices_update_tx = listen_ctx.connections_update_tx.clone();
         let _ = devices_update_tx.try_send(());
 
-        // Wait for someone to take the WebSocket
-        if let Some(get_ws_tx) = take_ws_rx.next().await {
-            debug!("Taking WebSocket connection for {}...", &id);
-            listen_ctx.current_connections.write().await.remove(&id);
-            let _ = get_ws_tx.send(ws_stream);
-            let _ = devices_update_tx.try_send(());
-            debug!("WebSocket connection for {} taken.", &id);
-        } else {
-            warn!("No one took the WebSocket connection from {}", id);
+        loop {
+            futures::select_biased! {
+                // Wait for someone to take the WebSocket
+                taker = take_ws_rx.next().fuse() => {
+                    if let Some(get_ws_tx) = taker {
+                        debug!("Taking WebSocket connection for \"{}\"...", &id);
+                        listen_ctx.current_connections.write().await.remove(&id);
+                        let _ = get_ws_tx.send(ws_stream);
+                        let _ = devices_update_tx.try_send(());
+                        debug!("WebSocket connection for \"{}\" taken.", &id);
+                    } else {
+                        warn!("No one took the WebSocket connection from \"{}\"", &id);
+                    }
+                    break;
+                },
+                // If the WebSocket closes before being taken, we should remove it from
+                // the available connections.
+                ws_message = ws_stream.next().fuse() => {
+                    if ws_message.is_none() {
+                        info!("WebSocket connection from \"{}\" closed before being taken.", &id);
+                        listen_ctx.current_connections.write().await.remove(&id);
+                        let _ = devices_update_tx.try_send(());
+                        break;
+                    }
+                },
+            }
         }
     }
 }
@@ -371,6 +410,10 @@ where
             connections.values().cloned().collect()
         }
         .boxed()
+    }
+
+    fn get_display_name(&self) -> String {
+        "WebSocket".to_string()
     }
 }
 

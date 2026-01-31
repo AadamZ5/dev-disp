@@ -1,0 +1,41 @@
+use crate::util::{PinnedFuture, PinnedStream};
+
+pub type DiscoveryId = String;
+pub type DisplayHostId = String;
+
+#[derive(Debug, Clone)]
+pub struct DeviceRef {
+    pub name: String,
+    pub interface_key: String,
+    pub interface_display: String,
+    pub id: String,
+}
+
+pub struct DeviceCollectionStatus {
+    pub connectable_devices: Vec<DeviceRef>,
+    pub in_use_devices: Vec<DeviceRef>,
+}
+
+/// Represents the API for controlling and managing the dev disp application
+pub trait DevDispApi {
+    fn get_device_status(
+        &self,
+    ) -> PinnedFuture<
+        'static,
+        Result<DeviceCollectionStatus, Box<dyn std::error::Error + Send + Sync>>,
+    >;
+    fn stream_device_status(&self) -> PinnedStream<'static, DeviceCollectionStatus>;
+
+    /// TODO: Better error handling
+    fn initialize_device(
+        &self,
+        discovery_id: DiscoveryId,
+        device_id: DisplayHostId,
+    ) -> PinnedFuture<'static, Result<(), String>>;
+
+    fn disconnect_device(
+        &self,
+        discovery_id: DiscoveryId,
+        device_id: DisplayHostId,
+    ) -> PinnedFuture<'static, Result<(), String>>;
+}

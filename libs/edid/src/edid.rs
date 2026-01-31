@@ -1,4 +1,4 @@
-use crate::{descriptors::EdidDescriptor, edid};
+use crate::descriptors::EdidDescriptor;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub enum EdidDigitalBitDepth {
