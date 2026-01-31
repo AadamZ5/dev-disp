@@ -84,6 +84,22 @@ where
         self.transport
     }
 
+    /// Return a new version of this DisplayHost with the transport
+    /// wrapped in a `SomeScreenTransport`, to unify the transport type.
+    ///
+    /// Note that this introduces boxing and dynamic dispatch overhead.
+    pub fn as_generic_transport(self) -> DisplayHost<SomeScreenTransport>
+    where
+        T: 'static,
+    {
+        DisplayHost {
+            client_id: self.client_id,
+            name: self.name.clone(),
+            transport: SomeScreenTransport::new(self.transport),
+        }
+    }
+
+    /// TODO: Consider changing the future to be non-boxed if possible for performance
     pub fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],

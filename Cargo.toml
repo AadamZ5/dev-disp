@@ -7,8 +7,8 @@ members = [
 	'libs/dev-disp-flutter-lib',
 	'libs/dev-disp-provider-evdi',
 	'libs/dev-disp-ws-js',
-	"libs/dev-disp-encoders",
-	"libs/edid",
-	"libs/rust-util",
+	'libs/dev-disp-encoders',
+	'libs/edid',
+	'libs/rust-util', "libs/dev-disp-api",
 ]
 resolver = '3'

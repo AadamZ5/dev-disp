@@ -1,5 +1,3 @@
-use std::io::Read;
-
 use async_tungstenite::{
     WebSocketReceiver, WebSocketSender, WebSocketStream, tungstenite::Message,
 };

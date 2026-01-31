@@ -1,0 +1,29 @@
+[package]
+name = "dev-disp-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dev-disp-core = { path = "../../libs/dev-disp-core" }
+futures-util = "0.3.31"
+tonic = { version = "0.14.2", optional = true }
+prost = { version = "0.14.3", optional = true }
+tonic-prost = { version = "0.14.2", optional = true }
+tonic-reflection = { version = "0.14.2", optional = true }
+log = "0.4.29"
+
+[build-dependencies]
+tonic-build = { version = "0.14.2", optional = true }
+tonic-prost-build = { version = "0.14.2", optional = true }
+
+[features]
+default = ["grpc"]
+grpc = [
+  "tonic",
+  "prost",
+  "tonic-prost",
+  "tonic-reflection",
+  "tonic-build",
+  "tonic-prost-build",
+]
+json = []

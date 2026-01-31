@@ -21,7 +21,7 @@ pub async fn handle_display_host<T, P, E, C>(
     screen_provider: P,
     encoder_provider: E,
     mut host: DisplayHost<T>,
-    cancel_notification: C, // TODO: Use the cancel notification stream
+    _cancel_notification: C, // TODO: Use the cancel notification stream
 ) -> DisplayHostResult<T>
 where
     T: ScreenTransport + 'static,
@@ -32,7 +32,7 @@ where
     let stopped = Arc::new(AtomicBool::new(false));
 
     debug!("Getting background task for {host}...");
-    let background_stopped = stopped.clone();
+    let _background_stopped = stopped.clone();
     let host_name = host.to_string();
     let host_background_task = host
         .get_background_task()

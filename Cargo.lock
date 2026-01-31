@@ -484,6 +484,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "dev-disp-api"
+version = "0.1.0"
+dependencies = [
+ "dev-disp-core",
+ "futures-util",
+ "log",
+ "prost",
+ "tonic",
+ "tonic-build",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tonic-reflection",
+]
+
+[[package]]
 name = "dev-disp-core"
 version = "0.1.0"
 dependencies = [
@@ -536,6 +551,7 @@ dependencies = [
 name = "dev-disp-server"
 version = "0.1.0"
 dependencies = [
+ "dev-disp-api",
  "dev-disp-core",
  "dev-disp-encoders",
  "dev-disp-provider-evdi",
@@ -544,7 +560,6 @@ dependencies = [
  "evdi 0.8.0",
  "futures-util",
  "log",
- "prost",
  "rust-util",
  "serde",
  "serde_json",
@@ -552,11 +567,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
- "tonic",
- "tonic-build",
- "tonic-prost",
- "tonic-prost-build",
- "tonic-reflection",
 ]
 
 [[package]]
@@ -1306,9 +1316,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.28"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "mach2"

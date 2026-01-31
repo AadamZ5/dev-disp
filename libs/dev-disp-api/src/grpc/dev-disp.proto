@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package dev_disp_server;
+package dev_disp_service;
 
 message Device {
   string id           = 1;

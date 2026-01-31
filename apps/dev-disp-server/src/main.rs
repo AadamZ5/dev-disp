@@ -1,5 +1,6 @@
 use std::process::exit;
 
+use dev_disp_api::grpc::endpoint::DevDispGrpcEndpoint;
 use dev_disp_core::{
     daemon::endpoint::DevDispApiEndpoint,
     host::{EncoderProvider, ScreenProvider},
@@ -10,12 +11,8 @@ use futures_util::FutureExt;
 use log::{LevelFilter, error, info, warn};
 use tokio::{signal::ctrl_c, task::LocalSet};
 
-use crate::{
-    api::grpc::endpoint::DevDispGrpcEndpoint, app::App,
-    config::default_path_read_or_write_default_config_for,
-};
+use crate::{app::App, config::default_path_read_or_write_default_config_for};
 
-mod api;
 mod app;
 mod config;
 mod websocket;

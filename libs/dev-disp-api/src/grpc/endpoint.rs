@@ -6,7 +6,7 @@ use futures_util::FutureExt;
 use log::{error, info};
 use tonic::transport::Server;
 
-use crate::api::grpc::{
+use crate::grpc::{
     self, proto::dev_disp_service_server::DevDispServiceServer, server::GrpcDevDispApiAdapter,
 };
 

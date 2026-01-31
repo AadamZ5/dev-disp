@@ -87,6 +87,7 @@ pub trait Encoder {
 
     /// Encodes a frame of raw data, returning the encoded data.
     /// TODO: Better error type
+    /// TODO: Consider changing the future to be non-boxed if possible for performance
     fn encode<'s, 'a>(
         &'s mut self,
         raw_data: &'a [u8],
