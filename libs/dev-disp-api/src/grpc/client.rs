@@ -12,8 +12,20 @@ use crate::grpc::proto::{
     ListConnectedDevicesRequest, dev_disp_service_client::DevDispServiceClient,
 };
 
+#[derive(Clone, Debug)]
 pub struct DevDispGrpcClient {
     inner: Arc<RwLock<DevDispServiceClient<tonic::transport::Channel>>>,
+}
+
+impl DevDispGrpcClient {
+    pub async fn connect(
+        endpoint: String,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let client = DevDispServiceClient::connect(endpoint).await?;
+        Ok(Self {
+            inner: Arc::new(RwLock::new(client)),
+        })
+    }
 }
 
 impl DevDispApi for DevDispGrpcClient {
