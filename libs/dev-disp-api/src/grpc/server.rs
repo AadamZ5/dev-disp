@@ -135,10 +135,7 @@ where
     async fn listen_available_devices(
         &self,
         _request: Request<proto::ListAvailableDevicesRequest>,
-    ) -> std::result::Result<
-        Response<PinnedStream<'static, Result<proto::AvailableDevicesResponse, Status>>>,
-        Status,
-    > {
+    ) -> std::result::Result<Response<Self::ListenAvailableDevicesStream>, Status> {
         let mapped_stream = self.inner.stream_device_status().map(|device_status| {
             let response = proto::AvailableDevicesResponse {
                 devices: device_status
