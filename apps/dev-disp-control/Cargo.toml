@@ -1,0 +1,23 @@
+[package]
+name = "dev-disp-control"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dev-disp-core = { path = "../../libs/dev-disp-core" }
+dev-disp-api = { path = "../../libs/dev-disp-api", features = ["grpc"] }
+log = "0.4.28"
+futures = "0.3.31"
+futures-util = "0.3.31"
+iced = { version = "0.14.0", features = [
+  "tokio",
+  "crisp",
+  "linux-theme-detection",
+  "tiny-skia",
+  "wayland",
+  "web-colors",
+  "wgpu",
+  "x11",
+], default-features = false }
+thiserror = "2.0.18"
+env_logger = "0.11.8"

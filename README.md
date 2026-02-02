@@ -14,7 +14,7 @@ Some devices support this at a hardware level. Devices like the [Lenovo Tab Extr
 
 The goal of this project is to reduce the friction to get another device to act as a display for your main computer. If we cannot have a plug-and-play solution largely available, we should be able to get to the point of install, click, play. On the main computer, this display should act natively, integrating flawlessly with your OS's desktop layout. In other words, a connected device acting as an extended display should really show up in your display settings on your main computer.
 
-This project is being designed with support for Windows in mind, but is primarily being designed for Linux initially. Also, this project is not aimed at high-performance gaming use, but low latency and visual fideltiy is a priority.
+This project is being designed with support for Windows in mind, but is primarily being designed for Linux initially. Also, this project is not aimed at high-performance gaming use, but low latency and visual fidelity is a priority.
 
 While this aims to perform a large portion of what RDP or VNC programs might do, this project has a few priorities that go beyond what existing solutions might offer. We will prioritize:
 

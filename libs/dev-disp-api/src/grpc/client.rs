@@ -18,9 +18,11 @@ pub struct DevDispGrpcClient {
 }
 
 impl DevDispGrpcClient {
-    pub async fn connect(
-        endpoint: String,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn connect<E>(endpoint: E) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>
+    where
+        E: TryInto<tonic::transport::Endpoint>,
+        E::Error: std::error::Error + Send + Sync + 'static,
+    {
         let client = DevDispServiceClient::connect(endpoint).await?;
         Ok(Self {
             inner: Arc::new(RwLock::new(client)),
