@@ -2,6 +2,22 @@ syntax = "proto3";
 
 package dev_disp_service;
 
+enum Status {
+  AVAILABLE     = 0;
+  CONNECTING    = 1;
+  IN_USE        = 2;
+  UNREACHABLE   = 3;
+  DISCONNECTING = 4;
+  ERROR         = 5;
+  UNKNOWN       = 6;
+}
+
+message DeviceStatus {
+  Status          status        = 1;
+  optional string error_message = 2; // Populated if status is ERROR
+}
+
+
 message Device {
   /// Unique identifier for the device
   string id = 1;
@@ -9,8 +25,17 @@ message Device {
   string name = 2;
   /// The discovery method ID that found this device
   string discovery_id = 3;
-  /// A display name for the discovery method (e.g., "USB", "WebSocket")
-  string discovery_display = 4;
+  /// Current status of the device
+  DeviceStatus status = 4;
+}
+
+message DiscoveryMethod {
+  /// Unique identifier for the discovery method
+  string id = 1;
+  /// A display name for the discovery method
+  string name = 2;
+  /// An optional description for the discovery method
+  optional string description = 3;
 }
 
 message ListAvailableDevicesRequest {
@@ -62,6 +87,14 @@ message DisconnectDeviceResponse {
   string message = 2;
 }
 
+message ListDiscoveryMethodsRequest {
+  // Empty for now
+}
+
+message ListDiscoveryMethodsResponse {
+  repeated DiscoveryMethod discovery_methods = 1;
+}
+
 // DevDispService defines the RPC service for the Dev Disp Server.
 service DevDispService {
   // List the available devices for connection
@@ -70,6 +103,7 @@ service DevDispService {
   // List the currently connected in-use devices
   rpc ListConnectedDevices (ListConnectedDevicesRequest) returns (ConnectedDevicesResponse);
 
+  // Stream updates about available and connected devices
   rpc StreamDevices (StreamDevicesRequest) returns (stream StreamDevicesResponse);
 
   // Attempt to initialize a device and begin using it
@@ -77,4 +111,7 @@ service DevDispService {
 
   // Disconnect a currently connected device
   rpc DisconnectDevice(DisconnectDeviceRequest) returns (DisconnectDeviceResponse);
+
+  // List the available discovery methods
+  rpc ListDiscoveryMethods (ListDiscoveryMethodsRequest) returns (ListDiscoveryMethodsResponse);
 }

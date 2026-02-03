@@ -1,5 +1,8 @@
 use super::proto::{self, dev_disp_service_server::DevDispService};
-use dev_disp_core::{daemon::api::DevDispApi, util::PinnedStream};
+use dev_disp_core::{
+    daemon::api::{DevDispApi, DisplayHostStatus},
+    util::PinnedStream,
+};
 use futures_util::StreamExt;
 use tonic::{Request, Response, Status};
 
@@ -32,7 +35,7 @@ where
     ) -> std::result::Result<Response<proto::AvailableDevicesResponse>, Status> {
         let device_stats = self
             .inner
-            .get_device_status()
+            .get_devices()
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
         Ok(Response::new(proto::AvailableDevicesResponse {
@@ -41,9 +44,9 @@ where
                 .into_iter()
                 .map(|device_ref| proto::Device {
                     name: device_ref.name,
-                    discovery_id: device_ref.interface_key,
-                    discovery_display: device_ref.interface_display,
+                    discovery_id: device_ref.discovery_id,
                     id: device_ref.id,
+                    status: Some(device_ref.status.into()),
                 })
                 .collect(),
         }))
@@ -55,7 +58,7 @@ where
     ) -> std::result::Result<Response<proto::ConnectedDevicesResponse>, Status> {
         let device_stats = self
             .inner
-            .get_device_status()
+            .get_devices()
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
         Ok(Response::new(proto::ConnectedDevicesResponse {
@@ -64,9 +67,9 @@ where
                 .into_iter()
                 .map(|device_ref| proto::Device {
                     name: device_ref.name,
-                    discovery_id: device_ref.interface_key,
-                    discovery_display: device_ref.interface_display,
+                    discovery_id: device_ref.discovery_id,
                     id: device_ref.id,
+                    status: Some(device_ref.status.into()),
                 })
                 .collect(),
         }))
@@ -108,16 +111,16 @@ where
         &self,
         _request: Request<proto::StreamDevicesRequest>,
     ) -> std::result::Result<Response<Self::StreamDevicesStream>, Status> {
-        let stream = self.inner.stream_device_status().map(|device_stats| {
+        let stream = self.inner.stream_devices().map(|device_stats| {
             Ok(proto::StreamDevicesResponse {
                 available_devices: device_stats
                     .connectable_devices
                     .into_iter()
                     .map(|device_ref| proto::Device {
                         name: device_ref.name,
-                        discovery_id: device_ref.interface_key,
-                        discovery_display: device_ref.interface_display,
+                        discovery_id: device_ref.discovery_id,
                         id: device_ref.id,
+                        status: Some(device_ref.status.into()),
                     })
                     .collect(),
                 connected_devices: device_stats
@@ -125,14 +128,70 @@ where
                     .into_iter()
                     .map(|device_ref| proto::Device {
                         name: device_ref.name,
-                        discovery_id: device_ref.interface_key,
-                        discovery_display: device_ref.interface_display,
+                        discovery_id: device_ref.discovery_id,
                         id: device_ref.id,
+                        status: Some(device_ref.status.into()),
                     })
                     .collect(),
             })
         });
 
         Ok(Response::new(stream.boxed()))
+    }
+
+    async fn list_discovery_methods(
+        &self,
+        _request: Request<proto::ListDiscoveryMethodsRequest>,
+    ) -> std::result::Result<Response<proto::ListDiscoveryMethodsResponse>, Status> {
+        let methods = self
+            .inner
+            .get_discovery_methods()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        Ok(Response::new(proto::ListDiscoveryMethodsResponse {
+            discovery_methods: methods
+                .into_iter()
+                .map(|method_ref| proto::DiscoveryMethod {
+                    id: method_ref.id,
+                    name: method_ref.name,
+                    description: method_ref.description,
+                })
+                .collect(),
+        }))
+    }
+}
+
+impl From<DisplayHostStatus> for proto::DeviceStatus {
+    fn from(status: DisplayHostStatus) -> Self {
+        match status {
+            DisplayHostStatus::Available
+            | DisplayHostStatus::Connecting
+            | DisplayHostStatus::InUse
+            | DisplayHostStatus::Unreachable
+            | DisplayHostStatus::Disconnecting
+            | DisplayHostStatus::Unknown => proto::DeviceStatus {
+                status: proto::Status::from(status) as i32,
+                error_message: None,
+            },
+            DisplayHostStatus::Error(e) => proto::DeviceStatus {
+                status: proto::Status::Error as i32,
+                error_message: Some(e),
+            },
+        }
+    }
+}
+
+impl From<DisplayHostStatus> for proto::Status {
+    fn from(value: DisplayHostStatus) -> Self {
+        match value {
+            DisplayHostStatus::Available => proto::Status::Available,
+            DisplayHostStatus::Connecting => proto::Status::Connecting,
+            DisplayHostStatus::InUse => proto::Status::InUse,
+            DisplayHostStatus::Unreachable => proto::Status::Unreachable,
+            DisplayHostStatus::Disconnecting => proto::Status::Disconnecting,
+            DisplayHostStatus::Error(_) => proto::Status::Error,
+            DisplayHostStatus::Unknown => proto::Status::Unknown,
+        }
     }
 }

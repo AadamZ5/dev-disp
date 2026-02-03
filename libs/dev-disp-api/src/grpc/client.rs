@@ -1,5 +1,8 @@
 use dev_disp_core::{
-    daemon::api::{DevDispApi, DeviceCollectionStatus, DeviceRef, DiscoveryId, DisplayHostId},
+    daemon::api::{
+        DevDispApi, DeviceCollectionStatus, DiscoveryId, DisplayHostId, DisplayHostRef,
+        DisplayHostStatus,
+    },
     util::{PinnedFuture, PinnedStream},
 };
 use futures::stream;
@@ -7,9 +10,9 @@ use futures_util::FutureExt;
 use futures_util::StreamExt;
 
 use crate::grpc::proto::{
-    AvailableDevicesResponse, ConnectDeviceRequest, ConnectedDevicesResponse,
-    DisconnectDeviceRequest, ListAvailableDevicesRequest, ListConnectedDevicesRequest,
-    StreamDevicesRequest, dev_disp_service_client::DevDispServiceClient,
+    self, ConnectDeviceRequest, DisconnectDeviceRequest, ListAvailableDevicesRequest,
+    ListConnectedDevicesRequest, StreamDevicesRequest,
+    dev_disp_service_client::DevDispServiceClient,
 };
 
 #[derive(Clone, Debug)]
@@ -29,7 +32,7 @@ impl DevDispGrpcClient {
 }
 
 impl DevDispApi for DevDispGrpcClient {
-    fn get_device_status(
+    fn get_devices(
         &self,
     ) -> PinnedFuture<
         'static,
@@ -54,20 +57,20 @@ impl DevDispApi for DevDispGrpcClient {
                     Ok(DeviceCollectionStatus {
                         connectable_devices: available_devices
                             .into_iter()
-                            .map(|d| DeviceRef {
+                            .map(|d| DisplayHostRef {
                                 name: d.name,
-                                interface_key: d.discovery_id,
-                                interface_display: d.discovery_display,
+                                discovery_id: d.discovery_id,
                                 id: d.id,
+                                status: d.status.unwrap_or_default().into(),
                             })
                             .collect(),
                         in_use_devices: connected_devices
                             .into_iter()
-                            .map(|d| DeviceRef {
+                            .map(|d| DisplayHostRef {
                                 name: d.name,
-                                interface_key: d.discovery_id,
-                                interface_display: d.discovery_display,
+                                discovery_id: d.discovery_id,
                                 id: d.id,
+                                status: d.status.unwrap_or_default().into(),
                             })
                             .collect(),
                     })
@@ -80,7 +83,7 @@ impl DevDispApi for DevDispGrpcClient {
         .boxed()
     }
 
-    fn stream_device_status(&self) -> PinnedStream<'static, DeviceCollectionStatus> {
+    fn stream_devices(&self) -> PinnedStream<'static, DeviceCollectionStatus> {
         let mut inner = self.inner.clone();
 
         async move {
@@ -95,20 +98,20 @@ impl DevDispApi for DevDispGrpcClient {
                                 DeviceCollectionStatus {
                                     connectable_devices: available_devices
                                         .into_iter()
-                                        .map(|d| DeviceRef {
+                                        .map(|d| DisplayHostRef {
                                             name: d.name,
-                                            interface_key: d.discovery_id,
-                                            interface_display: d.discovery_display,
+                                            discovery_id: d.discovery_id,
                                             id: d.id,
+                                            status: d.status.unwrap_or_default().into(),
                                         })
                                         .collect(),
                                     in_use_devices: connected_devices
                                         .into_iter()
-                                        .map(|d| DeviceRef {
+                                        .map(|d| DisplayHostRef {
                                             name: d.name,
-                                            interface_key: d.discovery_id,
-                                            interface_display: d.discovery_display,
+                                            discovery_id: d.discovery_id,
                                             id: d.id,
+                                            status: d.status.unwrap_or_default().into(),
                                         })
                                         .collect(),
                                 }
@@ -169,5 +172,37 @@ impl DevDispApi for DevDispGrpcClient {
             }
         }
         .boxed()
+    }
+
+    fn get_discovery_methods(
+        &self,
+    ) -> PinnedFuture<
+        'static,
+        Result<
+            Vec<dev_disp_core::daemon::api::DiscoveryRef>,
+            Box<dyn std::error::Error + Send + Sync>,
+        >,
+    > {
+        let inner = self.inner.clone();
+        async move {
+            todo!();
+        }
+        .boxed()
+    }
+}
+
+impl From<proto::DeviceStatus> for DisplayHostStatus {
+    fn from(status: proto::DeviceStatus) -> Self {
+        match proto::Status::from_i32(status.status) {
+            Some(proto::Status::Available) => DisplayHostStatus::Available,
+            Some(proto::Status::Connecting) => DisplayHostStatus::Connecting,
+            Some(proto::Status::InUse) => DisplayHostStatus::InUse,
+            Some(proto::Status::Unreachable) => DisplayHostStatus::Unreachable,
+            Some(proto::Status::Disconnecting) => DisplayHostStatus::Disconnecting,
+            Some(proto::Status::Error) => {
+                DisplayHostStatus::Error(status.error_message.unwrap_or_default())
+            }
+            Some(proto::Status::Unknown) | None => DisplayHostStatus::Unknown,
+        }
     }
 }

@@ -167,7 +167,7 @@ impl BackendWorkerState {
         };
 
         let mut streaming_events = self._streaming_events_tx.clone();
-        let mut device_stream = backend_api.stream_device_status();
+        let mut device_stream = backend_api.stream_devices();
 
         // TODO: We are cheating! Figure out how execute this properly within the
         // confines of the iced task system.

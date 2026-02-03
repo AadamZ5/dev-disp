@@ -48,6 +48,10 @@ pub trait DeviceDiscovery {
 
     /// Get a display name for this discovery service
     fn get_display_name(&self) -> String;
+
+    fn get_description(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Something that can discover devices and asynchronously automatically provide updates

@@ -1,7 +1,10 @@
 use dev_disp_core::{
     client::ScreenTransport,
     core::handle_display_host,
-    daemon::api::{DevDispApi, DeviceCollectionStatus, DeviceRef, DiscoveryId, DisplayHostId},
+    daemon::api::{
+        DevDispApi, DeviceCollectionStatus, DiscoveryId, DiscoveryRef, DisplayHostId,
+        DisplayHostRef, DisplayHostStatus,
+    },
     host::{
         ConnectableDevice, DeviceDiscovery, EncoderProvider, PollingDeviceDiscovery,
         ScreenProvider, StreamingDeviceDiscovery,
@@ -23,25 +26,18 @@ use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 #[derive(Debug, Clone)]
 pub struct ReadyDeviceRef {
     pub name: String,
-    pub interface_key: String,
-    pub interface_display: String,
+    pub discovery_id: String,
     pub id: String,
     take_tx: mpsc::Sender<()>,
 }
 
 impl ReadyDeviceRef {
-    pub fn new(
-        name: String,
-        interface_key: String,
-        interface_display: String,
-        id: String,
-    ) -> (Self, mpsc::Receiver<()>) {
+    pub fn new(name: String, discovery_id: String, id: String) -> (Self, mpsc::Receiver<()>) {
         let (take_tx, take_rx) = mpsc::channel(1);
         (
             Self {
                 name,
-                interface_key,
-                interface_display,
+                discovery_id,
                 id,
                 take_tx,
             },
@@ -57,25 +53,18 @@ impl ReadyDeviceRef {
 #[derive(Debug, Clone)]
 pub struct InUseDeviceRef {
     pub name: String,
-    pub interface_key: String,
-    pub interface_display: String,
+    pub discovery_id: String,
     pub id: String,
     disconnect_tx: mpsc::Sender<()>,
 }
 
 impl InUseDeviceRef {
-    pub fn new(
-        name: String,
-        interface_key: String,
-        interface_display: String,
-        id: String,
-    ) -> (Self, mpsc::Receiver<()>) {
+    pub fn new(name: String, discovery_id: String, id: String) -> (Self, mpsc::Receiver<()>) {
         let (disconnect_tx, disconnect_rx) = mpsc::channel(1);
         (
             Self {
                 name,
-                interface_key,
-                interface_display,
+                discovery_id,
                 id,
                 disconnect_tx,
             },
@@ -86,6 +75,32 @@ impl InUseDeviceRef {
     pub async fn disconnect(&self) -> Result<(), SendError<()>> {
         // TODO: Actually wait for the disconnection to complete!
         self.disconnect_tx.send(()).await
+    }
+}
+
+#[derive(Debug, Clone)]
+struct DiscoveryMethod {
+    pub id: DiscoveryId,
+    pub name: String,
+    pub description: Option<String>,
+    stop_discovery_tx: mpsc::Sender<()>,
+}
+
+impl DiscoveryMethod {
+    pub fn new(
+        id: DiscoveryId,
+        name: String,
+        description: Option<String>,
+    ) -> (Self, mpsc::Receiver<()>) {
+        let (stop_discovery_tx, stop_discovery_rx) = mpsc::channel(1);
+        let this = Self {
+            id,
+            name,
+            description,
+            stop_discovery_tx,
+        };
+
+        (this, stop_discovery_rx)
     }
 }
 
@@ -100,6 +115,7 @@ where
     encoder_provider: E,
     available_devices: Arc<RwLock<HashMap<DiscoveryId, HashMap<DisplayHostId, ReadyDeviceRef>>>>,
     in_use_devices: Arc<RwLock<HashMap<DiscoveryId, HashMap<DisplayHostId, InUseDeviceRef>>>>,
+    discovery_methods: Arc<RwLock<HashMap<DiscoveryId, DiscoveryMethod>>>,
     devices_change_tx: broadcast::Sender<()>,
 }
 
@@ -115,12 +131,17 @@ where
             encoder_provider,
             available_devices: Arc::new(RwLock::new(HashMap::new())),
             in_use_devices: Arc::new(RwLock::new(HashMap::new())),
+            discovery_methods: Arc::new(RwLock::new(HashMap::new())),
             devices_change_tx,
         }
     }
 
     pub async fn shutdown(&self) {
         info!("Shutting down app");
+
+        // TODO: Stop all discovery methods
+
+        // Stop devices
         let available_devices = self.available_devices.read().await;
         let in_use_devices = self.in_use_devices.read().await;
         info!(
@@ -192,13 +213,15 @@ where
         C: ConnectableDevice<Transport = T> + 'static,
         T: ScreenTransport + 'static,
     {
-        let discovery_display = discovery.get_display_name();
-        let mut discovery = discovery.into_stream();
+        let discovery_name = discovery.get_display_name();
+        let discovery_description = discovery.get_description();
+        let discovery = discovery.into_stream();
         let available_devices = self.available_devices.clone();
         let in_use_devices = self.in_use_devices.clone();
         let screen_provider = self.screen_provider.clone();
         let encoder_provider = self.encoder_provider.clone();
         let devices_change_tx = self.devices_change_tx.clone();
+        let discovery_methods = self.discovery_methods.clone();
 
         // TODO: Handle the indentation party below (make functions to reduce indentation)
 
@@ -208,6 +231,21 @@ where
             let screen_provider = screen_provider;
             let encoder_provider = encoder_provider;
             let devices_change_tx = devices_change_tx;
+            let discovery_methods = discovery_methods;
+
+            // Submit the discovery info first
+            let (discovery_method_ref, mut stop_discovery_rx) = DiscoveryMethod::new(
+                discovery_id.clone(),
+                discovery_name.clone(),
+                discovery_description,
+            );
+            let mut discovery_methods_guard = discovery_methods.write().await;
+            discovery_methods_guard.insert(discovery_id.clone(), discovery_method_ref);
+            drop(discovery_methods_guard);
+
+            let stop_discover_fut = stop_discovery_rx.recv().boxed();
+            let mut discovery = discovery.take_until(stop_discover_fut);
+
             while let Some(devices) = discovery.next().await {
                 let mut write_guard = available_devices.write().await;
 
@@ -222,7 +260,6 @@ where
                     let (device_ref, mut take_rx) = ReadyDeviceRef::new(
                         info.name.clone(),
                         discovery_id.clone(),
-                        discovery_display.clone(),
                         info.id.clone(),
                     );
 
@@ -233,7 +270,7 @@ where
                     let available_devices = available_devices.clone();
                     let in_use_devices = in_use_devices.clone();
                     let discovery_id = discovery_id.clone();
-                    let discovery_display = discovery_display.clone();
+                    let discovery_name = discovery_name.clone();
                     let devices_change_tx_clone = devices_change_tx.clone();
 
                     // Spawn a task to handle if/when this device is taken.
@@ -245,7 +282,7 @@ where
                         let available_devices = available_devices;
                         let in_use_devices = in_use_devices;
                         let discovery_id = discovery_id;
-                        let discovery_display = discovery_display;
+                        let discovery_name = discovery_name;
                         let device_change_tx = devices_change_tx_clone;
                         if take_rx.recv().await.is_none() {
                             // Device was not taken before other half dropped
@@ -264,7 +301,6 @@ where
                         let (in_use_device_ref, cancel_rx) = InUseDeviceRef::new(
                             info.name.clone(),
                             discovery_id.clone(),
-                            discovery_display.clone(),
                             info.id.clone(),
                         );
 
@@ -331,7 +367,7 @@ where
                 info!(
                     "Discovered {} device(s) on interface '{}'",
                     entry.len(),
-                    discovery_display
+                    discovery_name
                 );
 
                 match devices_change_tx.send(()) {
@@ -433,7 +469,7 @@ where
     S: ScreenProvider + Clone,
     E: EncoderProvider + Clone,
 {
-    fn get_device_status(
+    fn get_devices(
         &self,
     ) -> PinnedFuture<
         'static,
@@ -449,22 +485,22 @@ where
             let connectable_devices = available_guard
                 .iter()
                 .flat_map(|(_, devices_map)| devices_map.values().cloned())
-                .map(|device_ref| DeviceRef {
+                .map(|device_ref| DisplayHostRef {
                     name: device_ref.name,
-                    interface_key: device_ref.interface_key,
-                    interface_display: device_ref.interface_display,
+                    discovery_id: device_ref.discovery_id,
                     id: device_ref.id,
+                    status: DisplayHostStatus::Available,
                 })
                 .collect();
 
             let in_use_devices = in_use_guard
                 .iter()
                 .flat_map(|(_, devices_map)| devices_map.values().cloned())
-                .map(|device_ref| DeviceRef {
+                .map(|device_ref| DisplayHostRef {
                     name: device_ref.name,
-                    interface_key: device_ref.interface_key,
-                    interface_display: device_ref.interface_display,
+                    discovery_id: device_ref.discovery_id,
                     id: device_ref.id,
+                    status: DisplayHostStatus::InUse,
                 })
                 .collect();
 
@@ -476,7 +512,7 @@ where
         .boxed()
     }
 
-    fn stream_device_status(&self) -> PinnedStream<'static, DeviceCollectionStatus> {
+    fn stream_devices(&self) -> PinnedStream<'static, DeviceCollectionStatus> {
         let rx = self.devices_change_tx.clone().subscribe();
         let update_notifications = BroadcastStream::new(rx);
         // Create a fake initial emission to trigger an initial update
@@ -497,22 +533,22 @@ where
                     let connectable_devices = available_guard
                         .iter()
                         .flat_map(|(_, devices_map)| devices_map.values().cloned())
-                        .map(|device_ref| DeviceRef {
+                        .map(|device_ref| DisplayHostRef {
                             name: device_ref.name,
-                            interface_key: device_ref.interface_key,
-                            interface_display: device_ref.interface_display,
+                            discovery_id: device_ref.discovery_id,
                             id: device_ref.id,
+                            status: DisplayHostStatus::Available,
                         })
                         .collect();
 
                     let in_use_devices = in_use_guard
                         .iter()
                         .flat_map(|(_, devices_map)| devices_map.values().cloned())
-                        .map(|device_ref| DeviceRef {
+                        .map(|device_ref| DisplayHostRef {
                             name: device_ref.name,
-                            interface_key: device_ref.interface_key,
-                            interface_display: device_ref.interface_display,
+                            discovery_id: device_ref.discovery_id,
                             id: device_ref.id,
+                            status: DisplayHostStatus::InUse,
                         })
                         .collect();
 
@@ -543,5 +579,26 @@ where
         self.disconnect_device(discovery_id, device_id)
             .map(|res| res.map_err(|_| "Failed to disconnect device".to_string()))
             .boxed()
+    }
+
+    fn get_discovery_methods(
+        &self,
+    ) -> PinnedFuture<'static, Result<Vec<DiscoveryRef>, Box<dyn std::error::Error + Send + Sync>>>
+    {
+        let discovery_methods = self.discovery_methods.clone();
+        async move {
+            let read_guard = discovery_methods.read().await;
+            let methods = read_guard
+                .values()
+                .map(|method| DiscoveryRef {
+                    id: method.id.clone(),
+                    name: method.name.clone(),
+                    description: method.description.clone(),
+                })
+                .collect();
+
+            Ok(methods)
+        }
+        .boxed()
     }
 }

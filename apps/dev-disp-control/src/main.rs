@@ -1,4 +1,4 @@
-use dev_disp_core::daemon::api::{DeviceRef, DiscoveryId, DisplayHostId};
+use dev_disp_core::daemon::api::{DiscoveryId, DisplayHostId, DisplayHostRef};
 use futures::StreamExt;
 use iced::{
     Element, Font, Task, Theme, font,
@@ -26,8 +26,8 @@ struct UiTest {
     counter: i64,
     backend_ref: BackendRef,
     connection_state: ConnectionState,
-    available_devices: Vec<DeviceRef>,
-    connected_devices: Vec<DeviceRef>,
+    available_devices: Vec<DisplayHostRef>,
+    connected_devices: Vec<DisplayHostRef>,
 }
 
 #[derive(Debug, Clone)]
@@ -167,22 +167,22 @@ pub fn main() -> iced::Result {
     iced::application(UiTest::new, UiTest::update, UiTest::view).run()
 }
 
-fn simple_device_info(device: &DeviceRef, connected: bool) -> Container<'_, UiAction> {
+fn simple_device_info(device: &DisplayHostRef, connected: bool) -> Container<'_, UiAction> {
     Container::new(
         Column::new()
             .push(label("Name:", text(&device.name)))
-            .push(label("Transport:", text(&device.interface_display)))
-            .push(label("Transport ID:", code_text(&device.interface_key)))
+            .push(label("Transport:", text(&device.discovery_id)))
+            .push(label("Transport ID:", code_text(&device.discovery_id)))
             .push(label("Device ID:", code_text(&device.id)))
             .push(if connected {
                 button("Disconnect").on_press(UiAction::DisconnectDevice(
                     device.id.clone(),
-                    device.interface_key.clone(),
+                    device.discovery_id.clone(),
                 ))
             } else {
                 button("Connect").on_press(UiAction::ConnectDevice(
                     device.id.clone(),
-                    device.interface_key.clone(),
+                    device.discovery_id.clone(),
                 ))
             })
             .spacing(5),
