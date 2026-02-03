@@ -1,7 +1,8 @@
+use dev_disp_core::daemon::api::DeviceRef;
 use futures::StreamExt;
 use iced::{
     Task,
-    widget::{Button, Column},
+    widget::{Button, Column, Container, Text},
 };
 use log::LevelFilter;
 
@@ -22,6 +23,8 @@ struct UiTest {
     counter: i64,
     backend_ref: BackendRef,
     connection_state: ConnectionState,
+    available_devices: Vec<DeviceRef>,
+    connected_devices: Vec<DeviceRef>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,32 +43,49 @@ impl UiTest {
             counter: 0,
             backend_ref,
             connection_state: ConnectionState::Disconnected,
+            available_devices: Vec::new(),
+            connected_devices: Vec::new(),
         };
 
         (
             this,
-            Task::stream(backend_stream.map(UiAction::BackendEvent)),
+            Task::batch([
+                Task::stream(backend_stream.map(UiAction::BackendEvent)),
+                Task::done(UiAction::BackendCommand(backend::Command::Connect(
+                    "http://[::1]:50051".to_string(),
+                ))),
+            ]),
         )
     }
 
     pub fn view(&self) -> Column<UiAction> {
-        let is_connecting = matches!(self.connection_state, ConnectionState::Connecting(_));
+        let connected_text = Text::new(match &self.connection_state {
+            ConnectionState::Disconnected => "Disconnected".to_string(),
+            ConnectionState::Connecting(addr) => format!("Connecting to {}...", addr),
+            ConnectionState::Connected(addr) => format!("Connected to {}", addr),
+        });
 
-        let button = if self.connection_state == ConnectionState::Disconnected || is_connecting {
-            let button = Button::new("Connect Backend");
-            if !is_connecting {
-                button.on_press(UiAction::BackendCommand(backend::Command::Connect(
-                    "http://[::1]:50051".to_string(),
-                )))
-            } else {
-                button
-            }
-        } else {
-            Button::new("Disconnect Backend")
-                .on_press(UiAction::BackendCommand(backend::Command::Disconnect))
-        };
+        let c = Column::new().push(connected_text).padding(20).spacing(10);
 
-        Column::new().push(button).padding(20).spacing(10)
+        let mut available = Column::new()
+            .push(Text::new("Available Devices:").size(24))
+            .padding(10)
+            .spacing(10);
+
+        for device in &self.available_devices {
+            available = available.push(Container::new(simple_device_info(device)))
+        }
+
+        let mut connected = Column::new()
+            .push(Text::new("Connected Devices:").size(24))
+            .padding(10)
+            .spacing(10);
+
+        for device in &self.connected_devices {
+            connected = connected.push(Container::new(simple_device_info(device)))
+        }
+
+        c.push(available).push(connected)
     }
 
     pub fn update(&mut self, action: UiAction) {
@@ -77,12 +97,15 @@ impl UiTest {
                 match e {
                     backend::Event::Connected(endpoint) => {
                         self.connection_state = ConnectionState::Connected(endpoint);
+                        self.backend_ref.send(backend::Command::StreamDevices);
                     }
                     backend::Event::Disconnected => {
                         self.connection_state = ConnectionState::Disconnected;
                     }
                     backend::Event::DeviceListUpdated(device) => {
                         log::info!("Device list updated: {:?}", device);
+                        self.available_devices = device.connectable_devices;
+                        self.connected_devices = device.in_use_devices;
                     }
                 }
             }
@@ -107,7 +130,21 @@ pub fn main() -> iced::Result {
         .filter_module("cosmic_text", LevelFilter::Warn)
         .filter_module("wgpu_core", LevelFilter::Warn)
         .filter_module("naga", LevelFilter::Warn)
+        .filter_module("h2::codec", LevelFilter::Warn)
         .init();
 
     iced::application(UiTest::new, UiTest::update, UiTest::view).run()
+}
+
+fn simple_device_info(device: &DeviceRef) -> Container<'static, UiAction> {
+    Container::new(
+        Column::new()
+            .push(Text::new(format!("Name: {}", device.name)))
+            .push(Text::new(format!("Discovery ID: {}", device.interface_key)))
+            .push(Text::new(format!(
+                "Discovery Display: {}",
+                device.interface_display
+            )))
+            .push(Text::new(format!("ID: {}", device.id))),
+    )
 }

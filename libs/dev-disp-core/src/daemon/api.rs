@@ -11,6 +11,7 @@ pub struct DeviceRef {
     pub id: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct DeviceCollectionStatus {
     pub connectable_devices: Vec<DeviceRef>,
     pub in_use_devices: Vec<DeviceRef>,

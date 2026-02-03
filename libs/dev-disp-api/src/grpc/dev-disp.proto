@@ -31,6 +31,17 @@ message ConnectedDevicesResponse {
   repeated Device devices = 1;
 }
 
+message StreamDevicesRequest {
+  // Empty for now
+}
+
+message StreamDevicesResponse {
+  // Devices that are available for connection
+  repeated Device availableDevices = 1;
+  // Devices that are currently connected/in-use
+  repeated Device connectedDevices = 2;
+}
+
 message ConnectDeviceRequest {
   string device_id    = 1;
   string discovery_id = 2;
@@ -59,9 +70,7 @@ service DevDispService {
   // List the currently connected in-use devices
   rpc ListConnectedDevices (ListConnectedDevicesRequest) returns (ConnectedDevicesResponse);
 
-  rpc ListenAvailableDevices (ListAvailableDevicesRequest) returns (stream AvailableDevicesResponse);
-
-  rpc ListenConnectedDevices (ListConnectedDevicesRequest) returns (stream ConnectedDevicesResponse);
+  rpc StreamDevices (StreamDevicesRequest) returns (stream StreamDevicesResponse);
 
   // Attempt to initialize a device and begin using it
   rpc ConnectDevice(ConnectDeviceRequest) returns (ConnectDeviceResponse);

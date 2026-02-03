@@ -24,10 +24,7 @@ impl<T> DevDispService for GrpcDevDispApiAdapter<T>
 where
     T: DevDispApi + Send + Sync + 'static,
 {
-    type ListenAvailableDevicesStream =
-        PinnedStream<'static, Result<proto::AvailableDevicesResponse, Status>>;
-    type ListenConnectedDevicesStream =
-        PinnedStream<'static, Result<proto::ConnectedDevicesResponse, Status>>;
+    type StreamDevicesStream = PinnedStream<'static, Result<proto::StreamDevicesResponse, Status>>;
 
     async fn list_available_devices(
         &self,
@@ -107,38 +104,13 @@ where
         }))
     }
 
-    async fn listen_connected_devices(
+    async fn stream_devices(
         &self,
-        _request: Request<proto::ListConnectedDevicesRequest>,
-    ) -> std::result::Result<Response<Self::ListenConnectedDevicesStream>, Status> {
-        let mapped_stream = self.inner.stream_device_status().map(|device_status| {
-            let response = proto::ConnectedDevicesResponse {
-                devices: device_status
-                    .in_use_devices
-                    .into_iter()
-                    .map(|device_ref| proto::Device {
-                        name: device_ref.name,
-                        discovery_id: device_ref.interface_key,
-                        discovery_display: device_ref.interface_display,
-                        id: device_ref.id,
-                    })
-                    .collect(),
-            };
-            Ok(response)
-        });
-
-        Ok(Response::new(
-            mapped_stream.boxed() as Self::ListenConnectedDevicesStream
-        ))
-    }
-
-    async fn listen_available_devices(
-        &self,
-        _request: Request<proto::ListAvailableDevicesRequest>,
-    ) -> std::result::Result<Response<Self::ListenAvailableDevicesStream>, Status> {
-        let mapped_stream = self.inner.stream_device_status().map(|device_status| {
-            let response = proto::AvailableDevicesResponse {
-                devices: device_status
+        _request: Request<proto::StreamDevicesRequest>,
+    ) -> std::result::Result<Response<Self::StreamDevicesStream>, Status> {
+        let stream = self.inner.stream_device_status().map(|device_stats| {
+            Ok(proto::StreamDevicesResponse {
+                available_devices: device_stats
                     .connectable_devices
                     .into_iter()
                     .map(|device_ref| proto::Device {
@@ -148,12 +120,19 @@ where
                         id: device_ref.id,
                     })
                     .collect(),
-            };
-            Ok(response)
+                connected_devices: device_stats
+                    .in_use_devices
+                    .into_iter()
+                    .map(|device_ref| proto::Device {
+                        name: device_ref.name,
+                        discovery_id: device_ref.interface_key,
+                        discovery_display: device_ref.interface_display,
+                        id: device_ref.id,
+                    })
+                    .collect(),
+            })
         });
 
-        Ok(Response::new(
-            mapped_stream.boxed() as Self::ListenAvailableDevicesStream
-        ))
+        Ok(Response::new(stream.boxed()))
     }
 }

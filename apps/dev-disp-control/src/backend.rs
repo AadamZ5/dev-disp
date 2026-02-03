@@ -1,8 +1,8 @@
-use crate::util::UnwrapOrLog;
+use crate::util::{UnwrapOrLog, UnwrapOrLogMsg};
 use dev_disp_api::grpc::client::DevDispGrpcClient;
-use dev_disp_core::daemon::api::DeviceRef;
+use dev_disp_core::daemon::api::{DevDispApi, DeviceCollectionStatus, DeviceRef};
 use futures::{
-    SinkExt, Stream, StreamExt,
+    FutureExt, SinkExt, Stream, StreamExt,
     channel::mpsc::{self, Receiver, Sender},
     stream,
 };
@@ -37,15 +37,14 @@ impl BackendRef {
 pub enum Event {
     Connected(String),
     Disconnected,
-    DeviceListUpdated(DeviceRef),
+    DeviceListUpdated(DeviceCollectionStatus),
 }
 
 #[derive(Debug, Clone)]
 pub enum Command {
     Connect(String),
     Disconnect,
-    // TODO:
-    // RefreshDeviceList,
+    StreamDevices,
 }
 
 pub fn prepare_backend() -> (BackendRef, impl Stream<Item = Event>) {
@@ -60,13 +59,19 @@ pub fn prepare_backend() -> (BackendRef, impl Stream<Item = Event>) {
 pub struct BackendWorkerState {
     backend_api: Option<DevDispGrpcClient>,
     recv: Receiver<Command>,
+    streaming_events: Receiver<Event>,
+    _streaming_events_tx: Sender<Event>,
 }
 
 impl BackendWorkerState {
     pub fn new(recv: Receiver<Command>) -> Self {
+        let (event_send, event_recv) = mpsc::channel(100);
+
         Self {
             backend_api: None,
             recv,
+            streaming_events: event_recv,
+            _streaming_events_tx: event_send,
         }
     }
 
@@ -75,13 +80,25 @@ impl BackendWorkerState {
             Command::Connect(endpoint) => self
                 .connect(endpoint.clone())
                 .await
-                .unwrap_or_log("Failed to connect to backend")
-                .map(|_| Event::Connected(endpoint)),
+                .map(|_| Event::Connected(endpoint.clone()))
+                .unwrap_or_else(|e| {
+                    log::error!("Failed to connect to backend at {}: {}", endpoint, e);
+                    Event::Disconnected
+                })
+                .into(),
             Command::Disconnect => self
                 .disconnect()
                 .await
                 .unwrap_or_log("Failed to disconnect from backend")
-                .map(|_| Event::Disconnected),
+                .map(|_| Event::Disconnected)
+                .unwrap_or(Event::Disconnected)
+                .into(),
+            Command::StreamDevices => {
+                self.stream_devices()
+                    .await
+                    .unwrap_or_log_msg("Failed to start device streaming");
+                None
+            }
         }
     }
 }
@@ -124,6 +141,37 @@ impl BackendWorkerState {
         self.backend_api = None;
         Ok(())
     }
+
+    async fn stream_devices(&mut self) -> Result<(), ()> {
+        log::info!("Starting device status streaming from backend");
+        let backend_api = match &self.backend_api {
+            Some(api) => api.clone(),
+            None => {
+                log::error!("Attempted to stream devices without a connected backend");
+                return Err(());
+            }
+        };
+
+        let mut streaming_events = self._streaming_events_tx.clone();
+        let mut device_stream = backend_api.stream_device_status();
+
+        // TODO: We are cheating! Figure out how execute this properly within the
+        // confines of the iced task system.
+        tokio::spawn(async move {
+            while let Some(status) = device_stream.next().await {
+                log::debug!("Received device status update: {:?}", status);
+                if let Err(e) = streaming_events
+                    .send(Event::DeviceListUpdated(status))
+                    .await
+                {
+                    log::error!("Failed to send device status update: {}", e);
+                    break;
+                }
+            }
+        });
+
+        Ok(())
+    }
 }
 
 fn run_backend(recv: Receiver<Command>) -> impl Stream<Item = Event> {
@@ -133,11 +181,27 @@ fn run_backend(recv: Receiver<Command>) -> impl Stream<Item = Event> {
     // We will need a polled-future-sender approach later on. Probably just
     // use the `iced::task::Sipper` thing.
     stream::unfold(state, |mut state| async {
-        match state.recv.next().await {
-            Some(cmd) => Some((state.process_command(cmd).await, state)),
-            // If None, we are all finnished
-            None => None,
-        }
+        let result = futures::select! {
+            command = state.recv.next().fuse() => match command {
+                Some(cmd) => {
+                    log::debug!("Processing backend command: {:?}", cmd);
+                    Some((state.process_command(cmd).await, state))
+                },
+                // If None, we are all finnished
+                None => None,
+            },
+            streaming_event = state.streaming_events.next().fuse() => match streaming_event {
+                Some(event) => {
+                    log::debug!("Received backend streaming event: {:?}", event);
+                    Some((Some(event), state))
+                },
+                None => None,
+            },
+        };
+
+        log::info!("Backend event emitting: {:?}", result);
+
+        result
     })
     .filter_map(|event| async move { event })
 }

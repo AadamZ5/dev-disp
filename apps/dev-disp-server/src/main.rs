@@ -27,6 +27,7 @@ async fn main() {
             "nusb::platform::linux_usbfs::enumeration",
             LevelFilter::Warn,
         )
+        .filter_module("h2::codec", LevelFilter::Warn)
         .init();
 
     let screen_provider = get_screen_provider().await;
