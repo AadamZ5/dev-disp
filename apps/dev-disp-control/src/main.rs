@@ -1,8 +1,11 @@
-use dev_disp_core::daemon::api::DeviceRef;
+use dev_disp_core::daemon::api::{DeviceRef, DiscoveryId, DisplayHostId};
 use futures::StreamExt;
 use iced::{
-    Task,
-    widget::{Button, Column, Container, Text},
+    Element, Font, Task, Theme, font,
+    widget::{
+        Column, Container, Row, button, container, rich_text, span, text,
+        text::{IntoFragment, Span},
+    },
 };
 use log::LevelFilter;
 
@@ -33,6 +36,8 @@ pub enum UiAction {
     Decrement,
     BackendEvent(backend::Event),
     BackendCommand(backend::Command),
+    ConnectDevice(DisplayHostId, DiscoveryId),
+    DisconnectDevice(DisplayHostId, DiscoveryId),
 }
 
 impl UiTest {
@@ -59,7 +64,7 @@ impl UiTest {
     }
 
     pub fn view(&self) -> Column<UiAction> {
-        let connected_text = Text::new(match &self.connection_state {
+        let connected_text = text(match &self.connection_state {
             ConnectionState::Disconnected => "Disconnected".to_string(),
             ConnectionState::Connecting(addr) => format!("Connecting to {}...", addr),
             ConnectionState::Connected(addr) => format!("Connected to {}", addr),
@@ -68,21 +73,29 @@ impl UiTest {
         let c = Column::new().push(connected_text).padding(20).spacing(10);
 
         let mut available = Column::new()
-            .push(Text::new("Available Devices:").size(24))
+            .push(text("Available Devices:").size(24))
             .padding(10)
             .spacing(10);
 
         for device in &self.available_devices {
-            available = available.push(Container::new(simple_device_info(device)))
+            available = available.push(Container::new(simple_device_info(device, false)))
+        }
+
+        if self.available_devices.is_empty() {
+            available = available.push(text("No available devices found."));
         }
 
         let mut connected = Column::new()
-            .push(Text::new("Connected Devices:").size(24))
+            .push(text("Connected Devices:").size(24))
             .padding(10)
             .spacing(10);
 
         for device in &self.connected_devices {
-            connected = connected.push(Container::new(simple_device_info(device)))
+            connected = connected.push(Container::new(simple_device_info(device, true)))
+        }
+
+        if self.connected_devices.is_empty() {
+            connected = connected.push(text("No connected devices found."));
         }
 
         c.push(available).push(connected)
@@ -92,6 +105,24 @@ impl UiTest {
         match action {
             UiAction::Increment => self.counter += 1,
             UiAction::Decrement => self.counter -= 1,
+            UiAction::ConnectDevice(dev_id, discovery_id) => {
+                log::info!(
+                    "Requesting connection to device {:?} via discovery ID {:?}",
+                    dev_id,
+                    discovery_id
+                );
+                self.backend_ref
+                    .send(backend::Command::ConnectDevice(dev_id, discovery_id));
+            }
+            UiAction::DisconnectDevice(dev_id, discovery_id) => {
+                log::info!(
+                    "Requesting disconnection from device {:?} via discovery ID {:?}",
+                    dev_id,
+                    discovery_id
+                );
+                self.backend_ref
+                    .send(backend::Command::DisconnectDevice(dev_id, discovery_id));
+            }
             UiAction::BackendEvent(e) => {
                 log::info!("Received backend event: {:?}", e);
                 match e {
@@ -136,15 +167,80 @@ pub fn main() -> iced::Result {
     iced::application(UiTest::new, UiTest::update, UiTest::view).run()
 }
 
-fn simple_device_info(device: &DeviceRef) -> Container<'static, UiAction> {
+fn simple_device_info(device: &DeviceRef, connected: bool) -> Container<'_, UiAction> {
     Container::new(
         Column::new()
-            .push(Text::new(format!("Name: {}", device.name)))
-            .push(Text::new(format!("Discovery ID: {}", device.interface_key)))
-            .push(Text::new(format!(
-                "Discovery Display: {}",
-                device.interface_display
-            )))
-            .push(Text::new(format!("ID: {}", device.id))),
+            .push(label("Name:", text(&device.name)))
+            .push(label("Transport:", text(&device.interface_display)))
+            .push(label("Transport ID:", code_text(&device.interface_key)))
+            .push(label("Device ID:", code_text(&device.id)))
+            .push(if connected {
+                button("Disconnect").on_press(UiAction::DisconnectDevice(
+                    device.id.clone(),
+                    device.interface_key.clone(),
+                ))
+            } else {
+                button("Connect").on_press(UiAction::ConnectDevice(
+                    device.id.clone(),
+                    device.interface_key.clone(),
+                ))
+            })
+            .spacing(5),
     )
+    .padding(5)
+    .style(|theme: &Theme| {
+        let mut style = container::Style::default();
+
+        style.border.radius = 5.0.into();
+        style.border.width = 1.0;
+        style.border.color = {
+            let mut bg_lighter = theme.palette().background;
+            bg_lighter.r += 0.05;
+            bg_lighter.g += 0.05;
+            bg_lighter.b += 0.05;
+            bg_lighter
+        };
+        style
+    })
+}
+
+fn label<'a, T, C>(label: T, content: C) -> Row<'a, UiAction>
+where
+    T: IntoFragment<'a>,
+    C: Into<Element<'a, UiAction>>,
+{
+    let bold_label: Span<'a> = span(label).font(Font {
+        weight: font::Weight::Bold,
+        ..Default::default()
+    });
+
+    Row::new()
+        .push(rich_text![bold_label])
+        .push(content.into())
+        .spacing(5)
+}
+
+fn code_text<'a, T>(content: T) -> Container<'a, UiAction>
+where
+    T: IntoFragment<'a>,
+{
+    Container::new(text(content).size(12))
+        .style(|theme: &Theme| {
+            let mut bg_lighter = theme.palette().background;
+            bg_lighter.r += 0.05;
+            bg_lighter.g += 0.05;
+            bg_lighter.b += 0.05;
+
+            let mut style = container::Style::default().background(bg_lighter);
+            let mut bg_lighter_lighter = bg_lighter;
+            bg_lighter_lighter.r += 0.05;
+            bg_lighter_lighter.g += 0.05;
+            bg_lighter_lighter.b += 0.05;
+
+            style.border.radius = 3.0.into();
+            style.border.width = 1.0;
+            style.border.color = bg_lighter_lighter;
+            style
+        })
+        .padding(5)
 }

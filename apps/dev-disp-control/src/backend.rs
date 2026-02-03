@@ -1,6 +1,6 @@
 use crate::util::{UnwrapOrLog, UnwrapOrLogMsg};
 use dev_disp_api::grpc::client::DevDispGrpcClient;
-use dev_disp_core::daemon::api::{DevDispApi, DeviceCollectionStatus, DeviceRef};
+use dev_disp_core::daemon::api::{DevDispApi, DeviceCollectionStatus, DiscoveryId, DisplayHostId};
 use futures::{
     FutureExt, SinkExt, Stream, StreamExt,
     channel::mpsc::{self, Receiver, Sender},
@@ -45,6 +45,8 @@ pub enum Command {
     Connect(String),
     Disconnect,
     StreamDevices,
+    ConnectDevice(DisplayHostId, DiscoveryId),
+    DisconnectDevice(DisplayHostId, DiscoveryId),
 }
 
 pub fn prepare_backend() -> (BackendRef, impl Stream<Item = Event>) {
@@ -97,6 +99,18 @@ impl BackendWorkerState {
                 self.stream_devices()
                     .await
                     .unwrap_or_log_msg("Failed to start device streaming");
+                None
+            }
+            Command::ConnectDevice(dev_id, discovery_id) => {
+                self.connect_device(dev_id, discovery_id)
+                    .await
+                    .unwrap_or_log_msg("Failed to connect to device");
+                None
+            }
+            Command::DisconnectDevice(dev_id, discovery_id) => {
+                self.disconnect_device(dev_id, discovery_id)
+                    .await
+                    .unwrap_or_log_msg("Failed to disconnect from device");
                 None
             }
         }
@@ -171,6 +185,58 @@ impl BackendWorkerState {
         });
 
         Ok(())
+    }
+
+    async fn connect_device(
+        &mut self,
+        dev_id: DisplayHostId,
+        discovery_id: DiscoveryId,
+    ) -> Result<(), ()> {
+        log::info!(
+            "Requesting device connection to device {:?} via discovery ID {:?}",
+            dev_id,
+            discovery_id
+        );
+        let backend_api = match &self.backend_api {
+            Some(api) => api.clone(),
+            None => {
+                log::error!("Attempted to connect to device without a connected backend");
+                return Err(());
+            }
+        };
+
+        backend_api
+            .initialize_device(discovery_id, dev_id)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to initialize device: {}", e);
+            })
+    }
+
+    async fn disconnect_device(
+        &mut self,
+        dev_id: DisplayHostId,
+        discovery_id: DiscoveryId,
+    ) -> Result<(), ()> {
+        log::info!(
+            "Requesting device disconnection from device {:?} via discovery ID {:?}",
+            dev_id,
+            discovery_id
+        );
+        let backend_api = match &self.backend_api {
+            Some(api) => api.clone(),
+            None => {
+                log::error!("Attempted to disconnect from device without a connected backend");
+                return Err(());
+            }
+        };
+
+        backend_api
+            .disconnect_device(discovery_id, dev_id)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to disconnect device: {}", e);
+            })
     }
 }
 
