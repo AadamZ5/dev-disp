@@ -250,7 +250,6 @@ fn run_backend(recv: Receiver<Command>) -> impl Stream<Item = Event> {
         let result = futures::select! {
             command = state.recv.next().fuse() => match command {
                 Some(cmd) => {
-                    log::debug!("Processing backend command: {:?}", cmd);
                     Some((state.process_command(cmd).await, state))
                 },
                 // If None, we are all finnished
@@ -258,14 +257,11 @@ fn run_backend(recv: Receiver<Command>) -> impl Stream<Item = Event> {
             },
             streaming_event = state.streaming_events.next().fuse() => match streaming_event {
                 Some(event) => {
-                    log::debug!("Received backend streaming event: {:?}", event);
                     Some((Some(event), state))
                 },
                 None => None,
             },
         };
-
-        log::info!("Backend event emitting: {:?}", result);
 
         result
     })

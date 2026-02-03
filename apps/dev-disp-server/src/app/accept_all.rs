@@ -52,7 +52,7 @@ where
                 )
                 .await;
 
-                if let Err((_, e)) = handle_result {
+                if let Err(e) = handle_result {
                     error!("Error handling display host: {}", e);
                 } else {
                     info!("Display host handling completed successfully");

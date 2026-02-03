@@ -123,23 +123,19 @@ impl UiTest {
                 self.backend_ref
                     .send(backend::Command::DisconnectDevice(dev_id, discovery_id));
             }
-            UiAction::BackendEvent(e) => {
-                log::info!("Received backend event: {:?}", e);
-                match e {
-                    backend::Event::Connected(endpoint) => {
-                        self.connection_state = ConnectionState::Connected(endpoint);
-                        self.backend_ref.send(backend::Command::StreamDevices);
-                    }
-                    backend::Event::Disconnected => {
-                        self.connection_state = ConnectionState::Disconnected;
-                    }
-                    backend::Event::DeviceListUpdated(device) => {
-                        log::info!("Device list updated: {:?}", device);
-                        self.available_devices = device.connectable_devices;
-                        self.connected_devices = device.in_use_devices;
-                    }
+            UiAction::BackendEvent(e) => match e {
+                backend::Event::Connected(endpoint) => {
+                    self.connection_state = ConnectionState::Connected(endpoint);
+                    self.backend_ref.send(backend::Command::StreamDevices);
                 }
-            }
+                backend::Event::Disconnected => {
+                    self.connection_state = ConnectionState::Disconnected;
+                }
+                backend::Event::DeviceListUpdated(devices) => {
+                    self.available_devices = devices.connectable_devices;
+                    self.connected_devices = devices.in_use_devices;
+                }
+            },
             UiAction::BackendCommand(cmd) => {
                 log::info!("Sending backend command: {:?}", cmd);
                 match &cmd {
