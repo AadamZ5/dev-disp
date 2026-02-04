@@ -1,4 +1,6 @@
-use dev_disp_core::daemon::api::{DiscoveryId, DisplayHostId, DisplayHostRef};
+use dev_disp_core::daemon::api::{
+    DiscoveryId, DisplayHostId, DisplayHostRef, DisplayHostStatus, InitializationState,
+};
 use futures::StreamExt;
 use iced::{
     Element, Font, Task, Theme, font,
@@ -23,7 +25,6 @@ enum ConnectionState {
 
 #[derive(Debug)]
 struct UiTest {
-    counter: i64,
     backend_ref: BackendRef,
     connection_state: ConnectionState,
     available_devices: Vec<DisplayHostRef>,
@@ -32,8 +33,6 @@ struct UiTest {
 
 #[derive(Debug, Clone)]
 pub enum UiAction {
-    Increment,
-    Decrement,
     BackendEvent(backend::Event),
     BackendCommand(backend::Command),
     ConnectDevice(DisplayHostId, DiscoveryId),
@@ -45,7 +44,6 @@ impl UiTest {
         let (backend_ref, backend_stream) = prepare_backend();
 
         let this = Self {
-            counter: 0,
             backend_ref,
             connection_state: ConnectionState::Disconnected,
             available_devices: Vec::new(),
@@ -103,8 +101,6 @@ impl UiTest {
 
     pub fn update(&mut self, action: UiAction) {
         match action {
-            UiAction::Increment => self.counter += 1,
-            UiAction::Decrement => self.counter -= 1,
             UiAction::ConnectDevice(dev_id, discovery_id) => {
                 log::info!(
                     "Requesting connection to device {:?} via discovery ID {:?}",
@@ -167,23 +163,37 @@ fn simple_device_info(device: &DisplayHostRef, connected: bool) -> Container<'_,
     Container::new(
         Column::new()
             .push(label("Name:", text(&device.name)))
-            .push(label("Transport:", text(&device.discovery_id)))
-            .push(label("Transport ID:", code_text(&device.discovery_id)))
+            .push(label("Discovery Method:", code_text(&device.discovery_id)))
             .push(label("Device ID:", code_text(&device.id)))
+            .push(label(
+                "Status:",
+                text(status_to_display_string(&device.status)),
+            ))
             .push(if connected {
-                button("Disconnect").on_press(UiAction::DisconnectDevice(
-                    device.id.clone(),
-                    device.discovery_id.clone(),
-                ))
+                let mut disconnect_button = button("Disconnect");
+                if device.status == DisplayHostStatus::InUse
+                    || device.status == DisplayHostStatus::Unknown
+                {
+                    disconnect_button = disconnect_button.on_press(UiAction::DisconnectDevice(
+                        device.id.clone(),
+                        device.discovery_id.clone(),
+                    ));
+                };
+                disconnect_button
             } else {
-                button("Connect").on_press(UiAction::ConnectDevice(
-                    device.id.clone(),
-                    device.discovery_id.clone(),
-                ))
+                let mut connect_button = button("Connect");
+                if device.status == DisplayHostStatus::Available {
+                    connect_button = connect_button.on_press(UiAction::ConnectDevice(
+                        device.id.clone(),
+                        device.discovery_id.clone(),
+                    ));
+                };
+                connect_button
             })
-            .spacing(5),
+            .spacing(5)
+            .width(400),
     )
-    .padding(5)
+    .padding(15)
     .style(|theme: &Theme| {
         let mut style = container::Style::default();
 
@@ -239,4 +249,34 @@ where
             style
         })
         .padding(5)
+}
+
+fn status_to_display_string(status: &DisplayHostStatus) -> String {
+    match status {
+        DisplayHostStatus::Available => "Available".to_string(),
+        DisplayHostStatus::InUse => "In Use".to_string(),
+        DisplayHostStatus::Disconnecting => "Disconnecting".to_string(),
+        DisplayHostStatus::Error(err) => format!("Error: {}", err),
+        DisplayHostStatus::Initializing(phase) => {
+            let phase_display_str = match phase {
+                InitializationState::Unknown => "Unknown",
+                InitializationState::Initializing => "Beginning initialization",
+                InitializationState::InitializingTransport => "Initializing transport",
+                InitializationState::GettingDisplayParameters => {
+                    "Getting display parameters from client"
+                }
+                InitializationState::NotifyClientLoading => {
+                    "Notifying client of loading virtual screen"
+                }
+                InitializationState::GettingScreen => "Preparing virtual screen",
+                InitializationState::GettingEncoder => "Preparing encoder",
+                InitializationState::NegotiatingCodecs => "Negotiating codecs with client",
+                InitializationState::InitializingEncoder => "Initializing encoder",
+                InitializationState::SettingClientCodec => "Setting client codec",
+            };
+
+            format!("Initializing: {}", phase_display_str)
+        }
+        DisplayHostStatus::Unknown => "Unknown".to_string(),
+    }
 }

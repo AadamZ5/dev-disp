@@ -1,6 +1,6 @@
 use super::proto::{self, dev_disp_service_server::DevDispService};
 use dev_disp_core::{
-    daemon::api::{DevDispApi, DisplayHostStatus},
+    daemon::api::{DevDispApi, DisplayHostStatus, InitializationState},
     util::PinnedStream,
 };
 use futures_util::StreamExt;
@@ -166,17 +166,22 @@ impl From<DisplayHostStatus> for proto::DeviceStatus {
     fn from(status: DisplayHostStatus) -> Self {
         match status {
             DisplayHostStatus::Available
-            | DisplayHostStatus::Connecting
             | DisplayHostStatus::InUse
-            | DisplayHostStatus::Unreachable
             | DisplayHostStatus::Disconnecting
             | DisplayHostStatus::Unknown => proto::DeviceStatus {
                 status: proto::Status::from(status) as i32,
                 error_message: None,
+                initialization_phase: None,
+            },
+            DisplayHostStatus::Initializing(inner) => proto::DeviceStatus {
+                status: proto::Status::Initializing as i32,
+                error_message: None,
+                initialization_phase: Some(proto::InitializationPhase::from(inner) as i32),
             },
             DisplayHostStatus::Error(e) => proto::DeviceStatus {
                 status: proto::Status::Error as i32,
                 error_message: Some(e),
+                initialization_phase: None,
             },
         }
     }
@@ -186,12 +191,38 @@ impl From<DisplayHostStatus> for proto::Status {
     fn from(value: DisplayHostStatus) -> Self {
         match value {
             DisplayHostStatus::Available => proto::Status::Available,
-            DisplayHostStatus::Connecting => proto::Status::Connecting,
+            DisplayHostStatus::Initializing(_) => proto::Status::Initializing,
             DisplayHostStatus::InUse => proto::Status::InUse,
-            DisplayHostStatus::Unreachable => proto::Status::Unreachable,
             DisplayHostStatus::Disconnecting => proto::Status::Disconnecting,
             DisplayHostStatus::Error(_) => proto::Status::Error,
             DisplayHostStatus::Unknown => proto::Status::Unknown,
+        }
+    }
+}
+
+impl From<InitializationState> for proto::InitializationPhase {
+    fn from(phase: InitializationState) -> Self {
+        match phase {
+            InitializationState::Unknown => proto::InitializationPhase::InitializationUnknown,
+            InitializationState::Initializing => proto::InitializationPhase::InitializingBegin,
+            InitializationState::InitializingTransport => {
+                proto::InitializationPhase::InitializingTransport
+            }
+            InitializationState::GettingDisplayParameters => {
+                proto::InitializationPhase::GettingDisplayParams
+            }
+            InitializationState::NotifyClientLoading => {
+                proto::InitializationPhase::NotifyClientLoading
+            }
+            InitializationState::GettingScreen => proto::InitializationPhase::GettingScreen,
+            InitializationState::GettingEncoder => proto::InitializationPhase::GettingEncoder,
+            InitializationState::NegotiatingCodecs => proto::InitializationPhase::NegotiatingCodecs,
+            InitializationState::InitializingEncoder => {
+                proto::InitializationPhase::InitializingEncoder
+            }
+            InitializationState::SettingClientCodec => {
+                proto::InitializationPhase::SettingClientCodec
+            }
         }
     }
 }

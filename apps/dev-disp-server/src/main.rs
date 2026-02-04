@@ -15,9 +15,10 @@ use crate::{app::App, config::default_path_read_or_write_default_config_for};
 
 mod app;
 mod config;
+mod util;
 mod websocket;
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main()]
 async fn main() {
     env_logger::builder()
         .filter_level(LevelFilter::Debug)

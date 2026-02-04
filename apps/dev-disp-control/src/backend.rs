@@ -136,10 +136,6 @@ enum DisconnectionError {
 // Internal impl
 impl BackendWorkerState {
     async fn connect(&mut self, endpoint: String) -> Result<(), ConnectionError> {
-        if self.backend_api.is_some() {
-            return Err(ConnectionError::AlreadyConnected);
-        }
-
         let client = DevDispGrpcClient::connect(endpoint)
             .await
             .map_err(ConnectionError::ClientError)?;

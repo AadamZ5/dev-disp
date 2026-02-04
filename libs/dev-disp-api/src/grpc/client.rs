@@ -1,7 +1,7 @@
 use dev_disp_core::{
     daemon::api::{
         DevDispApi, DeviceCollectionStatus, DiscoveryId, DisplayHostId, DisplayHostRef,
-        DisplayHostStatus,
+        DisplayHostStatus, InitializationState,
     },
     util::{PinnedFuture, PinnedStream},
 };
@@ -195,14 +195,46 @@ impl From<proto::DeviceStatus> for DisplayHostStatus {
     fn from(status: proto::DeviceStatus) -> Self {
         match proto::Status::from_i32(status.status) {
             Some(proto::Status::Available) => DisplayHostStatus::Available,
-            Some(proto::Status::Connecting) => DisplayHostStatus::Connecting,
+            Some(proto::Status::Initializing) => DisplayHostStatus::Initializing(
+                proto::InitializationPhase::from_i32(
+                    status.initialization_phase.unwrap_or_default() as i32,
+                )
+                .unwrap_or(proto::InitializationPhase::InitializationUnknown)
+                .into(),
+            ),
             Some(proto::Status::InUse) => DisplayHostStatus::InUse,
-            Some(proto::Status::Unreachable) => DisplayHostStatus::Unreachable,
             Some(proto::Status::Disconnecting) => DisplayHostStatus::Disconnecting,
             Some(proto::Status::Error) => {
                 DisplayHostStatus::Error(status.error_message.unwrap_or_default())
             }
             Some(proto::Status::Unknown) | None => DisplayHostStatus::Unknown,
+        }
+    }
+}
+
+impl From<proto::InitializationPhase> for InitializationState {
+    fn from(phase: proto::InitializationPhase) -> Self {
+        match phase {
+            proto::InitializationPhase::InitializationUnknown => InitializationState::Unknown,
+            proto::InitializationPhase::InitializingBegin => InitializationState::Initializing,
+            proto::InitializationPhase::InitializingTransport => {
+                InitializationState::InitializingTransport
+            }
+            proto::InitializationPhase::GettingDisplayParams => {
+                InitializationState::GettingDisplayParameters
+            }
+            proto::InitializationPhase::NotifyClientLoading => {
+                InitializationState::NotifyClientLoading
+            }
+            proto::InitializationPhase::GettingScreen => InitializationState::GettingScreen,
+            proto::InitializationPhase::GettingEncoder => InitializationState::GettingEncoder,
+            proto::InitializationPhase::NegotiatingCodecs => InitializationState::NegotiatingCodecs,
+            proto::InitializationPhase::InitializingEncoder => {
+                InitializationState::InitializingEncoder
+            }
+            proto::InitializationPhase::SettingClientCodec => {
+                InitializationState::SettingClientCodec
+            }
         }
     }
 }

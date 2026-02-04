@@ -3,16 +3,33 @@ use crate::util::{PinnedFuture, PinnedStream};
 pub type DiscoveryId = String;
 pub type DisplayHostId = String;
 
+/// This should be kept somewhat in-sync with the `SystemState` enum. These
+/// are only those states of `SystemState` that are relevant to the
+/// "initialization" phase of a display host.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum DisplayHostStatus {
-    Available,
-    Connecting,
-    InUse,
-    Unreachable,
-    Disconnecting,
-    Error(String),
+pub enum InitializationState {
     #[default]
     Unknown,
+    Initializing,
+    InitializingTransport,
+    GettingDisplayParameters,
+    NotifyClientLoading,
+    GettingScreen,
+    GettingEncoder,
+    NegotiatingCodecs,
+    InitializingEncoder,
+    SettingClientCodec,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum DisplayHostStatus {
+    #[default]
+    Unknown,
+    Available,
+    Initializing(InitializationState),
+    InUse,
+    Disconnecting,
+    Error(String),
 }
 
 #[derive(Debug, Clone)]

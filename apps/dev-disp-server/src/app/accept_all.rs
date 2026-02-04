@@ -4,7 +4,7 @@ use dev_disp_core::{
     host::{ConnectableDevice, ScreenProvider, StreamingDeviceDiscovery},
 };
 use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
-use futures_util::{StreamExt, stream::empty};
+use futures_util::{StreamExt, sink, stream::empty};
 use log::{error, info};
 
 use crate::config::default_path_read_or_write_default_config_for;
@@ -49,6 +49,7 @@ where
                     FfmpegEncoderProvider::new(ffmpeg_config),
                     display,
                     empty(),
+                    sink::drain(),
                 )
                 .await;
 

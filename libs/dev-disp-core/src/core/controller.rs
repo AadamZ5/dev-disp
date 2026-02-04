@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::{Stream, StreamExt};
+use futures::{Sink, SinkExt, Stream, StreamExt};
 use futures_util::FutureExt;
 use log::{debug, error, info, trace, warn};
 
@@ -17,24 +17,45 @@ use crate::{
 
 const NOT_READY_DELAY: Duration = Duration::from_millis(100);
 
-struct InitializedSystem<T, S, E> {
+#[derive(Debug)]
+struct InitializedSystem<T, S, E, St> {
     screen: S,
     encoder: E,
     display_host: DisplayHost<T>,
+    status_sink: St,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SystemState {
+    #[default]
+    Unknown,
+    Initializing,
+    InitializingTransport,
+    GettingDisplayParameters,
+    NotifyClientLoading,
+    GettingScreen,
+    GettingEncoder,
+    NegotiatingCodecs,
+    InitializingEncoder,
+    SettingClientCodec,
+    Running,
+    Stopped,
 }
 
 /// Given all the ingredients to screen cast, handle a display host connection.
-pub async fn handle_display_host<T, P, E, C>(
+pub async fn handle_display_host<T, P, E, C, St>(
     screen_provider: P,
     encoder_provider: E,
     mut display_host: DisplayHost<T>,
     cancel_notification: C,
+    status_sink: St,
 ) -> DisplayHostResult<T>
 where
     T: ScreenTransport + 'static,
     E: EncoderProvider + 'static,
     P: ScreenProvider + 'static,
     C: Stream<Item = ()> + Unpin + 'static,
+    St: Sink<SystemState> + Unpin + 'static,
 {
     let stopped = Arc::new(AtomicBool::new(false));
     debug!("Getting background task for {display_host}...");
@@ -56,7 +77,7 @@ where
 
     let screen_task = async move {
         let initialized_system =
-            match screen_init(screen_provider, encoder_provider, display_host).await {
+            match screen_init(screen_provider, encoder_provider, display_host, status_sink).await {
                 Ok(system) => system,
                 Err(e) => {
                     error!("Failed to initialize screen system: {}", e);
@@ -87,15 +108,17 @@ where
     }
 }
 
-async fn screen_init<T, P, E>(
+async fn screen_init<T, P, E, St>(
     screen_provider: P,
     encoder_provider: E,
     mut display_host: DisplayHost<T>,
-) -> Result<InitializedSystem<T, P::ScreenType, E::EncoderType>, String>
+    mut status_sink: St,
+) -> Result<InitializedSystem<T, P::ScreenType, E::EncoderType, St>, String>
 where
     T: ScreenTransport,
     E: EncoderProvider,
     P: ScreenProvider,
+    St: Sink<SystemState> + Unpin + 'static,
 {
     // Handle the display-host connection here
     info!("Handling display-host: {display_host}");
@@ -107,6 +130,10 @@ where
     }
 
     debug!("Initializing with transport...");
+    match status_sink.send(SystemState::InitializingTransport).await {
+        Err(_) => warn!("Failed to send initializing status"),
+        _ => {}
+    };
     // Initialize the transport
     if let Err(e) = display_host.initialize().await {
         error!("Failed to initialize transport: {}", e);
@@ -116,6 +143,14 @@ where
     debug!("Initialized transport");
 
     debug!("Getting display parameters...");
+    match status_sink
+        .send(SystemState::GettingDisplayParameters)
+        .await
+    {
+        Err(_) => warn!("Failed to send getting display parameters status"),
+        _ => {}
+    };
+    // Get display params
     let display_params = match display_host.get_display_config().await {
         Err(e) => {
             error!("Failed to get display parameters: {}", e);
@@ -126,6 +161,11 @@ where
     };
     debug!("Got display parameters: {:?}", display_params);
 
+    match status_sink.send(SystemState::NotifyClientLoading).await {
+        Err(_) => warn!("Failed to send notify client loading status"),
+        _ => {}
+    };
+
     match display_host.notify_loading_screen().await {
         Err(e) => warn!(
             "Couldn't notify {display_host} of loading screen provider, will continue anyways: {}",
@@ -135,6 +175,11 @@ where
     }
 
     debug!("Creating virtual screen...");
+    match status_sink.send(SystemState::GettingScreen).await {
+        Err(_) => warn!("Failed to send getting screen status"),
+        _ => {}
+    };
+    // Get the virtual screen
     let screen = match screen_provider.get_screen(display_params).await {
         Err(e) => {
             error!("Failed to create virtual screen: {}", e);
@@ -146,6 +191,11 @@ where
     debug!("Created virtual screen.");
 
     debug!("Creating encoder...");
+    match status_sink.send(SystemState::GettingEncoder).await {
+        Err(_) => warn!("Failed to send getting encoder status"),
+        _ => {}
+    };
+    // Create an encoder
     let mut encoder = match encoder_provider.create_encoder().await {
         Err(e) => {
             error!("Failed to create encoder: {}", e);
@@ -168,6 +218,11 @@ where
         bitrate: 1000000, // TODO: Make this configurable?
         fps: 60,          // TODO: Make this configurable?
         encoder_input_parameters: format_params,
+    };
+
+    match status_sink.send(SystemState::NegotiatingCodecs).await {
+        Err(_) => warn!("Failed to send negotiating codecs status"),
+        _ => {}
     };
 
     let supported_configurations = match encoder.get_supported_configurations(&encoder_parameters) {
@@ -207,6 +262,10 @@ where
     );
 
     debug!("Initializing encoder...");
+    match status_sink.send(SystemState::InitializingEncoder).await {
+        Err(_) => warn!("Failed to send initializing encoder status"),
+        _ => {}
+    };
     let encoder_init_result = encoder
         .init(encoder_parameters, Some(preferred_configurations))
         .await;
@@ -224,6 +283,12 @@ where
     );
 
     debug!("Setting encoding on host...");
+
+    match status_sink.send(SystemState::SettingClientCodec).await {
+        Err(_) => warn!("Failed to send setting client codec status"),
+        _ => {}
+    };
+
     if let Err(e) = display_host.set_encoding(initialized_codec).await {
         error!("Failed to set encoding on host: {}", e);
         close_dev(&mut display_host).await;
@@ -235,16 +300,18 @@ where
         screen,
         encoder,
         display_host,
+        status_sink,
     })
 }
 
-async fn screen_loop<S, T, E>(
-    initialized_system: InitializedSystem<T, S, E>,
+async fn screen_loop<S, T, E, St>(
+    initialized_system: InitializedSystem<T, S, E, St>,
 ) -> DisplayHostResult<T>
 where
     S: Screen,
     T: ScreenTransport,
     E: Encoder,
+    St: Sink<SystemState> + Unpin + 'static,
 {
     let mut bad_transmission_start: Option<Instant> = None;
     let mut bad_transmission_count = 0u32;
@@ -254,7 +321,13 @@ where
         mut screen,
         display_host: mut host,
         mut encoder,
+        mut status_sink,
     } = initialized_system;
+
+    match status_sink.send(SystemState::Running).await {
+        Err(_) => warn!("Failed to send running status"),
+        _ => {}
+    };
 
     loop {
         match screen.get_ready().await {

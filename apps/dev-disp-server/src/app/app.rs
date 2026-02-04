@@ -1,9 +1,11 @@
+use crate::util::BroadcastSink;
+use arc_swap::ArcSwap;
 use dev_disp_core::{
     client::ScreenTransport,
-    core::handle_display_host,
+    core::{SystemState, handle_display_host},
     daemon::api::{
         DevDispApi, DeviceCollectionStatus, DiscoveryId, DiscoveryRef, DisplayHostId,
-        DisplayHostRef, DisplayHostStatus,
+        DisplayHostRef, DisplayHostStatus, InitializationState,
     },
     host::{
         ConnectableDevice, DeviceDiscovery, EncoderProvider, PollingDeviceDiscovery,
@@ -12,7 +14,7 @@ use dev_disp_core::{
     util::{PinnedFuture, PinnedLocalFuture, PinnedStream},
 };
 use futures_util::{FutureExt, StreamExt};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
     sync::{
@@ -21,7 +23,7 @@ use tokio::{
     },
     task::JoinSet,
 };
-use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream, errors::BroadcastStreamRecvError};
 
 #[derive(Debug, Clone)]
 pub struct ReadyDeviceRef {
@@ -55,26 +57,47 @@ pub struct InUseDeviceRef {
     pub name: String,
     pub discovery_id: String,
     pub id: String,
+    pub status: Arc<ArcSwap<SystemState>>,
+    // TODO: current status atomic slot!
     disconnect_tx: mpsc::Sender<()>,
+    status_tx: broadcast::Sender<SystemState>,
 }
 
 impl InUseDeviceRef {
-    pub fn new(name: String, discovery_id: String, id: String) -> (Self, mpsc::Receiver<()>) {
+    pub fn new(
+        name: String,
+        discovery_id: String,
+        id: String,
+        status: Arc<ArcSwap<SystemState>>,
+    ) -> (Self, mpsc::Receiver<()>) {
         let (disconnect_tx, disconnect_rx) = mpsc::channel(1);
+        let (status_tx, _) = broadcast::channel(16);
         (
             Self {
                 name,
                 discovery_id,
                 id,
                 disconnect_tx,
+                status_tx,
+                status,
             },
             disconnect_rx,
         )
     }
 
     pub async fn disconnect(&self) -> Result<(), SendError<()>> {
+        let _ = self.status_tx.send(SystemState::Stopped);
         // TODO: Actually wait for the disconnection to complete!
         self.disconnect_tx.send(()).await
+    }
+
+    pub fn listen_status(&self) -> BroadcastStream<SystemState> {
+        BroadcastStream::new(self.status_tx.subscribe())
+    }
+
+    pub fn get_current_status(&self) -> SystemState {
+        // Note that this is driven by handler code in the app.
+        **self.status.load()
     }
 }
 
@@ -83,6 +106,7 @@ struct DiscoveryMethod {
     pub id: DiscoveryId,
     pub name: String,
     pub description: Option<String>,
+    // TODO: Use this!
     stop_discovery_tx: mpsc::Sender<()>,
 }
 
@@ -108,8 +132,8 @@ impl DiscoveryMethod {
 #[derive(Debug, Clone)]
 pub struct App<S, E>
 where
-    S: ScreenProvider + Clone + 'static,
-    E: EncoderProvider + Clone + 'static,
+    S: ScreenProvider + Clone + Send + 'static,
+    E: EncoderProvider + Clone + Send + 'static,
 {
     screen_provider: S,
     encoder_provider: E,
@@ -121,8 +145,8 @@ where
 
 impl<S, E> App<S, E>
 where
-    S: ScreenProvider + Clone,
-    E: EncoderProvider + Clone,
+    S: ScreenProvider + Clone + Send + 'static,
+    E: EncoderProvider + Clone + Send + 'static,
 {
     pub fn new(screen_provider: S, encoder_provider: E) -> Self {
         let (devices_change_tx, _) = broadcast::channel(128);
@@ -210,7 +234,7 @@ where
     ) -> PinnedLocalFuture<'static, ()>
     where
         D: StreamingDeviceDiscovery<DeviceCandidate = C>,
-        C: ConnectableDevice<Transport = T> + 'static,
+        C: ConnectableDevice<Transport = T> + Send + 'static,
         T: ScreenTransport + 'static,
     {
         let discovery_name = discovery.get_display_name();
@@ -270,7 +294,6 @@ where
                     let available_devices = available_devices.clone();
                     let in_use_devices = in_use_devices.clone();
                     let discovery_id = discovery_id.clone();
-                    let discovery_name = discovery_name.clone();
                     let devices_change_tx_clone = devices_change_tx.clone();
 
                     // Spawn a task to handle if/when this device is taken.
@@ -282,7 +305,6 @@ where
                         let available_devices = available_devices;
                         let in_use_devices = in_use_devices;
                         let discovery_id = discovery_id;
-                        let discovery_name = discovery_name;
                         let device_change_tx = devices_change_tx_clone;
                         if take_rx.recv().await.is_none() {
                             // Device was not taken before other half dropped
@@ -298,11 +320,15 @@ where
                                 devices_map.remove(&info.id);
                             });
 
+                        let status_slot = Arc::new(ArcSwap::from_pointee(SystemState::Unknown));
                         let (in_use_device_ref, cancel_rx) = InUseDeviceRef::new(
                             info.name.clone(),
                             discovery_id.clone(),
                             info.id.clone(),
+                            status_slot.clone(),
                         );
+
+                        let device_status_tx = in_use_device_ref.status_tx.clone();
 
                         in_use_devices
                             .write()
@@ -318,48 +344,100 @@ where
                             Err(_) => debug!("Failed to notify device change listeners"),
                         }
 
-                        match device.connect().await {
-                            Ok(display) => {
-                                info!("Device '{}' initiated successfully", info.name);
-                                // TODO: We should send this to another thread instead.
-                                let handle_result = handle_display_host(
-                                    screen_provider,
-                                    encoder_provider,
-                                    display,
-                                    ReceiverStream::new(cancel_rx),
-                                )
-                                .await;
+                        let device_status_tx_clone = device_status_tx.clone();
+                        let device_change_tx_clone = device_change_tx.clone();
+                        let device_name = info.name.clone();
+                        let device_name_clone = device_name.clone();
 
-                                if let Err(e) = handle_result {
-                                    error!("Error handling display host: {}", e);
-                                } else {
-                                    info!("Display host handling completed successfully");
+                        // Fork off screen handling on a new thread with its own runtime.
+                        // This is done because some transport or screen implementations
+                        // may behave badly if run on the same runtime as the main server.
+                        // In other words, do not let screen-handling code get interefered
+                        // by other async tasks in the main server runtime.
+                        std::thread::spawn(move || {
+                            let local_set = tokio::task::LocalSet::new();
+                            let rt = tokio::runtime::Runtime::new()
+                                .expect("Failed to create Tokio runtime");
+                            local_set.block_on(&rt, async move {
+                                let device_status_tx = device_status_tx_clone;
+                                let device_name = device_name_clone;
+                                let device_change_tx = device_change_tx_clone;
+                                match device.connect().await {
+                                    Ok(display) => {
+                                        info!("Device '{}' initiated successfully", device_name);
+                                        let handle_result = handle_display_host(
+                                            screen_provider,
+                                            encoder_provider,
+                                            display,
+                                            ReceiverStream::new(cancel_rx),
+                                            BroadcastSink::new(device_status_tx),
+                                        )
+                                        .await;
+
+                                        if let Err(e) = handle_result {
+                                            error!("Error handling display host: {}", e);
+                                        } else {
+                                            info!("Display host handling completed successfully");
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            "Failed to initiate device '{}': {}",
+                                            device_name, e
+                                        );
+                                    }
+                                };
+
+                                // After above is done, remove from in-use devices
+                                in_use_devices
+                                    .write()
+                                    .await
+                                    .entry(discovery_id.clone())
+                                    .and_modify(|devices_map| {
+                                        devices_map.remove(&info.id);
+                                    });
+
+                                debug!(
+                                    "Device '{}' disconnected and removed from in-use list",
+                                    device_name
+                                );
+
+                                match device_change_tx.send(()) {
+                                    Ok(a) => {
+                                        debug!("Notified {} device-list change listeners", a);
+                                    }
+                                    Err(_) => {
+                                        debug!("Failed to notify device change listeners")
+                                    }
                                 }
-                            }
-                            Err(e) => {
-                                error!("Failed to initiate device '{}': {}", info.name, e);
-                            }
-                        };
+                            })
+                        });
 
-                        // After above is done, remove from in-use devices
-                        in_use_devices
-                            .write()
-                            .await
-                            .entry(discovery_id.clone())
-                            .and_modify(|devices_map| {
-                                devices_map.remove(&info.id);
-                            });
-
-                        debug!(
-                            "Device '{}' disconnected and removed from in-use list",
-                            info.name
-                        );
-
-                        match device_change_tx.send(()) {
-                            Ok(a) => {
-                                debug!("Notified {} device-list change listeners", a);
+                        // This task will remain to listen for device updates
+                        let mut status_rx = BroadcastStream::new(device_status_tx.subscribe());
+                        while let Some(status_res) = status_rx.next().await {
+                            match status_res {
+                                Ok(status) => {
+                                    debug!("Device '{}' status update: {:?}", device_name, status);
+                                    status_slot.store(Arc::new(status));
+                                    match device_change_tx.send(()) {
+                                        Ok(a) => {
+                                            debug!("Notified {} device-list change listeners", a);
+                                        }
+                                        Err(_) => {
+                                            debug!("Failed to notify device change listeners")
+                                        }
+                                    }
+                                }
+                                Err(e) => match e {
+                                    BroadcastStreamRecvError::Lagged(n) => {
+                                        warn!(
+                                            "Device '{}' status update lagged by {} messages",
+                                            device_name, n
+                                        );
+                                    }
+                                },
                             }
-                            Err(_) => debug!("Failed to notify device change listeners"),
                         }
                     });
                 }
@@ -466,8 +544,8 @@ where
 
 impl<S, E> DevDispApi for App<S, E>
 where
-    S: ScreenProvider + Clone,
-    E: EncoderProvider + Clone,
+    S: ScreenProvider + Clone + Send + 'static,
+    E: EncoderProvider + Clone + Send + 'static,
 {
     fn get_devices(
         &self,
@@ -496,11 +574,14 @@ where
             let in_use_devices = in_use_guard
                 .iter()
                 .flat_map(|(_, devices_map)| devices_map.values().cloned())
-                .map(|device_ref| DisplayHostRef {
-                    name: device_ref.name,
-                    discovery_id: device_ref.discovery_id,
-                    id: device_ref.id,
-                    status: DisplayHostStatus::InUse,
+                .map(|device_ref| {
+                    let status = device_status_from_system_state(&device_ref.get_current_status());
+                    DisplayHostRef {
+                        name: device_ref.name,
+                        discovery_id: device_ref.discovery_id,
+                        id: device_ref.id,
+                        status,
+                    }
                 })
                 .collect();
 
@@ -544,11 +625,15 @@ where
                     let in_use_devices = in_use_guard
                         .iter()
                         .flat_map(|(_, devices_map)| devices_map.values().cloned())
-                        .map(|device_ref| DisplayHostRef {
-                            name: device_ref.name,
-                            discovery_id: device_ref.discovery_id,
-                            id: device_ref.id,
-                            status: DisplayHostStatus::InUse,
+                        .map(|device_ref| {
+                            let status =
+                                device_status_from_system_state(&device_ref.get_current_status());
+                            DisplayHostRef {
+                                name: device_ref.name,
+                                discovery_id: device_ref.discovery_id,
+                                id: device_ref.id,
+                                status,
+                            }
                         })
                         .collect();
 
@@ -600,5 +685,34 @@ where
             Ok(methods)
         }
         .boxed()
+    }
+}
+
+fn system_state_to_init_state(state: &SystemState) -> Option<InitializationState> {
+    match state {
+        SystemState::Unknown => Some(InitializationState::Unknown),
+        SystemState::Initializing => Some(InitializationState::Initializing),
+        SystemState::InitializingTransport => Some(InitializationState::InitializingTransport),
+        SystemState::GettingDisplayParameters => {
+            Some(InitializationState::GettingDisplayParameters)
+        }
+        SystemState::NotifyClientLoading => Some(InitializationState::NotifyClientLoading),
+        SystemState::GettingScreen => Some(InitializationState::GettingScreen),
+        SystemState::GettingEncoder => Some(InitializationState::GettingEncoder),
+        SystemState::NegotiatingCodecs => Some(InitializationState::NegotiatingCodecs),
+        SystemState::InitializingEncoder => Some(InitializationState::InitializingEncoder),
+        SystemState::SettingClientCodec => Some(InitializationState::SettingClientCodec),
+        SystemState::Running | SystemState::Stopped => None,
+    }
+}
+
+fn device_status_from_system_state(state: &SystemState) -> DisplayHostStatus {
+    match system_state_to_init_state(state) {
+        Some(init_state) => DisplayHostStatus::Initializing(init_state),
+        None => match state {
+            SystemState::Running => DisplayHostStatus::InUse,
+            SystemState::Stopped => DisplayHostStatus::Disconnecting,
+            _ => DisplayHostStatus::Unknown,
+        },
     }
 }
