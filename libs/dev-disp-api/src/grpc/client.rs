@@ -5,7 +5,7 @@ use dev_disp_core::{
     },
     util::{PinnedFuture, PinnedStream},
 };
-use futures::stream;
+use futures::{Stream, stream};
 use futures_util::FutureExt;
 use futures_util::StreamExt;
 
@@ -15,9 +15,15 @@ use crate::grpc::proto::{
     dev_disp_service_client::DevDispServiceClient,
 };
 
+use async_broadcast::{Receiver, Sender};
+
 #[derive(Clone, Debug)]
 pub struct DevDispGrpcClient {
     inner: DevDispServiceClient<tonic::transport::Channel>,
+    /// Sender to notify about client errors
+    client_error_tx: Sender<()>,
+    /// Unused receiver to keep the channel alive
+    _client_error_rx: Receiver<()>,
 }
 
 impl DevDispGrpcClient {
@@ -27,7 +33,16 @@ impl DevDispGrpcClient {
         E::Error: std::error::Error + Send + Sync + 'static,
     {
         let client = DevDispServiceClient::connect(endpoint).await?;
-        Ok(Self { inner: client })
+        let (client_error_tx, _client_error_rx) = async_broadcast::broadcast(16);
+        Ok(DevDispGrpcClient {
+            inner: client,
+            client_error_tx,
+            _client_error_rx,
+        })
+    }
+
+    pub fn get_error_notification_receiver(&self) -> PinnedStream<'static, ()> {
+        self._client_error_rx.clone().boxed()
     }
 }
 
@@ -39,6 +54,7 @@ impl DevDispApi for DevDispGrpcClient {
         Result<DeviceCollectionStatus, Box<dyn std::error::Error + Send + Sync>>,
     > {
         let inner = self.inner.clone();
+        let error_tx = self.client_error_tx.clone();
 
         async move {
             let mut inner = inner;
@@ -76,6 +92,7 @@ impl DevDispApi for DevDispGrpcClient {
                     })
                 }
                 (Err(e), _) | (_, Err(e)) => {
+                    let _ = error_tx.broadcast_direct(()).await;
                     Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
                 }
             }
@@ -85,44 +102,54 @@ impl DevDispApi for DevDispGrpcClient {
 
     fn stream_devices(&self) -> PinnedStream<'static, DeviceCollectionStatus> {
         let mut inner = self.inner.clone();
+        let error_tx = self.client_error_tx.clone();
 
         async move {
             match inner.stream_devices(StreamDevicesRequest {}).await {
                 Ok(response) => {
-                    let stream = response.into_inner().filter_map(|res| async move {
-                        match res {
-                            Ok(msg) => {
-                                let available_devices = msg.available_devices;
-                                let connected_devices = msg.connected_devices;
+                    let error_tx_clone = error_tx.clone();
+                    let stream = response.into_inner().filter_map(move |res| {
+                        let error_tx_clone = error_tx_clone.clone();
+                        async move {
+                            let error_tx = error_tx_clone;
+                            match res {
+                                Ok(msg) => {
+                                    let available_devices = msg.available_devices;
+                                    let connected_devices = msg.connected_devices;
 
-                                DeviceCollectionStatus {
-                                    connectable_devices: available_devices
-                                        .into_iter()
-                                        .map(|d| DisplayHostRef {
-                                            name: d.name,
-                                            discovery_id: d.discovery_id,
-                                            id: d.id,
-                                            status: d.status.unwrap_or_default().into(),
-                                        })
-                                        .collect(),
-                                    in_use_devices: connected_devices
-                                        .into_iter()
-                                        .map(|d| DisplayHostRef {
-                                            name: d.name,
-                                            discovery_id: d.discovery_id,
-                                            id: d.id,
-                                            status: d.status.unwrap_or_default().into(),
-                                        })
-                                        .collect(),
+                                    DeviceCollectionStatus {
+                                        connectable_devices: available_devices
+                                            .into_iter()
+                                            .map(|d| DisplayHostRef {
+                                                name: d.name,
+                                                discovery_id: d.discovery_id,
+                                                id: d.id,
+                                                status: d.status.unwrap_or_default().into(),
+                                            })
+                                            .collect(),
+                                        in_use_devices: connected_devices
+                                            .into_iter()
+                                            .map(|d| DisplayHostRef {
+                                                name: d.name,
+                                                discovery_id: d.discovery_id,
+                                                id: d.id,
+                                                status: d.status.unwrap_or_default().into(),
+                                            })
+                                            .collect(),
+                                    }
+                                    .into()
                                 }
-                                .into()
+                                Err(_) => {
+                                    let _ = error_tx.broadcast_direct(()).await;
+                                    None
+                                }
                             }
-                            Err(_) => None,
                         }
                     });
                     stream.boxed()
                 }
                 Err(e) => {
+                    error_tx.broadcast_direct(()).await.ok();
                     log::error!("Failed to start device status stream: {}", e);
                     stream::empty().boxed()
                 }
@@ -138,6 +165,7 @@ impl DevDispApi for DevDispGrpcClient {
         device_id: DisplayHostId,
     ) -> PinnedFuture<'static, Result<(), String>> {
         let mut inner = self.inner.clone();
+        let error_tx = self.client_error_tx.clone();
 
         async move {
             let request = tonic::Request::new(ConnectDeviceRequest {
@@ -147,7 +175,10 @@ impl DevDispApi for DevDispGrpcClient {
 
             match inner.connect_device(request).await {
                 Ok(_) => Ok(()),
-                Err(e) => Err(format!("gRPC error: {}", e)),
+                Err(e) => {
+                    error_tx.broadcast_direct(()).await.ok();
+                    Err(format!("gRPC error: {}", e))
+                }
             }
         }
         .boxed()
@@ -159,6 +190,7 @@ impl DevDispApi for DevDispGrpcClient {
         device_id: DisplayHostId,
     ) -> PinnedFuture<'static, Result<(), String>> {
         let mut inner = self.inner.clone();
+        let error_tx = self.client_error_tx.clone();
 
         async move {
             let request = tonic::Request::new(DisconnectDeviceRequest {
@@ -168,7 +200,10 @@ impl DevDispApi for DevDispGrpcClient {
 
             match inner.disconnect_device(request).await {
                 Ok(_) => Ok(()),
-                Err(e) => Err(format!("gRPC error: {}", e)),
+                Err(e) => {
+                    error_tx.broadcast_direct(()).await.ok();
+                    Err(format!("gRPC error: {}", e))
+                }
             }
         }
         .boxed()

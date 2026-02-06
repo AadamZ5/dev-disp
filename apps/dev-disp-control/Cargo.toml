@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 dev-disp-core = { path = "../../libs/dev-disp-core" }
-dev-disp-api = { path = "../../libs/dev-disp-api", features = ["grpc"] }
+dev-disp-api = { path = "../../libs/dev-disp-api" }
 log = "0.4.28"
 futures = "0.3.31"
 futures-util = "0.3.31"
@@ -22,3 +22,20 @@ iced = { version = "0.14.0", features = [
 thiserror = "2.0.18"
 env_logger = "0.11.8"
 tokio = "1.49.0"
+arc-swap = { version = "1.8.1", optional = true }
+tokio-stream = { version = "0.1.18", features = ["sync"], optional = true }
+dev-disp-provider-evdi = { path = "../../libs/dev-disp-provider-evdi", optional = true }
+dev-disp-encoders = { path = "../../libs/dev-disp-encoders", optional = true }
+dev-disp-transports = { path = "../../libs/dev-disp-transports", optional = true }
+
+[features]
+default = ["api-grpc"]
+api-builtin = [
+  "tokio/fs",
+  "arc-swap",
+  "tokio-stream",
+  "dev-disp-provider-evdi",
+  "dev-disp-encoders",
+  "dev-disp-transports",
+]
+api-grpc = ["dev-disp-api/grpc"]

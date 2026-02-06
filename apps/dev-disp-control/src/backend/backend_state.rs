@@ -1,93 +1,43 @@
-use crate::util::{UnwrapOrLog, UnwrapOrLogMsg};
-use dev_disp_api::grpc::client::DevDispGrpcClient;
-use dev_disp_core::daemon::api::{DevDispApi, DeviceCollectionStatus, DiscoveryId, DisplayHostId};
-use futures::{
-    FutureExt, SinkExt, Stream, StreamExt,
-    channel::mpsc::{self, Receiver, Sender},
-    stream,
+use crate::{
+    backend::{ApiFactory, Command, DisconnectableApi, Event},
+    util::{UnwrapOrLog, UnwrapOrLogMsg},
 };
-
-#[derive(Debug, Clone)]
-pub struct BackendRef(Sender<Command>);
-
-impl BackendRef {
-    fn new(sender: Sender<Command>) -> Self {
-        Self(sender)
-    }
-
-    pub fn send(&mut self, command: Command) {
-        let mut sender = self.0.clone();
-        iced::futures::executor::block_on(async move {
-            if let Err(e) = sender.send(command).await {
-                log::error!("Failed to send command to backend: {}", e);
-            }
-        });
-    }
-
-    pub fn connect(&mut self, endpoint: String) {
-        self.send(Command::Connect(endpoint));
-    }
-
-    pub fn disconnect(&mut self) {
-        self.send(Command::Disconnect);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Event {
-    Connected(String),
-    Disconnected,
-    DeviceListUpdated(DeviceCollectionStatus),
-}
-
-#[derive(Debug, Clone)]
-pub enum Command {
-    Connect(String),
-    Disconnect,
-    StreamDevices,
-    ConnectDevice(DisplayHostId, DiscoveryId),
-    DisconnectDevice(DisplayHostId, DiscoveryId),
-}
-
-pub fn prepare_backend() -> (BackendRef, impl Stream<Item = Event>) {
-    let (cmd_sender, cmd_receiver) = mpsc::channel(100);
-    let backend = BackendRef::new(cmd_sender);
-    let backend_future = run_backend(cmd_receiver);
-    (backend, backend_future)
-}
+use dev_disp_core::daemon::api::{DevDispApi, DiscoveryId, DisplayHostId};
+use futures::{SinkExt, StreamExt, channel::mpsc::Sender};
 
 /// TODO: Refactor to allow a different backend client to be easily swapped!
 #[derive(Debug)]
-pub struct BackendWorkerState {
-    backend_api: Option<DevDispGrpcClient>,
-    recv: Receiver<Command>,
-    streaming_events: Receiver<Event>,
-    _streaming_events_tx: Sender<Event>,
+pub struct BackendState<T>
+where
+    T: ApiFactory,
+{
+    want_connected: bool,
+    factory: T,
+    backend_api: Option<T::Api>,
+    event_tx: Sender<Event>,
 }
 
-impl BackendWorkerState {
-    pub fn new(recv: Receiver<Command>) -> Self {
-        let (event_send, event_recv) = mpsc::channel(100);
-
+impl<T> BackendState<T>
+where
+    T: ApiFactory,
+{
+    pub fn new(factory: T, event_tx: Sender<Event>) -> Self {
         Self {
-            backend_api: None,
-            recv,
-            streaming_events: event_recv,
-            _streaming_events_tx: event_send,
+            want_connected: false,
+            factory,
+            backend_api: None::<T::Api>,
+            event_tx,
+        }
+    }
+
+    pub async fn send_event(&mut self, event: Event) {
+        if let Err(e) = self.event_tx.send(event).await {
+            log::error!("Failed to send event to frontend: {}", e);
         }
     }
 
     pub async fn process_command(&mut self, command: Command) -> Option<Event> {
         match command {
-            Command::Connect(endpoint) => self
-                .connect(endpoint.clone())
-                .await
-                .map(|_| Event::Connected(endpoint.clone()))
-                .unwrap_or_else(|e| {
-                    log::error!("Failed to connect to backend at {}: {}", endpoint, e);
-                    Event::Disconnected
-                })
-                .into(),
             Command::Disconnect => self
                 .disconnect()
                 .await
@@ -134,21 +84,37 @@ enum DisconnectionError {
 }
 
 // Internal impl
-impl BackendWorkerState {
-    async fn connect(&mut self, endpoint: String) -> Result<(), ConnectionError> {
-        let client = DevDispGrpcClient::connect(endpoint)
-            .await
-            .map_err(ConnectionError::ClientError)?;
-        self.backend_api = Some(client);
+impl<T> BackendState<T>
+where
+    T: ApiFactory,
+{
+    pub async fn connect(
+        &mut self,
+        endpoint: T::ConnectParam,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.backend_api.is_some() {
+            log::warn!("Already connected to a backend");
+            return Ok(());
+        }
+
+        let last_instance = self.backend_api.take();
+        let backend = self.factory.create_api(last_instance, endpoint).await?;
+
+        self.backend_api = Some(backend);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> Result<(), DisconnectionError> {
-        if self.backend_api.is_none() {
+        if let Some(mut backend) = self.backend_api.as_mut() {
+            backend
+                .disconnect()
+                .await
+                .map_err(|e| DisconnectionError::ClientError(e))?;
+        } else {
+            log::warn!("Not connected to any backend");
             return Err(DisconnectionError::NotConnected);
         }
 
-        self.backend_api = None;
         Ok(())
     }
 
@@ -162,7 +128,7 @@ impl BackendWorkerState {
             }
         };
 
-        let mut streaming_events = self._streaming_events_tx.clone();
+        let mut streaming_events = self.event_tx.clone();
         let mut device_stream = backend_api.stream_devices();
 
         // TODO: We are cheating! Figure out how execute this properly within the
@@ -234,32 +200,4 @@ impl BackendWorkerState {
                 log::error!("Failed to disconnect device: {}", e);
             })
     }
-}
-
-fn run_backend(recv: Receiver<Command>) -> impl Stream<Item = Event> {
-    let state = BackendWorkerState::new(recv);
-
-    // TODO: An unfolding stream will not let us parallelize tasks easily.
-    // We will need a polled-future-sender approach later on. Probably just
-    // use the `iced::task::Sipper` thing.
-    stream::unfold(state, |mut state| async {
-        let result = futures::select! {
-            command = state.recv.next().fuse() => match command {
-                Some(cmd) => {
-                    Some((state.process_command(cmd).await, state))
-                },
-                // If None, we are all finnished
-                None => None,
-            },
-            streaming_event = state.streaming_events.next().fuse() => match streaming_event {
-                Some(event) => {
-                    Some((Some(event), state))
-                },
-                None => None,
-            },
-        };
-
-        result
-    })
-    .filter_map(|event| async move { event })
 }
