@@ -2,10 +2,9 @@ use crate::{
     backend::{ApiFactory, Command, DisconnectableApi, Event},
     util::{UnwrapOrLog, UnwrapOrLogMsg},
 };
-use dev_disp_core::daemon::api::{DevDispApi, DiscoveryId, DisplayHostId};
-use futures::{SinkExt, StreamExt, channel::mpsc::Sender};
+use dev_disp_core::daemon::api::{DevDispApi, DeviceCollectionStatus, DiscoveryId, DisplayHostId};
+use futures::{SinkExt, Stream, StreamExt, channel::mpsc::Sender};
 
-/// TODO: Refactor to allow a different backend client to be easily swapped!
 #[derive(Debug)]
 pub struct BackendState<T>
 where
@@ -14,26 +13,43 @@ where
     want_connected: bool,
     factory: T,
     backend_api: Option<T::Api>,
-    event_tx: Sender<Event>,
 }
 
 impl<T> BackendState<T>
 where
     T: ApiFactory,
 {
-    pub fn new(factory: T, event_tx: Sender<Event>) -> Self {
+    pub fn new(factory: T) -> Self {
         Self {
             want_connected: false,
             factory,
             backend_api: None::<T::Api>,
-            event_tx,
         }
     }
 
-    pub async fn send_event(&mut self, event: Event) {
-        if let Err(e) = self.event_tx.send(event).await {
-            log::error!("Failed to send event to frontend: {}", e);
+    pub fn listen_backend_disconnect(&mut self) -> impl Future<Output = ()> + Send + 'static {
+        let disconnect_fut = self.backend_api.as_mut().map(|api| api.on_disconnect());
+
+        async move {
+            if let Some(disconnect_fut) = disconnect_fut {
+                match disconnect_fut.await {
+                    Ok(_) => {
+                        log::info!("Backend disconnect detected");
+                    }
+                    Err(e) => {
+                        log::error!("Backend disconnect detected: {}", e);
+                    }
+                }
+            } else {
+                log::warn!("listen_backend_disconnect called but no backend API is connected");
+            }
         }
+    }
+
+    pub async fn on_disconnect(&mut self) -> Event {
+        log::info!("Handling backend disconnect");
+        self.backend_api = None;
+        Event::Disconnected
     }
 
     pub async fn process_command(&mut self, command: Command) -> Option<Event> {
@@ -51,7 +67,7 @@ where
                     .unwrap_or_log_msg("Failed to start device streaming");
                 None
             }
-            Command::ConnectDevice(dev_id, discovery_id) => {
+            Command::InitializeDevice(dev_id, discovery_id) => {
                 self.connect_device(dev_id, discovery_id)
                     .await
                     .unwrap_or_log_msg("Failed to connect to device");
@@ -105,7 +121,7 @@ where
     }
 
     async fn disconnect(&mut self) -> Result<(), DisconnectionError> {
-        if let Some(mut backend) = self.backend_api.as_mut() {
+        if let Some(backend) = self.backend_api.as_mut() {
             backend
                 .disconnect()
                 .await
@@ -118,35 +134,18 @@ where
         Ok(())
     }
 
-    async fn stream_devices(&mut self) -> Result<(), ()> {
+    async fn stream_devices(&mut self) -> Result<impl Stream<Item = DeviceCollectionStatus>, ()> {
         log::info!("Starting device status streaming from backend");
         let backend_api = match &self.backend_api {
-            Some(api) => api.clone(),
+            Some(api) => api,
             None => {
                 log::error!("Attempted to stream devices without a connected backend");
                 return Err(());
             }
         };
 
-        let mut streaming_events = self.event_tx.clone();
-        let mut device_stream = backend_api.stream_devices();
-
-        // TODO: We are cheating! Figure out how execute this properly within the
-        // confines of the iced task system.
-        tokio::spawn(async move {
-            while let Some(status) = device_stream.next().await {
-                log::debug!("Received device status update: {:?}", status);
-                if let Err(e) = streaming_events
-                    .send(Event::DeviceListUpdated(status))
-                    .await
-                {
-                    log::error!("Failed to send device status update: {}", e);
-                    break;
-                }
-            }
-        });
-
-        Ok(())
+        let device_stream = backend_api.stream_devices();
+        Ok(device_stream)
     }
 
     async fn connect_device(
@@ -160,7 +159,7 @@ where
             discovery_id
         );
         let backend_api = match &self.backend_api {
-            Some(api) => api.clone(),
+            Some(api) => api,
             None => {
                 log::error!("Attempted to connect to device without a connected backend");
                 return Err(());
@@ -186,7 +185,7 @@ where
             discovery_id
         );
         let backend_api = match &self.backend_api {
-            Some(api) => api.clone(),
+            Some(api) => api,
             None => {
                 log::error!("Attempted to disconnect from device without a connected backend");
                 return Err(());

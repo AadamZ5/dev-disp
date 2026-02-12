@@ -41,7 +41,18 @@ impl DevDispGrpcClient {
         })
     }
 
-    pub fn get_error_notification_receiver(&self) -> PinnedStream<'static, ()> {
+    /// This returns a special broadcast recevier that we use to communicate with
+    /// any listener that this client has encountered an error during transport.
+    ///
+    /// This is not a super elegant solution, but the gRPC tonic library has no
+    /// exposed way to know when a client is disconnected or non functioning. So
+    /// we will use a conservative method of assuming that if there is an error
+    /// in any case, we are disconnected or non-functioning correctly.
+    ///
+    /// The purpose of this channel is not to deliver the error object either,
+    /// rather just to have a separate notification channel that we can use to
+    /// trigger disconnects.
+    pub fn _get_error_notification_receiver(&self) -> PinnedStream<'static, ()> {
         self._client_error_rx.clone().boxed()
     }
 }
@@ -92,6 +103,8 @@ impl DevDispApi for DevDispGrpcClient {
                     })
                 }
                 (Err(e), _) | (_, Err(e)) => {
+                    // If either request fails, we consider the client to be in an error
+                    // state. This will likely reset the connection.
                     let _ = error_tx.broadcast_direct(()).await;
                     Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
                 }

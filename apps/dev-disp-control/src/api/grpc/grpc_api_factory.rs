@@ -1,20 +1,20 @@
 use dev_disp_api::grpc::client::DevDispGrpcClient;
-use futures::StreamExt;
+use dev_disp_core::util::PinnedFuture;
+use futures::{FutureExt, StreamExt};
 
-use crate::backend::{ApiFactory, DisconnectableApi};
+use crate::backend::{ApiFactory, DisconnectableApi, callback_api_factory};
 
 impl DisconnectableApi for DevDispGrpcClient {
     type ConnectParam = String;
 
     fn on_disconnect(
         &self,
-    ) -> dev_disp_core::util::PinnedFuture<
-        'static,
-        Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>,
-    > {
+    ) -> PinnedFuture<'static, Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>> {
+        /// This current implementation will just declare a disconnect when there is
+        /// an error on the error notification channel.
         let mut error_rx = self.get_error_notification_receiver();
 
-        Box::pin(async move {
+        async move {
             match error_rx.next().await {
                 Some(_) => Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -22,43 +22,30 @@ impl DisconnectableApi for DevDispGrpcClient {
                 )) as _), // An error occurred
                 None => Ok(()), // Channel closed without errors
             }
-        })
+        }
+        .boxed()
     }
 
     fn disconnect(
         &mut self,
-    ) -> dev_disp_core::util::PinnedFuture<
-        'static,
-        Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>,
-    > {
-        Box::pin(async move {
-            // For gRPC, we can just drop the client to disconnect.
-            Ok(())
-        })
+    ) -> PinnedFuture<'static, Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>> {
+        futures::future::ready(Ok(())).boxed()
     }
 }
 
 pub fn grpc_api_factory() -> impl ApiFactory<Api = DevDispGrpcClient, ConnectParam = String> {
-    struct GrpcApiFactory;
+    callback_api_factory(
+        |last_instance: Option<DevDispGrpcClient>, param: String| async move {
+            // If we have a last instance, we can try to reuse it by disconnecting first.
+            if let Some(mut client) = last_instance {
+                log::info!("Reusing existing gRPC client instance");
+                if let Err(e) = client.disconnect().await {
+                    log::warn!("Failed to disconnect existing gRPC client instance: {}", e);
+                }
+            }
 
-    impl ApiFactory for GrpcApiFactory {
-        type Api = DevDispGrpcClient;
-        type ConnectParam = String;
-
-        fn create_api(
-            &self,
-            _last_instance: Option<Self::Api>,
-            param: Self::ConnectParam,
-        ) -> dev_disp_core::util::PinnedFuture<
-            'static,
-            Result<Self::Api, Box<dyn std::error::Error + Send + Sync>>,
-        > {
-            Box::pin(async move {
-                let client = DevDispGrpcClient::connect(param.clone()).await?;
-                Ok(client)
-            })
-        }
-    }
-
-    GrpcApiFactory
+            log::info!("Creating new gRPC client instance with endpoint: {}", param);
+            DevDispGrpcClient::connect(param).await
+        },
+    )
 }

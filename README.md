@@ -61,14 +61,16 @@ To build and run the project, you will need the following installed:
   - `libswscale`
   - `libavformat`
 - VP9, VP8, HEVC/H.265, or AVC/H.264 decoder support on your web browser
-  - _Note: If you are trying to stream to a different device, browsers like Chrome and Firefox will not allow the use of `VideoDecoders` in insecure contexts (meaning a webpage that is not `https` or `localhost`). You will need to allow specific origins as to be treated as secure ([Chrome](https://stackoverflow.com/a/60983263/7904401), Firefox ???)_
+  - _Note: If you are trying to stream to a different device, browsers like Chrome and Firefox will not allow the use of `VideoDecoders` in insecure contexts (meaning a webpage that is not `https` or `localhost`). You will need to allow specific origins as to be treated as secure ([Chrome](https://stackoverflow.com/a/60983263/7904401), Firefox ???) ([#49](https://github.com/AadamZ5/dev-disp/issues/49))_
 
 After dependencies, you should:
 
 1.  Install JS dependencies with `npm install`
 2.  Serve the angular repo with `npx nx serve web-testpage -- --host 0.0.0.0`
 3.  Run the display server with `npx nx run dev-disp-server`
-4.  Connect to `http://localhost:4200` and wait for the EVDI module to initialize the display
+4.  Run the control application with `npx nx run dev-disp-control` to see available clients
+5.  Connect a web browser to `http://localhost:4200`
+6.  View the control application, and initiate the connection for the newly connected client
 
 # Disclaimer
 

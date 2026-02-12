@@ -9,7 +9,7 @@ pub trait DisconnectableApi {
     /// was expected, then the future should resolve to `Ok(())`.
     fn on_disconnect(
         &self,
-    ) -> PinnedFuture<Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>;
+    ) -> PinnedFuture<'static, Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>;
 
     fn disconnect(
         &mut self,

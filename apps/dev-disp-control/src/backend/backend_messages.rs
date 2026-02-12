@@ -1,9 +1,15 @@
 use dev_disp_core::daemon::api::{DeviceCollectionStatus, DiscoveryId, DisplayHostId};
 
+/// Events that come from the backend task.
 #[derive(Debug, Clone)]
 pub enum Event {
+    /// The backend has connected to the endpoint.
     Connected(String),
+    /// The backend has disconnected from the endpoint.
+    /// This can happen either because the frontend requested
+    /// a disconnect, or because the connection failed somehow.
     Disconnected,
+    /// The device list has been updated with the contained data.
     DeviceListUpdated(DeviceCollectionStatus),
 }
 
@@ -15,8 +21,12 @@ pub enum Event {
 /// a separate channel on the [BackendRef].
 #[derive(Debug, Clone)]
 pub enum Command {
+    /// Ask the backend to disconnect from the current API.
     Disconnect,
+    /// Ask the backend to start streaming device updates.
     StreamDevices,
-    ConnectDevice(DisplayHostId, DiscoveryId),
+    /// Attempt to initialize the specified device.
+    InitializeDevice(DisplayHostId, DiscoveryId),
+    /// Attempt to stop using the specified device.
     DisconnectDevice(DisplayHostId, DiscoveryId),
 }

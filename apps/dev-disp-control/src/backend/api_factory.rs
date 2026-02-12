@@ -1,6 +1,10 @@
 use crate::backend::DisconnectableApi;
 use dev_disp_core::{daemon::api::DevDispApi, util::PinnedFuture};
+use futures::FutureExt;
 
+/// Frontend trait that determines how to create a backend API instance.
+/// This allows for custom setup and instantiation of the backend, allowing for
+/// different backend implementations to be easily swapped in and out.
 pub trait ApiFactory {
     type Api: DevDispApi + DisconnectableApi + 'static;
     type ConnectParam: Clone + std::fmt::Debug + std::fmt::Display + 'static + Send;
@@ -13,15 +17,11 @@ pub trait ApiFactory {
     ) -> PinnedFuture<'static, Result<Self::Api, Box<dyn std::error::Error + Send + Sync>>>;
 }
 
-pub struct CallbackApiFactory<F, A, CP>
+/// A simple `ApiFactory` implementation that takes a callback function to create the API instance.
+pub struct CallbackApiFactory<F, A, CP, Fut>
 where
-    F: Fn(
-            Option<A>,
-            CP,
-        ) -> PinnedFuture<'static, Result<A, Box<dyn std::error::Error + Send + Sync>>>
-        + Send
-        + Sync
-        + 'static,
+    F: Fn(Option<A>, CP) -> Fut,
+    Fut: Future<Output = Result<A, Box<dyn std::error::Error + Send + Sync>>> + Send + 'static,
     A: DevDispApi + DisconnectableApi + 'static,
     CP: Clone + std::fmt::Debug + std::fmt::Display + 'static + Send,
 {
@@ -30,15 +30,10 @@ where
     _marker_param: std::marker::PhantomData<CP>,
 }
 
-impl<F, A, CP> CallbackApiFactory<F, A, CP>
+impl<F, A, CP, Fut> CallbackApiFactory<F, A, CP, Fut>
 where
-    F: Fn(
-            Option<A>,
-            CP,
-        ) -> PinnedFuture<'static, Result<A, Box<dyn std::error::Error + Send + Sync>>>
-        + Send
-        + Sync
-        + 'static,
+    F: Fn(Option<A>, CP) -> Fut,
+    Fut: Future<Output = Result<A, Box<dyn std::error::Error + Send + Sync>>> + Send + 'static,
     A: DevDispApi + DisconnectableApi + 'static,
     CP: Clone + std::fmt::Debug + std::fmt::Display + 'static + Send,
 {
@@ -51,15 +46,10 @@ where
     }
 }
 
-impl<F, A, CP> ApiFactory for CallbackApiFactory<F, A, CP>
+impl<F, A, CP, Fut> ApiFactory for CallbackApiFactory<F, A, CP, Fut>
 where
-    F: Fn(
-            Option<A>,
-            CP,
-        ) -> PinnedFuture<'static, Result<A, Box<dyn std::error::Error + Send + Sync>>>
-        + Send
-        + Sync
-        + 'static,
+    F: Fn(Option<A>, CP) -> Fut,
+    Fut: Future<Output = Result<A, Box<dyn std::error::Error + Send + Sync>>> + Send + 'static,
     A: DevDispApi + DisconnectableApi + 'static,
     CP: Clone + std::fmt::Debug + std::fmt::Display + 'static + Send,
 {
@@ -71,6 +61,19 @@ where
         last_instance: Option<Self::Api>,
         param: Self::ConnectParam,
     ) -> PinnedFuture<'static, Result<Self::Api, Box<dyn std::error::Error + Send + Sync>>> {
-        (self.factory_fn)(last_instance, param)
+        (self.factory_fn)(last_instance, param).boxed()
     }
+}
+
+/// Helper function to create a callback factory from a future factory.
+pub fn callback_api_factory<F, A, CP, Fut>(
+    factory_fn: F,
+) -> impl ApiFactory<Api = A, ConnectParam = CP>
+where
+    F: Fn(Option<A>, CP) -> Fut,
+    Fut: Future<Output = Result<A, Box<dyn std::error::Error + Send + Sync>>> + Send + 'static,
+    A: DevDispApi + DisconnectableApi + 'static,
+    CP: Clone + std::fmt::Debug + std::fmt::Display + 'static + Send,
+{
+    CallbackApiFactory::new(factory_fn)
 }

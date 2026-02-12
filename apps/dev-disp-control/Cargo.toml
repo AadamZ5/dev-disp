@@ -18,6 +18,7 @@ iced = { version = "0.14.0", features = [
   "web-colors",
   "wgpu",
   "x11",
+  "advanced",
 ], default-features = false }
 thiserror = "2.0.18"
 env_logger = "0.11.8"
@@ -27,6 +28,7 @@ tokio-stream = { version = "0.1.18", features = ["sync"], optional = true }
 dev-disp-provider-evdi = { path = "../../libs/dev-disp-provider-evdi", optional = true }
 dev-disp-encoders = { path = "../../libs/dev-disp-encoders", optional = true }
 dev-disp-transports = { path = "../../libs/dev-disp-transports", optional = true }
+async-stream = "0.3.6"
 
 [features]
 default = ["api-grpc"]
