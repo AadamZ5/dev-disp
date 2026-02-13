@@ -9,6 +9,7 @@ futures-core = "0.3.31"
 futures = "0.3.31"
 futures-locks = { version = "0.7.1", default-features = false }
 shared_stream = "0.2.1"
+pin-project = "1.1.10"
 
 [dev-dependencies]
 tokio = { version = "1.36.0", features = ["full"] }

@@ -1133,6 +1133,7 @@ dependencies = [
  "futures-timer",
  "futures-util",
  "log",
+ "rust-util",
  "thiserror 2.0.18",
 ]
 
@@ -1396,8 +1397,7 @@ dependencies = [
 [[package]]
 name = "evdi"
 version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a606ba906f939b057eb8833bf05d880168e23f44e0db959e743b98c0c7c5b964"
+source = "git+https://github.com/AadamZ5/evdi-rs?rev=e1313e0#e1313e08145d394076d9117a0ad800837e131b81"
 dependencies = [
  "crossbeam-channel",
  "derivative",
@@ -3676,6 +3676,7 @@ dependencies = [
  "futures-core",
  "futures-locks",
  "futures-util",
+ "pin-project",
  "shared_stream",
  "tokio",
 ]

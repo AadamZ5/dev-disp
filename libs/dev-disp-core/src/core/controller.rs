@@ -65,14 +65,6 @@ where
     let display_host_background_task = display_host
         .get_background_task()
         .map(|r| r.map_err(|e| e.to_string()))
-        .then(move |r| {
-            debug!(
-                "Background task for {host_name} finished with result: {:?}",
-                r
-            );
-            //background_stopped.store(true, std::sync::atomic::Ordering::SeqCst);
-            futures::future::ready(r)
-        })
         .boxed_local();
 
     let screen_task = async move {
@@ -96,12 +88,35 @@ where
                 Err(e)
             }
         }
+    }
+    .boxed_local();
+
+    let composition_task = async move {
+        let mut screen_task = screen_task.fuse();
+        let mut background_task = display_host_background_task.fuse();
+
+        // Compose the tasks in such a way that if the background task finishes, we
+        // still continue to poll the screen task. But... if the screen task finishes,
+        // we do *not* continue polling the background task.
+        loop {
+            futures::select! {
+                background_result = background_task => {
+                    debug!(
+                        "Background task for {host_name} finished with result: {:?}",
+                        background_result
+                    );
+                    // And no-op, `.fuse()` will keep that future pending forever after
+                    // it completes.
+                },
+                screen_result = screen_task => {
+                    return screen_result;
+                }
+            }
+        }
     };
 
-    let composition_task = async move { futures::join!(display_host_background_task, screen_task) };
-
     futures::select! {
-        (_,screen_result) = composition_task.fuse() => screen_result,
+        screen_result = composition_task.fuse() => screen_result,
         _ = cancel_notification.into_future().fuse() => {
             Err(format!("Display host handling for {} was cancelled", host_name_1))
         }
