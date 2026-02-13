@@ -1,5 +1,3 @@
-use std::boxed;
-
 use dev_disp_core::util::PinnedFuture;
 use futures::{FutureExt, SinkExt, channel::mpsc::Sender};
 

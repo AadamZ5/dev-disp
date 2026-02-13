@@ -41,7 +41,7 @@ impl DevDispGrpcClient {
         })
     }
 
-    /// This returns a special broadcast recevier that we use to communicate with
+    /// This returns a special broadcast receiver that we use to communicate with
     /// any listener that this client has encountered an error during transport.
     ///
     /// This is not a super elegant solution, but the gRPC tonic library has no

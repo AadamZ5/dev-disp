@@ -352,12 +352,17 @@ where
                         // Fork off screen handling on a new thread with its own runtime.
                         // This is done because some transport or screen implementations
                         // may behave badly if run on the same runtime as the main server.
-                        // In other words, do not let screen-handling code get interefered
+                        // In other words, do not let screen-handling code get interfered
                         // by other async tasks in the main server runtime.
                         std::thread::spawn(move || {
                             let local_set = tokio::task::LocalSet::new();
-                            let rt = tokio::runtime::Runtime::new()
-                                .expect("Failed to create Tokio runtime");
+
+                            // TODO: Better recover from this error and others below, such
+                            // as returning the device back to the "available" device pool,
+                            // and somehow notifying any clients of the failure.
+                            let rt = tokio::runtime::Runtime::new().expect(
+                                "Failed to create async runtime in display-handling thread",
+                            );
                             local_set.block_on(&rt, async move {
                                 let device_status_tx = device_status_tx_clone;
                                 let device_name = device_name_clone;
