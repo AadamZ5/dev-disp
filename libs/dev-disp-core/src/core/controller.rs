@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::{Stream, future, join};
+use futures::{Sink, SinkExt, Stream, StreamExt};
 use futures_util::FutureExt;
 use log::{debug, error, info, trace, warn};
 
@@ -17,24 +17,52 @@ use crate::{
 
 const NOT_READY_DELAY: Duration = Duration::from_millis(100);
 
-pub async fn handle_display_host<T, P, E, C>(
+#[derive(Debug)]
+struct InitializedSystem<T, S, E, St> {
+    screen: S,
+    encoder: E,
+    display_host: DisplayHost<T>,
+    status_sink: St,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SystemState {
+    #[default]
+    Unknown,
+    Initializing,
+    InitializingTransport,
+    GettingDisplayParameters,
+    NotifyClientLoading,
+    GettingScreen,
+    GettingEncoder,
+    NegotiatingCodecs,
+    InitializingEncoder,
+    SettingClientCodec,
+    Running,
+    Stopped,
+}
+
+/// Given all the ingredients to screen cast, handle a display host connection.
+pub async fn handle_display_host<T, P, E, C, St>(
     screen_provider: P,
     encoder_provider: E,
-    mut host: DisplayHost<T>,
-    _cancel_notification: C, // TODO: Use the cancel notification stream
+    mut display_host: DisplayHost<T>,
+    cancel_notification: C,
+    status_sink: St,
 ) -> DisplayHostResult<T>
 where
     T: ScreenTransport + 'static,
     E: EncoderProvider + 'static,
     P: ScreenProvider + 'static,
     C: Stream<Item = ()> + Unpin + 'static,
+    St: Sink<SystemState> + Unpin + 'static,
 {
     let stopped = Arc::new(AtomicBool::new(false));
-
-    debug!("Getting background task for {host}...");
+    debug!("Getting background task for {display_host}...");
     let _background_stopped = stopped.clone();
-    let host_name = host.to_string();
-    let host_background_task = host
+    let host_name = display_host.to_string();
+    let host_name_1 = host_name.clone();
+    let display_host_background_task = display_host
         .get_background_task()
         .map(|r| r.map_err(|e| e.to_string()))
         .then(move |r| {
@@ -47,38 +75,53 @@ where
         })
         .boxed_local();
 
-    let screen_task_stopped = stopped.clone();
-    let screen_task = screen_init(
-        screen_provider,
-        encoder_provider,
-        host,
-        screen_task_stopped.clone(),
-    )
-    .then(move |r| {
-        debug!("Screen task finished with is_error: {}", r.is_err());
-        screen_task_stopped.store(true, std::sync::atomic::Ordering::SeqCst);
-        futures::future::ready(r)
-    })
-    .boxed_local();
+    let screen_task = async move {
+        let initialized_system =
+            match screen_init(screen_provider, encoder_provider, display_host, status_sink).await {
+                Ok(system) => system,
+                Err(e) => {
+                    error!("Failed to initialize screen system: {}", e);
+                    return Err(e);
+                }
+            };
 
-    let (_, screen_result) = join!(host_background_task, screen_task);
+        match screen_loop(initialized_system).await {
+            Ok(host) => {
+                debug!("Screen loop completed successfully.");
+                display_host = host;
+                Ok(display_host)
+            }
+            Err(e) => {
+                error!("Screen loop ended with error: {}", e);
+                Err(e)
+            }
+        }
+    };
 
-    screen_result
+    let composition_task = async move { futures::join!(display_host_background_task, screen_task) };
+
+    futures::select! {
+        (_,screen_result) = composition_task.fuse() => screen_result,
+        _ = cancel_notification.into_future().fuse() => {
+            Err(format!("Display host handling for {} was cancelled", host_name_1))
+        }
+    }
 }
 
-async fn screen_init<T, P, E>(
+async fn screen_init<T, P, E, St>(
     screen_provider: P,
     encoder_provider: E,
-    mut host: DisplayHost<T>,
-    stop_flag: Arc<AtomicBool>,
-) -> DisplayHostResult<T>
+    mut display_host: DisplayHost<T>,
+    mut status_sink: St,
+) -> Result<InitializedSystem<T, P::ScreenType, E::EncoderType, St>, String>
 where
     T: ScreenTransport,
     E: EncoderProvider,
     P: ScreenProvider,
+    St: Sink<SystemState> + Unpin + 'static,
 {
     // Handle the display-host connection here
-    info!("Handling display-host: {host}");
+    info!("Handling display-host: {display_host}");
 
     async fn close_dev(host: &mut DisplayHost<impl ScreenTransport>) {
         if let Err(_) = host.close().await {
@@ -87,50 +130,77 @@ where
     }
 
     debug!("Initializing with transport...");
+    match status_sink.send(SystemState::InitializingTransport).await {
+        Err(_) => warn!("Failed to send initializing status"),
+        _ => {}
+    };
     // Initialize the transport
-    if let Err(e) = host.initialize().await {
+    if let Err(e) = display_host.initialize().await {
         error!("Failed to initialize transport: {}", e);
-        close_dev(&mut host).await;
-        return Err((host, "Failed to initialize transport".to_string()));
+        close_dev(&mut display_host).await;
+        return Err("Failed to initialize transport".to_string());
     }
     debug!("Initialized transport");
 
     debug!("Getting display parameters...");
-    let display_params = match host.get_display_config().await {
+    match status_sink
+        .send(SystemState::GettingDisplayParameters)
+        .await
+    {
+        Err(_) => warn!("Failed to send getting display parameters status"),
+        _ => {}
+    };
+    // Get display params
+    let display_params = match display_host.get_display_config().await {
         Err(e) => {
             error!("Failed to get display parameters: {}", e);
-            close_dev(&mut host).await;
-            return Err((host, "Failed to get display parameters".to_string()));
+            close_dev(&mut display_host).await;
+            return Err("Failed to get display parameters".to_string());
         }
         Ok(display_params) => display_params,
     };
     debug!("Got display parameters: {:?}", display_params);
 
-    match host.notify_loading_screen().await {
+    match status_sink.send(SystemState::NotifyClientLoading).await {
+        Err(_) => warn!("Failed to send notify client loading status"),
+        _ => {}
+    };
+
+    match display_host.notify_loading_screen().await {
         Err(e) => warn!(
-            "Couldn't notify {host} of loading screen provider, will continue anyways: {}",
+            "Couldn't notify {display_host} of loading screen provider, will continue anyways: {}",
             e
         ),
-        Ok(_) => debug!("Notified {host} of loading screen..."),
+        Ok(_) => debug!("Notified {display_host} of loading screen..."),
     }
 
     debug!("Creating virtual screen...");
+    match status_sink.send(SystemState::GettingScreen).await {
+        Err(_) => warn!("Failed to send getting screen status"),
+        _ => {}
+    };
+    // Get the virtual screen
     let screen = match screen_provider.get_screen(display_params).await {
         Err(e) => {
             error!("Failed to create virtual screen: {}", e);
-            close_dev(&mut host).await;
-            return Err((host, "Failed to create virtual screen".to_string()));
+            close_dev(&mut display_host).await;
+            return Err("Failed to create virtual screen".to_string());
         }
         Ok(screen) => screen,
     };
     debug!("Created virtual screen.");
 
     debug!("Creating encoder...");
+    match status_sink.send(SystemState::GettingEncoder).await {
+        Err(_) => warn!("Failed to send getting encoder status"),
+        _ => {}
+    };
+    // Create an encoder
     let mut encoder = match encoder_provider.create_encoder().await {
         Err(e) => {
             error!("Failed to create encoder: {}", e);
-            close_dev(&mut host).await;
-            return Err((host, "Failed to create encoder".to_string()));
+            close_dev(&mut display_host).await;
+            return Err("Failed to create encoder".to_string());
         }
         Ok(encoder) => encoder,
     };
@@ -150,42 +220,40 @@ where
         encoder_input_parameters: format_params,
     };
 
+    match status_sink.send(SystemState::NegotiatingCodecs).await {
+        Err(_) => warn!("Failed to send negotiating codecs status"),
+        _ => {}
+    };
+
     let supported_configurations = match encoder.get_supported_configurations(&encoder_parameters) {
         Err(e) => {
             error!("Failed to get supported encoder configurations: {}", e);
-            close_dev(&mut host).await;
-            return Err((
-                host,
-                "Failed to get supported encoder configurations".to_string(),
-            ));
+            close_dev(&mut display_host).await;
+            return Err("Failed to get supported encoder configurations".to_string());
         }
         Ok(configs) => configs,
     };
 
     if supported_configurations.is_empty() {
         error!("No supported encoder configurations available");
-        close_dev(&mut host).await;
-        return Err((
-            host,
-            "No supported encoder configurations available".to_string(),
-        ));
+        close_dev(&mut display_host).await;
+        return Err("No supported encoder configurations available".to_string());
     }
 
-    let preferred_configurations =
-        match host.get_preferred_encodings(supported_configurations).await {
-            Err(e) => {
-                error!(
-                    "Failed to get preferred encoder configurations from host: {}",
-                    e
-                );
-                close_dev(&mut host).await;
-                return Err((
-                    host,
-                    "Failed to get preferred encoder configurations".to_string(),
-                ));
-            }
-            Ok(configs) => configs,
-        };
+    let preferred_configurations = match display_host
+        .get_preferred_encodings(supported_configurations)
+        .await
+    {
+        Err(e) => {
+            error!(
+                "Failed to get preferred encoder configurations from host: {}",
+                e
+            );
+            close_dev(&mut display_host).await;
+            return Err("Failed to get preferred encoder configurations".to_string());
+        }
+        Ok(configs) => configs,
+    };
 
     debug!(
         "Got supported {} encoder configurations: {:#?}",
@@ -194,14 +262,18 @@ where
     );
 
     debug!("Initializing encoder...");
+    match status_sink.send(SystemState::InitializingEncoder).await {
+        Err(_) => warn!("Failed to send initializing encoder status"),
+        _ => {}
+    };
     let encoder_init_result = encoder
         .init(encoder_parameters, Some(preferred_configurations))
         .await;
     let initialized_codec = match encoder_init_result {
         Err(e) => {
             error!("Failed to initialize encoder: {}", e);
-            close_dev(&mut host).await;
-            return Err((host, "Failed to initialize encoder".to_string()));
+            close_dev(&mut display_host).await;
+            return Err("Failed to initialize encoder".to_string());
         }
         Ok(config) => config,
     };
@@ -211,59 +283,61 @@ where
     );
 
     debug!("Setting encoding on host...");
-    if let Err(e) = host.set_encoding(initialized_codec).await {
+
+    match status_sink.send(SystemState::SettingClientCodec).await {
+        Err(_) => warn!("Failed to send setting client codec status"),
+        _ => {}
+    };
+
+    if let Err(e) = display_host.set_encoding(initialized_codec).await {
         error!("Failed to set encoding on host: {}", e);
-        close_dev(&mut host).await;
-        return Err((host, "Failed to set encoding on host".to_string()));
+        close_dev(&mut display_host).await;
+        return Err("Failed to set encoding on host".to_string());
     }
     debug!("Set encoding on host.");
 
-    debug!("Starting screen tasks...");
-    let screen_background_task = future::lazy(|_| {
-        warn!("Screen background tasks are not implemented!");
-        future::ready(Ok::<(), String>(()))
+    Ok(InitializedSystem {
+        screen,
+        encoder,
+        display_host,
+        status_sink,
     })
-    .boxed_local();
-
-    let (loop_result, _) = join!(
-        screen_loop(screen, host, encoder, stop_flag.clone()),
-        screen_background_task
-    );
-
-    debug!("Screen tasks finished.");
-    loop_result
 }
 
-async fn screen_loop<S, T, E>(
-    mut screen: S,
-    mut host: DisplayHost<T>,
-    mut encoder: E,
-    stop_flag: Arc<AtomicBool>,
-) -> Result<DisplayHost<T>, (DisplayHost<T>, String)>
+async fn screen_loop<S, T, E, St>(
+    initialized_system: InitializedSystem<T, S, E, St>,
+) -> DisplayHostResult<T>
 where
     S: Screen,
     T: ScreenTransport,
     E: Encoder,
+    St: Sink<SystemState> + Unpin + 'static,
 {
     let mut bad_transmission_start: Option<Instant> = None;
     let mut bad_transmission_count = 0u32;
 
     let mut err: Option<String> = None;
+    let InitializedSystem {
+        mut screen,
+        display_host: mut host,
+        mut encoder,
+        mut status_sink,
+    } = initialized_system;
+
+    match status_sink.send(SystemState::Running).await {
+        Err(_) => warn!("Failed to send running status"),
+        _ => {}
+    };
 
     loop {
         match screen.get_ready().await {
             Ok(status) => match status {
                 ScreenReadyStatus::Finished => {
                     info!("Virtual screen has finished");
-                    stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
                     break;
                 }
                 ScreenReadyStatus::NotReady => {
                     futures_timer::Delay::new(NOT_READY_DELAY).await;
-                    if stop_flag.load(std::sync::atomic::Ordering::SeqCst) {
-                        info!("Screen task stop flag set, exiting not-ready wait loop");
-                        break;
-                    }
                 }
                 ScreenReadyStatus::Ready => {
                     if let Some(data) = screen.get_bytes() {
@@ -298,7 +372,6 @@ where
                                     bad_transmission_count,
                                     bad_transmission_elapsed.as_millis()
                                 );
-                                stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
                                 err =
                                     Some("Too many bad transmissions to display host".to_string());
                                 break;
@@ -337,9 +410,5 @@ where
         error!("Error closing virtual screen: {}", e);
     }
 
-    if let Some(e) = err {
-        Err((host, e))
-    } else {
-        Ok(host)
-    }
+    if let Some(e) = err { Err(e) } else { Ok(host) }
 }

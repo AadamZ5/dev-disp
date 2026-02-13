@@ -15,9 +15,10 @@ use crate::{app::App, config::default_path_read_or_write_default_config_for};
 
 mod app;
 mod config;
+mod util;
 mod websocket;
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main()]
 async fn main() {
     env_logger::builder()
         .filter_level(LevelFilter::Debug)
@@ -27,6 +28,7 @@ async fn main() {
             "nusb::platform::linux_usbfs::enumeration",
             LevelFilter::Warn,
         )
+        .filter_module("h2::codec", LevelFilter::Warn)
         .init();
 
     let screen_provider = get_screen_provider().await;

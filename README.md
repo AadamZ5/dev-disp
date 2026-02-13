@@ -14,7 +14,7 @@ Some devices support this at a hardware level. Devices like the [Lenovo Tab Extr
 
 The goal of this project is to reduce the friction to get another device to act as a display for your main computer. If we cannot have a plug-and-play solution largely available, we should be able to get to the point of install, click, play. On the main computer, this display should act natively, integrating flawlessly with your OS's desktop layout. In other words, a connected device acting as an extended display should really show up in your display settings on your main computer.
 
-This project is being designed with support for Windows in mind, but is primarily being designed for Linux initially. Also, this project is not aimed at high-performance gaming use, but low latency and visual fideltiy is a priority.
+This project is being designed with support for Windows in mind, but is primarily being designed for Linux initially. Also, this project is not aimed at high-performance gaming use, but low latency and visual fidelity is a priority.
 
 While this aims to perform a large portion of what RDP or VNC programs might do, this project has a few priorities that go beyond what existing solutions might offer. We will prioritize:
 
@@ -61,14 +61,16 @@ To build and run the project, you will need the following installed:
   - `libswscale`
   - `libavformat`
 - VP9, VP8, HEVC/H.265, or AVC/H.264 decoder support on your web browser
-  - _Note: If you are trying to stream to a different device, browsers like Chrome and Firefox will not allow the use of `VideoDecoders` in insecure contexts (meaning a webpage that is not `https` or `localhost`). You will need to allow specific origins as to be treated as secure ([Chrome](https://stackoverflow.com/a/60983263/7904401), Firefox ???)_
+  - _Note: If you are trying to stream to a different device, browsers like Chrome and Firefox will not allow the use of `VideoDecoders` in insecure contexts (meaning a webpage that is not `https` or `localhost`). You will need to allow specific origins as to be treated as secure ([Chrome](https://stackoverflow.com/a/60983263/7904401), Firefox ???) ([#49](https://github.com/AadamZ5/dev-disp/issues/49))_
 
 After dependencies, you should:
 
 1.  Install JS dependencies with `npm install`
 2.  Serve the angular repo with `npx nx serve web-testpage -- --host 0.0.0.0`
 3.  Run the display server with `npx nx run dev-disp-server`
-4.  Connect to `http://localhost:4200` and wait for the EVDI module to initialize the display
+4.  Run the control application with `npx nx run dev-disp-control` to see available clients
+5.  Connect a web browser to `http://localhost:4200`
+6.  View the control application, and initiate the connection for the newly connected client
 
 # Disclaimer
 

@@ -2,6 +2,41 @@ syntax = "proto3";
 
 package dev_disp_service;
 
+enum Status {
+  UNKNOWN = 0;
+  AVAILABLE = 1;
+  INITIALIZING = 2;
+  IN_USE = 3;
+  DISCONNECTING = 4;
+  ERROR = 5;
+}
+
+enum InitializationPhase {
+  INITIALIZATION_UNKNOWN = 0;
+  INITIALIZING_BEGIN = 1;
+  INITIALIZING_TRANSPORT = 2;
+  GETTING_DISPLAY_PARAMS = 3;
+  NOTIFY_CLIENT_LOADING = 4;
+  GETTING_SCREEN = 5;
+  GETTING_ENCODER = 6;
+  NEGOTIATING_CODECS = 7;
+  INITIALIZING_ENCODER = 8;
+  SETTING_CLIENT_CODEC = 9;
+}
+
+message DeviceStatus {
+  // Current status of the device
+  Status          status        = 1;
+
+  // Populated if status is ERROR
+  optional string error_message = 2;
+
+  // Populated if status is INITIALIZING. Gives extra detail 
+  // about which phase of initialization is ongoing.
+  optional InitializationPhase initialization_phase = 3;
+}
+
+
 message Device {
   /// Unique identifier for the device
   string id = 1;
@@ -9,8 +44,17 @@ message Device {
   string name = 2;
   /// The discovery method ID that found this device
   string discovery_id = 3;
-  /// A display name for the discovery method (e.g., "USB", "WebSocket")
-  string discovery_display = 4;
+  /// Current status of the device
+  DeviceStatus status = 4;
+}
+
+message DiscoveryMethod {
+  /// Unique identifier for the discovery method
+  string id = 1;
+  /// A display name for the discovery method
+  string name = 2;
+  /// An optional description for the discovery method
+  optional string description = 3;
 }
 
 message ListAvailableDevicesRequest {
@@ -29,6 +73,17 @@ message ListConnectedDevicesRequest {
 // Connected devices are those who are currently in-use
 message ConnectedDevicesResponse {
   repeated Device devices = 1;
+}
+
+message StreamDevicesRequest {
+  // Empty for now
+}
+
+message StreamDevicesResponse {
+  // Devices that are available for connection
+  repeated Device availableDevices = 1;
+  // Devices that are currently connected/in-use
+  repeated Device connectedDevices = 2;
 }
 
 message ConnectDeviceRequest {
@@ -51,6 +106,14 @@ message DisconnectDeviceResponse {
   string message = 2;
 }
 
+message ListDiscoveryMethodsRequest {
+  // Empty for now
+}
+
+message ListDiscoveryMethodsResponse {
+  repeated DiscoveryMethod discovery_methods = 1;
+}
+
 // DevDispService defines the RPC service for the Dev Disp Server.
 service DevDispService {
   // List the available devices for connection
@@ -59,13 +122,15 @@ service DevDispService {
   // List the currently connected in-use devices
   rpc ListConnectedDevices (ListConnectedDevicesRequest) returns (ConnectedDevicesResponse);
 
-  rpc ListenAvailableDevices (ListAvailableDevicesRequest) returns (stream AvailableDevicesResponse);
-
-  rpc ListenConnectedDevices (ListConnectedDevicesRequest) returns (stream ConnectedDevicesResponse);
+  // Stream updates about available and connected devices
+  rpc StreamDevices (StreamDevicesRequest) returns (stream StreamDevicesResponse);
 
   // Attempt to initialize a device and begin using it
   rpc ConnectDevice(ConnectDeviceRequest) returns (ConnectDeviceResponse);
 
   // Disconnect a currently connected device
   rpc DisconnectDevice(DisconnectDeviceRequest) returns (DisconnectDeviceResponse);
+
+  // List the available discovery methods
+  rpc ListDiscoveryMethods (ListDiscoveryMethodsRequest) returns (ListDiscoveryMethodsResponse);
 }

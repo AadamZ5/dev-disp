@@ -6,12 +6,12 @@ use dev_disp_core::{
     host::{ConnectableDevice, DeviceDiscovery, ScreenProvider},
 };
 use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
-use futures_util::stream::empty;
+use futures_util::{sink, stream::empty};
 use log::{error, info, trace};
 
 use crate::config;
 
-const SAMSUNG_SERIAL: &str = "RFCT71HTZNL";
+const SAMSUNG_SERIAL: &str = "0000000000";
 
 pub async fn sammy_implementation<P, D, C, T>(provider: P, discovery: D)
 where
@@ -85,10 +85,11 @@ where
                 FfmpegEncoderProvider::new(ffmpeg_config),
                 display,
                 empty(),
+                sink::drain(),
             )
             .await;
 
-            if let Err((_, e)) = handle_result {
+            if let Err(e) = handle_result {
                 error!("Error handling display host: {}", e);
             } else {
                 info!("Display host handling completed successfully");

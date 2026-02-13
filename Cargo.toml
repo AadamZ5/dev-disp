@@ -9,6 +9,8 @@ members = [
 	'libs/dev-disp-ws-js',
 	'libs/dev-disp-encoders',
 	'libs/edid',
-	'libs/rust-util', "libs/dev-disp-api",
+	'libs/rust-util',
+	"libs/dev-disp-api",
+	"apps/dev-disp-control",
 ]
 resolver = '3'

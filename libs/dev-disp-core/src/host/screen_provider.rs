@@ -14,7 +14,7 @@ use crate::{
     util::{PinnedFuture, PinnedLocalFuture},
 };
 
-pub type DisplayHostResult<T> = Result<DisplayHost<T>, (DisplayHost<T>, String)>;
+pub type DisplayHostResult<T> = Result<DisplayHost<T>, String>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DisplayParameters {

@@ -1,0 +1,27 @@
+{
+  "name": "dev-disp-control",
+  "root": "apps/dev-disp-control",
+  "sourceRoot": "apps/dev-disp-control/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "@monodon/rust:build",
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "run": {
+      "executor": "@monodon/rust:run",
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "lint": {
+      "executor": "@monodon/rust:clippy"
+    }
+  }
+}
