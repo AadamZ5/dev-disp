@@ -1,4 +1,4 @@
-use pin_project::{pin_project, pinned_drop};
+use pin_project::pin_project;
 use std::{
     any::Any,
     pin::Pin,
@@ -102,7 +102,10 @@ where
             }
             // If we get polled after we completed, we will forever be
             // pending.
-            ThreadFutureState::Completed => Poll::Pending,
+            ThreadFutureState::Completed => {
+                *this.state = ThreadFutureState::Completed;
+                Poll::Pending
+            }
             ThreadFutureState::Polling => {
                 unreachable!(
                     "Intermediate polling state reached, this should not be possible unless the poll function was interrupted"
