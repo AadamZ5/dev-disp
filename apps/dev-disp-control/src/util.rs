@@ -1,23 +1,23 @@
 use dev_disp_core::daemon::api::{DisplayHostStatus, InitializationState};
 use futures::{FutureExt, Stream, StreamExt};
 
-pub trait UnwrapOrLogMsg<T> {
-    fn unwrap_or_log_msg(self, msg: &str) -> Option<T>;
+pub trait OkOrLogMsg<T> {
+    fn ok_or_log_msg(self, msg: &str) -> Option<T>;
 }
 
-pub trait UnwrapOrLogError<T> {
-    fn unwrap_or_log_error(self) -> Option<T>;
+pub trait OkOrLogError<T> {
+    fn ok_or_log_error(self) -> Option<T>;
 }
 
-pub trait UnwrapOrLog<T> {
-    fn unwrap_or_log(self, msg: &str) -> Option<T>;
+pub trait OkOrLog<T> {
+    fn ok_or_log(self, msg: &str) -> Option<T>;
 }
 
-impl<T, E> UnwrapOrLog<T> for Result<T, E>
+impl<T, E> OkOrLog<T> for Result<T, E>
 where
     E: std::fmt::Display,
 {
-    fn unwrap_or_log(self, msg: &str) -> Option<T> {
+    fn ok_or_log(self, msg: &str) -> Option<T> {
         match self {
             Ok(value) => Some(value),
             Err(e) => {
@@ -28,8 +28,8 @@ where
     }
 }
 
-impl<T, E> UnwrapOrLogMsg<T> for Result<T, E> {
-    fn unwrap_or_log_msg(self, msg: &str) -> Option<T> {
+impl<T, E> OkOrLogMsg<T> for Result<T, E> {
+    fn ok_or_log_msg(self, msg: &str) -> Option<T> {
         match self {
             Ok(value) => Some(value),
             Err(_) => {
@@ -40,11 +40,11 @@ impl<T, E> UnwrapOrLogMsg<T> for Result<T, E> {
     }
 }
 
-impl<T, E> UnwrapOrLogError<T> for Result<T, E>
+impl<T, E> OkOrLogError<T> for Result<T, E>
 where
     E: std::fmt::Display,
 {
-    fn unwrap_or_log_error(self) -> Option<T> {
+    fn ok_or_log_error(self) -> Option<T> {
         match self {
             Ok(value) => Some(value),
             Err(e) => {

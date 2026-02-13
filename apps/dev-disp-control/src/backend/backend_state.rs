@@ -1,6 +1,6 @@
 use crate::{
     backend::{ApiFactory, BackendEvent, DisconnectableApi},
-    util::{MyStreamExt, UnwrapOrLog},
+    util::{MyStreamExt, OkOrLog},
 };
 use dev_disp_core::{
     daemon::api::{DevDispApi, DeviceCollectionStatus, DiscoveryId, DisplayHostId},
@@ -118,7 +118,7 @@ where
             BackendAction::Disconnect => self
                 .disconnect()
                 .map(|res| {
-                    res.unwrap_or_log("Failed to disconnect from backend");
+                    res.ok_or_log("Failed to disconnect from backend");
                     BackendAction::Disconnected.into()
                 })
                 .into_stream()
@@ -287,7 +287,7 @@ where
         backend_api
             .initialize_device(discovery_id, dev_id)
             .map(|res| {
-                res.unwrap_or_log("Failed to initialize device");
+                res.ok_or_log("Failed to initialize device");
                 Ok(())
             })
             .boxed()
@@ -314,7 +314,7 @@ where
         backend_api
             .disconnect_device(discovery_id, dev_id)
             .map(|res| {
-                res.unwrap_or_log("Failed to disconnect device");
+                res.ok_or_log("Failed to disconnect device");
                 Ok(())
             })
             .boxed()
