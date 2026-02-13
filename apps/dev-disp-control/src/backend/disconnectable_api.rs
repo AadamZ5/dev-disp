@@ -13,5 +13,5 @@ pub trait DisconnectableApi {
 
     fn disconnect(
         &mut self,
-    ) -> PinnedFuture<Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>;
+    ) -> PinnedFuture<'static, Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>;
 }

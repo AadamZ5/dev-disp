@@ -1,4 +1,5 @@
 use dev_disp_core::daemon::api::{DisplayHostStatus, InitializationState};
+use futures::{FutureExt, Stream, StreamExt};
 
 pub trait UnwrapOrLogMsg<T> {
     fn unwrap_or_log_msg(self, msg: &str) -> Option<T>;
@@ -83,3 +84,26 @@ pub fn status_to_display_string(status: &DisplayHostStatus) -> String {
         DisplayHostStatus::Unknown => "Unknown".to_string(),
     }
 }
+
+pub trait MyStreamExt: Stream {
+    /// Transforms a stream of any type into a stream that discards all items and outputs nothing.
+    /// This can be useful when you want to execute a stream for its side effects but don't care about the output.
+    /// This also erases the type, to allow this stream to be combined with others.
+    fn no_output<T>(self) -> impl Stream<Item = T>
+    where
+        Self: Sized + Unpin,
+    {
+        async move {
+            let mut stream = self;
+            while let Some(_item) = stream.next().await {
+                // Just consume the items and do nothing with them
+            }
+
+            // Return an empty stream of T
+            futures::stream::empty()
+        }
+        .flatten_stream()
+    }
+}
+
+impl<T> MyStreamExt for T where T: Stream {}

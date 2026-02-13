@@ -10,9 +10,9 @@ impl DisconnectableApi for DevDispGrpcClient {
     fn on_disconnect(
         &self,
     ) -> PinnedFuture<'static, Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>> {
-        /// This current implementation will just declare a disconnect when there is
-        /// an error on the error notification channel.
-        let mut error_rx = self.get_error_notification_receiver();
+        // This current implementation will just declare a disconnect when there is
+        // an error on the error notification channel.
+        let mut error_rx = self._get_error_notification_receiver();
 
         async move {
             match error_rx.next().await {

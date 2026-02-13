@@ -1,12 +1,12 @@
-use dev_disp_core::daemon::api::{DiscoveryId, DisplayHostId, DisplayHostRef};
-use futures::{FutureExt, StreamExt, channel::mpsc};
+use dev_disp_core::daemon::api::DisplayHostRef;
+use futures::StreamExt;
 use iced::{
     Task,
     widget::{Column, Container, text},
 };
 
 use crate::{
-    backend::{self, ApiFactory, BackendRef, run_backend},
+    backend::{self, ApiFactory, BackendRef},
     widgets::simple_device_info,
 };
 
@@ -30,10 +30,8 @@ where
 
 #[derive(Debug, Clone)]
 pub enum UiAction {
-    BackendEvent(backend::Event),
-    BackendCommand(backend::Command),
-    ConnectDevice(DisplayHostId, DiscoveryId),
-    DisconnectDevice(DisplayHostId, DiscoveryId),
+    BackendEvent(backend::BackendEvent),
+    BackendCommand(backend::BackendCommand),
 }
 
 impl<T> DevDispApplication<T>
@@ -45,12 +43,21 @@ where
         api_factory: T,
         initial_connect_param: Option<T::ConnectParam>,
     ) -> (Self, Task<UiAction>) {
-        let (backend_ref, event_stream) = run_backend(api_factory);
+        let mut tasks = Vec::new();
 
-        let background_tasks = vec![Task::stream(event_stream.map(UiAction::BackendEvent))];
+        let (backend_ref, backend_event_stream) = backend::run_backend(api_factory);
+        tasks.push(Task::stream(
+            backend_event_stream.map(UiAction::BackendEvent),
+        ));
 
         if let Some(connect_param) = initial_connect_param {
-            backend_ref.connect(connect_param);
+            let backend_ref = backend_ref.clone();
+            tasks.push(
+                Task::future(async move {
+                    backend_ref.connect(connect_param).await;
+                })
+                .discard(),
+            );
         }
 
         let this = Self {
@@ -60,7 +67,7 @@ where
             connected_devices: Vec::new(),
         };
 
-        (this, Task::batch(background_tasks))
+        (this, Task::batch(tasks))
     }
 
     pub fn view(&self) -> Column<UiAction> {
@@ -111,43 +118,28 @@ where
         c.push(connected_scroll)
     }
 
-    pub fn update(&mut self, action: UiAction) {
+    pub fn update(&mut self, action: UiAction) -> Task<UiAction> {
         match action {
-            UiAction::ConnectDevice(dev_id, discovery_id) => {
-                log::info!(
-                    "Requesting connection to device {:?} via discovery ID {:?}",
-                    dev_id,
-                    discovery_id
-                );
-                self.backend_ref
-                    .send(backend::Command::InitializeDevice(dev_id, discovery_id));
-            }
-            UiAction::DisconnectDevice(dev_id, discovery_id) => {
-                log::info!(
-                    "Requesting disconnection from device {:?} via discovery ID {:?}",
-                    dev_id,
-                    discovery_id
-                );
-                self.backend_ref
-                    .send(backend::Command::DisconnectDevice(dev_id, discovery_id));
-            }
             UiAction::BackendEvent(e) => match e {
-                backend::Event::Connected(endpoint_display) => {
+                backend::BackendEvent::Connected(endpoint_display) => {
                     self.connection_state = ConnectionState::Connected(endpoint_display);
-                    self.backend_ref.send(backend::Command::StreamDevices);
+                    Task::done(UiAction::BackendCommand(
+                        backend::BackendCommand::StreamDevices,
+                    ))
                 }
-                backend::Event::Disconnected => {
+                backend::BackendEvent::Disconnected => {
                     self.connection_state = ConnectionState::Disconnected;
+                    self.available_devices.clear();
+                    self.connected_devices.clear();
+                    Task::none()
                 }
-                backend::Event::DeviceListUpdated(devices) => {
-                    self.available_devices = devices.connectable_devices;
-                    self.connected_devices = devices.in_use_devices;
+                backend::BackendEvent::DeviceListUpdated(device_collection_status) => {
+                    self.available_devices = device_collection_status.connectable_devices;
+                    self.connected_devices = device_collection_status.in_use_devices;
+                    Task::none()
                 }
             },
-            UiAction::BackendCommand(cmd) => {
-                log::info!("Sending backend command: {:?}", cmd);
-                self.backend_ref.send(cmd);
-            }
+            UiAction::BackendCommand(cmd) => Task::future(self.backend_ref.send(cmd)).discard(),
         }
     }
 }

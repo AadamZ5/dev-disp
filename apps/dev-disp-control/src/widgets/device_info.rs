@@ -6,6 +6,7 @@ use iced::{
 
 use crate::{
     application::UiAction,
+    backend::BackendCommand,
     util::status_to_display_string,
     widgets::{code_text, label},
 };
@@ -25,18 +26,22 @@ pub fn simple_device_info(device: &DisplayHostRef, connected: bool) -> Container
                 if device.status == DisplayHostStatus::InUse
                     || device.status == DisplayHostStatus::Unknown
                 {
-                    disconnect_button = disconnect_button.on_press(UiAction::DisconnectDevice(
-                        device.id.clone(),
-                        device.discovery_id.clone(),
+                    disconnect_button = disconnect_button.on_press(UiAction::BackendCommand(
+                        BackendCommand::DisconnectDevice(
+                            device.id.clone(),
+                            device.discovery_id.clone(),
+                        ),
                     ));
                 };
                 disconnect_button
             } else {
                 let mut connect_button = button("Connect");
                 if device.status == DisplayHostStatus::Available {
-                    connect_button = connect_button.on_press(UiAction::ConnectDevice(
-                        device.id.clone(),
-                        device.discovery_id.clone(),
+                    connect_button = connect_button.on_press(UiAction::BackendCommand(
+                        BackendCommand::InitializeDevice(
+                            device.id.clone(),
+                            device.discovery_id.clone(),
+                        ),
                     ));
                 };
                 connect_button

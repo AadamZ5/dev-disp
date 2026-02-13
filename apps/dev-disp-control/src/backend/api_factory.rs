@@ -6,7 +6,7 @@ use futures::FutureExt;
 /// This allows for custom setup and instantiation of the backend, allowing for
 /// different backend implementations to be easily swapped in and out.
 pub trait ApiFactory {
-    type Api: DevDispApi + DisconnectableApi + 'static;
+    type Api: DevDispApi + DisconnectableApi + Send + 'static;
     type ConnectParam: Clone + std::fmt::Debug + std::fmt::Display + 'static + Send;
 
     /// Creates a new API instance, possibly reusing the last instance if one was available.
@@ -50,7 +50,7 @@ impl<F, A, CP, Fut> ApiFactory for CallbackApiFactory<F, A, CP, Fut>
 where
     F: Fn(Option<A>, CP) -> Fut,
     Fut: Future<Output = Result<A, Box<dyn std::error::Error + Send + Sync>>> + Send + 'static,
-    A: DevDispApi + DisconnectableApi + 'static,
+    A: DevDispApi + DisconnectableApi + Send + 'static,
     CP: Clone + std::fmt::Debug + std::fmt::Display + 'static + Send,
 {
     type Api = A;
@@ -72,7 +72,7 @@ pub fn callback_api_factory<F, A, CP, Fut>(
 where
     F: Fn(Option<A>, CP) -> Fut,
     Fut: Future<Output = Result<A, Box<dyn std::error::Error + Send + Sync>>> + Send + 'static,
-    A: DevDispApi + DisconnectableApi + 'static,
+    A: DevDispApi + DisconnectableApi + Send + 'static,
     CP: Clone + std::fmt::Debug + std::fmt::Display + 'static + Send,
 {
     CallbackApiFactory::new(factory_fn)
