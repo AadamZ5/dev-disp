@@ -68,14 +68,6 @@ impl ScreenProvider for EvdiScreenProvider {
 
         let edid: Edid = params.clone().into();
 
-        let device = match get_evdi_device() {
-            Ok(dev) => dev,
-            Err(e) => {
-                error!("Failed to get or create evdi device: {}", e);
-                return Err(HandleClientError::EvdiNoDevice(e).to_string());
-            }
-        };
-
         let edid_bytes = match edid.to_bytes() {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -88,10 +80,12 @@ impl ScreenProvider for EvdiScreenProvider {
             DeviceConfig::new(&edid_bytes, params.resolution.0, params.resolution.1);
         debug!("Using device config: {device_config:?}");
 
-        let unconnected_handle = match device.open() {
-            Ok(handle) => handle,
+        // TODO: This seems to be blocking! How can we unblock here without a specific runtime?
+        // Also, `UnconnectedHandle` is not `Send` :(
+        let unconnected_handle = match DeviceNode::open_unused() {
+            Ok(dev) => dev,
             Err(e) => {
-                error!("Failed to open evdi device: {}", e);
+                error!("Failed to open an evdi device: {}", e);
                 return Err(HandleClientError::EvdiDeviceOpenFailed(e).to_string());
             }
         };
