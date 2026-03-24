@@ -1,5 +1,9 @@
 [package]
 name = "thread-future"
+description = "A future that represents a thread's execution, allowing you to poll it and ask it to cancel."
+repository = "https://github.com/AadamZ5/dev-disp"
+documentation = "https://docs.rs/thread-future"
+license = "MIT"
 version = "0.1.0"
 edition = "2024"
 
