@@ -7,6 +7,7 @@ edition = "2024"
 evdi = { git = "https://github.com/AadamZ5/evdi-rs", rev = "e1313e0" }
 dev-disp-core = { path = "../dev-disp-core" }
 rust-util = { path = "../rust-util" }
+thread-future = { path = "../thread-future" }
 edid = { path = "../edid" }
 futures-util = { version = "0.3.31", features = ["sink"] }
 futures-timer = "3.0.3"

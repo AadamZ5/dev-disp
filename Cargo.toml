@@ -12,5 +12,6 @@ members = [
 	'libs/rust-util',
 	"libs/dev-disp-api",
 	"apps/dev-disp-control",
+	"libs/thread-future",
 ]
 resolver = '3'
