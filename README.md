@@ -66,11 +66,12 @@ To build and run the project, you will need the following installed:
 After dependencies, you should:
 
 1.  Install JS dependencies with `npm install`
-2.  Serve the angular repo with `npx nx serve web-testpage -- --host 0.0.0.0`
-3.  Run the display server with `npx nx run dev-disp-server`
-4.  Run the control application with `npx nx run dev-disp-control` to see available clients
-5.  Connect a web browser to `http://localhost:4200`
-6.  View the control application, and initiate the connection for the newly connected client
+2.  Install wasm-pack with `cargo install wasm-pack`
+3.  Serve the angular repo with `npx nx serve web-testpage -- --host 0.0.0.0`
+4.  Run the display server with `npx nx run dev-disp-server`
+5.  Run the control UI application with `npx nx run dev-disp-control` to see available clients
+6.  Connect a web browser to `http://localhost:4200`
+7.  View the control application, and initiate the connection for the newly connected client
 
 # Disclaimer
 

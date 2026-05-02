@@ -1398,6 +1398,7 @@ dependencies = [
 [[package]]
 name = "evdi"
 version = "0.7.3"
+source = "git+https://github.com/AadamZ5/evdi-rs?rev=e1313e0#e1313e08145d394076d9117a0ad800837e131b81"
 dependencies = [
  "crossbeam-channel",
  "derivative",
@@ -2426,9 +2427,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.175"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "libloading"
