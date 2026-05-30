@@ -82,31 +82,12 @@ impl ScreenProvider for EvdiScreenProvider {
         debug!("Using device config: {device_config:?}");
 
         // TODO: This seems to be blocking! How can we unblock here without a specific runtime?
-
-        let result = ThreadFuture::new(|ct| {
-            // Check if we should stop before doing the work
-            if ct.is_cancelled() {
-                info!("ThreadFuture was cancelled before starting work, exiting thread");
-                return None;
-            }
-            info!("Opening an unused EVDI device");
-            Some(DeviceNode::open_unused())
-        })
-        .await;
-
-        let unconnected_handle = match result {
-            Ok(Some(Ok(dev))) => dev,
-            Ok(Some(Err(e))) => {
+        // Also, `UnconnectedHandle` is not `Send` :(
+        let unconnected_handle = match DeviceNode::open_unused() {
+            Ok(dev) => dev,
+            Err(e) => {
                 error!("Failed to open an evdi device: {}", e);
                 return Err(HandleClientError::EvdiDeviceOpenFailed(e).to_string());
-            }
-            Ok(None) => {
-                info!("ThreadFuture was cancelled before starting work, exiting get_screen");
-                return Err(HandleClientError::Unknown.to_string());
-            }
-            Err(_) => {
-                info!("ThreadFuture was cancelled while waiting for EVDI device, exiting");
-                return Err(HandleClientError::Unknown.to_string());
             }
         };
         debug!("Opened EVDI device");

@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use ffmpeg_next::{
     codec::encoder::video::Encoder as VideoEncoder,
-    ffi::{AVPixelFormat, FF_LEVEL_UNKNOWN, FF_PROFILE_UNKNOWN},
+    ffi::{AV_LEVEL_UNKNOWN, AVPixelFormat, FF_PROFILE_UNKNOWN},
     format::Pixel,
 };
 use log::{debug, warn};
@@ -542,7 +542,7 @@ pub fn get_relevant_codec_parameters(
             };
 
             let level = (*ptr).level;
-            let level = if level == FF_LEVEL_UNKNOWN { 10 } else { level };
+            let level = if level == AV_LEVEL_UNKNOWN { 10 } else { level };
 
             StringMapBuilder::new()
                 .insert("profile", profile.to_string())
@@ -576,7 +576,7 @@ pub fn get_relevant_codec_parameters(
             let level = (*ptr).level;
             // Divide this int by 30 to get the level decimal number.
             // Ex, 90 / 30 = 3.0
-            let level = if level == FF_LEVEL_UNKNOWN { 93 } else { level };
+            let level = if level == AV_LEVEL_UNKNOWN { 93 } else { level };
 
             // TODO: Find out how to get this value properly.
             let tier_letter = "L";
@@ -607,7 +607,7 @@ pub fn get_relevant_codec_parameters(
             };
 
             let level = (*ptr).level;
-            let level = if level == FF_LEVEL_UNKNOWN { 30 } else { level };
+            let level = if level == AV_LEVEL_UNKNOWN { 30 } else { level };
 
             warn!("AVC encoder profile constraints flags not yet implemented!");
 
