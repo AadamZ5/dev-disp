@@ -66,12 +66,6 @@ pub fn setup_ffmpeg_encoder(
     context.set_width(parameters.width);
     context.set_format(configuration.pixel_format);
     context.set_time_base((1, parameters.fps as i32));
-
-    
-    
-
-    //context.set_color_range(ffmpeg::util::color::Range::JPEG);
-    //context.set_colorspace(ffmpeg::util::color::Space::BT709);
     context.set_flags(ffmpeg::codec::flag::Flags::LOW_DELAY);
 
 

@@ -143,15 +143,17 @@ pub async fn connect_usb_android_accessory(
         futures_timer::Delay::new(wait_time).await;
 
         let accessory_device_info = list_devices().await.ok().and_then(|mut dev_list| {
+            // If we successfully enumerated devices, search for the one we are interested in
             dev_list.find(|device_info| {
                 let this_device_serial = device_info.serial_number();
 
+                // Serial number is fallible, so we do special handling here first.
                 if let Some(serial) = target_device_serial
                     && (this_device_serial.is_none()
                         || this_device_serial.is_some_and(|s| s != serial))
-                    {
-                        return false;
-                    }
+                {
+                    return false;
+                }
 
                 device_info.vendor_id() == USB_ACCESSORY_VENDOR_ID
                     && (device_info.product_id() == USB_ACCESSORY_DEVICE_ID

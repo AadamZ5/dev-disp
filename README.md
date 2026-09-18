@@ -6,6 +6,10 @@ I have an Android device with a screen, why can't I use it as another display fo
 
 _(Web PoC pictured above with software encoding)_
 
+## AI Disclaimer
+
+AI has **not** been primarily used to generate code for this project. AI _has_ been used to clarify my vague questions, explore ideas, and to aid in my learning. This repo is as much a learning opportunity for me as it is a goal to complete.
+
 ## Motivation
 
 I have some devices with screens on my desk, like a Steam Deck, or a Galaxy ZFold 4. Why can't I make these beautiful devices extend my main device's screen? I would love a solution that requires minimal setup, and can be controlled from my main device. Plug in a cable or join the network, and initiate "display extending" from my main laptop.

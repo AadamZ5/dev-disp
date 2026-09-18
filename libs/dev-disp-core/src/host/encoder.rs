@@ -54,6 +54,8 @@ pub struct EncoderContentParameters {
     pub height: u32,
     pub bitrate: u32,
     pub fps: u32,
+    /// The parameters of the virtual screen generated output data, that will
+    /// be sent to the encoder.
     pub encoder_input_parameters: ScreenOutputParameters,
 }
 
@@ -71,6 +73,7 @@ pub struct EncoderPossibleConfiguration {
 }
 
 pub trait Encoder {
+    /// Implementation-specific code to understand what configurations this local machine supports.
     fn get_supported_configurations(
         &mut self,
         parameters: &EncoderContentParameters,
