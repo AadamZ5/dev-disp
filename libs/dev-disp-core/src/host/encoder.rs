@@ -50,7 +50,9 @@ pub struct ScreenOutputParameters {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncoderContentParameters {
+    /// TODO: Will this ever differ from [encoder_input_parameters.width]
     pub width: u32,
+    /// TODO: Will this ever differ from [encoder_input_parameters.height]
     pub height: u32,
     pub bitrate: u32,
     pub fps: u32,
@@ -59,6 +61,9 @@ pub struct EncoderContentParameters {
     pub encoder_input_parameters: ScreenOutputParameters,
 }
 
+/// A possible configuration for an encoder, including its name, supported resolution, family, and parameters.
+///
+/// **Deprecated**: This struct may be removed in future versions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncoderPossibleConfiguration {
     /// The name of the encoder, e.g., "h264_nvenc"
@@ -72,12 +77,17 @@ pub struct EncoderPossibleConfiguration {
     pub parameters: HashMap<String, String>,
 }
 
+/// **Deprecated**: This trait may be removed in future versions.
+/// Encoding is a responsibility of the transport, not a separate component.
 pub trait Encoder {
     /// Implementation-specific code to understand what configurations this local machine supports.
+    /// Takes in [EncoderContentParameters] that contain values pertaining to the created virtual screen,
+    /// so you can determine what encoders are compatible with that. Take your time!
+    /// TODO: Better error type
     fn get_supported_configurations(
         &mut self,
         parameters: &EncoderContentParameters,
-    ) -> Result<Vec<EncoderPossibleConfiguration>, String>;
+    ) -> PinnedLocalFuture<'_, Result<Vec<EncoderPossibleConfiguration>, String>>;
 
     /// Called first, to initialize the encoder with the given parameters.
     /// Must return the successfully initialized encoder configuration.
@@ -116,13 +126,16 @@ impl Encoder for RawEncoder {
     fn get_supported_configurations(
         &mut self,
         screen_parameters: &EncoderContentParameters,
-    ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
-        Ok(vec![EncoderPossibleConfiguration {
-            encoder_name: "raw".to_string(),
-            encoder_family: "raw".to_string(),
-            encoded_resolution: (screen_parameters.width, screen_parameters.height),
-            parameters: HashMap::new(),
-        }])
+    ) -> PinnedLocalFuture<'_, Result<Vec<EncoderPossibleConfiguration>, String>> {
+        async move {
+            Ok(vec![EncoderPossibleConfiguration {
+                encoder_name: "raw".to_string(),
+                encoder_family: "raw".to_string(),
+                encoded_resolution: (screen_parameters.width, screen_parameters.height),
+                parameters: HashMap::new(),
+            }])
+        }
+        .boxed_local()
     }
 
     fn init(

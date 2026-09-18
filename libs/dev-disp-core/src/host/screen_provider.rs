@@ -14,6 +14,7 @@ use crate::{
     util::{PinnedFuture, PinnedLocalFuture},
 };
 
+// TODO: Change `DisplayHost<T>` to be a type-changed result type like `FinishedDisplayHost` (no <T>) that allows the transport to de-initialize properly
 pub type DisplayHostResult<T> = Result<DisplayHost<T>, String>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

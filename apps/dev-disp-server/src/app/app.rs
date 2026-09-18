@@ -25,6 +25,12 @@ use tokio::{
 };
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream, errors::BroadcastStreamRecvError};
 
+/// A device that has been connected/discovered, vetted, and is ready to begin
+/// hosting screen data, but the user has not initiated that yet.
+///
+/// This is purely a "satellite" item, meaning it does not hold the actual device
+/// or connection itself. It is purely a means of initiating more logic in the
+/// core app logic.
 #[derive(Debug, Clone)]
 pub struct ReadyDeviceRef {
     pub name: String,
@@ -52,13 +58,19 @@ impl ReadyDeviceRef {
     }
 }
 
+/// A device that is currently in use, meaning it has been taken from the ready state
+/// and is actively hosting (or preparing to host) screen data. This struct provides
+/// mechanisms to disconnect the device and listen to its current status.
+///
+/// This is purely a "satellite" item, meaning it does not hold the actual device
+/// or connection itself. It is purely a means of viewing the device's active state,
+/// or cancelling the current hosting session.
 #[derive(Debug, Clone)]
 pub struct InUseDeviceRef {
     pub name: String,
     pub discovery_id: String,
     pub id: String,
     pub status: Arc<ArcSwap<SystemState>>,
-    // TODO: current status atomic slot!
     disconnect_tx: mpsc::Sender<()>,
     status_tx: broadcast::Sender<SystemState>,
 }
@@ -101,6 +113,7 @@ impl InUseDeviceRef {
     }
 }
 
+/// A set-up discovery method that can be used to find available devices for a particular transport.
 #[derive(Debug, Clone)]
 struct DiscoveryMethod {
     pub id: DiscoveryId,

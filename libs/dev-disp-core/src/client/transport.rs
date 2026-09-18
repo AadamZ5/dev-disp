@@ -8,7 +8,7 @@ use log::debug;
 use thiserror::Error;
 
 use crate::{
-    host::{DisplayParameters, EncoderPossibleConfiguration},
+    host::{DisplayParameters, EncoderContentParameters, EncoderPossibleConfiguration},
     util::PinnedFuture,
 };
 
@@ -38,15 +38,33 @@ impl Display for TransportError {
 /// The transport needs to be a sink that sends the screen data to the
 /// client via whatever means possible.
 pub trait ScreenTransport {
+    /// Initialization setup for the transport. Called first to allow the
+    /// transport to perform any preliminary setup. You can use this to get screen size,
+    /// perform integrity challenge, or some other preliminary tasks.
+    ///
+    /// Encoder setup is handled later in [Self::setup_encoding_config], try not to do that here.
+    /// The controller logic notifies the control application of what phase of initialization the
+    /// connection is currently in.
     fn initialize(&mut self) -> PinnedFuture<'_, Result<(), TransportError>>;
 
+    /// Notifies the transport that the virtual screen is currently being created.
     fn notify_loading_screen(&self) -> PinnedFuture<'_, Result<(), TransportError>> {
         async { Err(TransportError::NotImplemented) }.boxed()
     }
 
+    /// Retrieves the current screen host display configuration from the transport.
+    /// The returned value should represent the usable display paramters of the
+    /// client that will be showing our display data.
+    ///
+    /// Used before creating the virtual screen, so we know what parameters to
+    /// create the virtual screen with
     fn get_display_config(&mut self)
     -> PinnedFuture<'_, Result<DisplayParameters, TransportError>>;
 
+    /// Used when the business logic deems that the loop is ending, and the connection will be closed.
+    /// Purely a hook to allow the transport to notify the client of a graceful shutdown, and optionally
+    /// return the client back to the "available" pool.
+    /// TODO: Allow to pass owned `self` here, not an `&mut self`
     fn close(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
         future::ready(Ok(())).boxed()
     }
@@ -58,20 +76,31 @@ pub trait ScreenTransport {
         future::ready(Ok(())).boxed()
     }
 
-    fn get_preferred_encodings(
+    /// Used when the business logic wants to set up the encoding configuration for the transport.
+    ///
+    /// Perform codec negotiation with the screen host device based on the virtual screen's
+    /// parameters.
+    fn setup_encoding_config(
         &mut self,
-        configurations: Vec<EncoderPossibleConfiguration>,
-    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>>;
-
-    fn set_encoding(
-        &mut self,
-        configuration: EncoderPossibleConfiguration,
+        source_parameters: &EncoderContentParameters,
     ) -> PinnedFuture<'_, Result<(), TransportError>>;
 
+    /// The encoding step for this transport. Defined separately to allow for performance tracing.
+    ///
+    /// TODO: Consider changing the future to be non-boxed if possible for performance
+    fn encode<'s, 'a>(
+        &'s mut self,
+        raw_data: &'a [u8],
+    ) -> PinnedFuture<'s, Result<&'a [u8], TransportError>>
+    where
+        'a: 's;
+
+    /// The transmission step for this transport, responsible for sending the encoded screen data to the client.
+    ///
     /// TODO: Consider changing the future to be non-boxed if possible for performance
     fn send_screen_data<'s, 'a>(
         &'s mut self,
-        data: &'a [u8],
+        encoded_data: &'a [u8],
     ) -> PinnedFuture<'s, Result<(), TransportError>>
     where
         'a: 's;
@@ -115,18 +144,21 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.notify_loading_screen()
     }
 
-    fn get_preferred_encodings(
+    fn setup_encoding_config(
         &mut self,
-        configurations: Vec<EncoderPossibleConfiguration>,
-    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
-        self.inner.get_preferred_encodings(configurations)
+        parameters: EncoderContentParameters,
+    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+        self.inner.setup_encoding_config(parameters)
     }
 
-    fn set_encoding(
-        &mut self,
-        configuration: EncoderPossibleConfiguration,
-    ) -> PinnedFuture<'_, Result<(), TransportError>> {
-        self.inner.set_encoding(configuration)
+    fn encode<'s, 'a>(
+        &'s mut self,
+        raw_data: &'a [u8],
+    ) -> PinnedFuture<'s, Result<&'a [u8], TransportError>>
+    where
+        'a: 's,
+    {
+        self.inner.encode(raw_data)
     }
 
     fn send_screen_data<'s, 'a>(

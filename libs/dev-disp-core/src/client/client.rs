@@ -7,7 +7,7 @@ use futures_util::FutureExt;
 
 use crate::{
     client::{ScreenTransport, SomeScreenTransport, TransportError},
-    host::{DisplayParameters, EncoderPossibleConfiguration},
+    host::{DisplayParameters, EncoderContentParameters, EncoderPossibleConfiguration},
     util::PinnedFuture,
 };
 
@@ -47,7 +47,7 @@ where
         self.client_id
     }
 
-    pub fn get_background_task<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>>
+    pub fn background_task<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>>
     where
         'a: 's,
     {
@@ -55,29 +55,64 @@ where
     }
 
     pub async fn initialize(&mut self) -> Result<(), TransportError> {
-        self.transport.initialize().boxed_local().await
+        self.transport.initialize().await
     }
 
+    /// Notifies the screen host device that the virtual screen is currently loading.
+    /// See [ScreenTransport::notify_loading_screen] for more details.
+    ///
+    /// Some providers like EVDI take awhile to create a new virtual screen. This lets the
+    /// device know that that stuff is in progress.
     pub async fn notify_loading_screen(&mut self) -> Result<(), TransportError> {
-        self.transport.notify_loading_screen().boxed_local().await
+        self.transport.notify_loading_screen().await
     }
 
+    /// See [ScreenTransport::get_display_config] for more details.
     pub async fn get_display_config(&mut self) -> Result<DisplayParameters, TransportError> {
         self.transport.get_display_config().await
     }
 
-    pub async fn get_preferred_encodings(
+    /// Performs codec negotiation with the screen host device.
+    /// See [ScreenTransport::setup_encoding_config] or your specific implementation
+    /// of that trait for more details.
+    pub async fn setup_encoding_config(
         &mut self,
-        configurations: Vec<EncoderPossibleConfiguration>,
-    ) -> Result<Vec<EncoderPossibleConfiguration>, TransportError> {
-        self.transport.get_preferred_encodings(configurations).await
+        source_parameters: &EncoderContentParameters,
+    ) -> Result<(), TransportError> {
+        self.transport
+            .setup_encoding_config(source_parameters)
+            .await
     }
 
-    pub async fn set_encoding(
-        &mut self,
-        configuration: EncoderPossibleConfiguration,
-    ) -> Result<(), TransportError> {
-        self.transport.set_encoding(configuration).await
+    /// See [ScreenTransport::encode] for more details.
+    ///
+    /// TODO: Consider changing the future to be non-boxed if possible for performance
+    pub fn encode<'s, 'a>(
+        &'s mut self,
+        raw_data: &'a [u8],
+    ) -> PinnedFuture<'s, Result<&'a [u8], TransportError>>
+    where
+        'a: 's,
+    {
+        self.transport.encode(raw_data)
+    }
+
+    /// See [ScreenTransport::send_screen_data] for more details.
+    ///
+    /// TODO: Consider changing the future to be non-boxed if possible for performance
+    pub fn send_screen_data<'s, 'a>(
+        &'s mut self,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>>
+    where
+        'a: 's,
+    {
+        self.transport.send_screen_data(data)
+    }
+
+    /// See [ScreenTransport::close] for more details.
+    pub async fn close(&mut self) -> Result<(), TransportError> {
+        self.transport.close().await
     }
 
     pub fn into_transport(self) -> T {
@@ -96,32 +131,6 @@ where
             client_id: self.client_id,
             name: self.name.clone(),
             transport: SomeScreenTransport::new(self.transport),
-        }
-    }
-
-    /// TODO: Consider changing the future to be non-boxed if possible for performance
-    pub fn send_screen_data<'s, 'a>(
-        &'s mut self,
-        data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>>
-    where
-        'a: 's,
-    {
-        self.transport.send_screen_data(data)
-    }
-
-    pub async fn close(&mut self) -> Result<(), TransportError> {
-        self.transport.close().boxed_local().await
-    }
-
-    pub fn to_some_transport(self) -> DisplayHost<SomeScreenTransport>
-    where
-        T: 'static,
-    {
-        DisplayHost {
-            client_id: self.client_id,
-            name: self.name,
-            transport: SomeScreenTransport::new_boxed(Box::new(self.transport)),
         }
     }
 }

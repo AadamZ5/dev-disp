@@ -1,3 +1,7 @@
+//! This module handles core controller logic. This is **the** business logic of the application once a screen host has been initiated.
+//!
+//! It orchestrates the interaction between the screen, encoder, and display host, managing the lifecycle and state transitions.
+
 use std::{
     sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
@@ -18,13 +22,13 @@ use crate::{
 const NOT_READY_DELAY: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
-struct InitializedSystem<T, S, E, St> {
+struct InitializedSystem<T, S, St> {
     screen: S,
-    encoder: E,
     display_host: DisplayHost<T>,
     status_sink: St,
 }
 
+/// Useful system state for what is currently happening in the business logic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SystemState {
     #[default]
@@ -34,25 +38,23 @@ pub enum SystemState {
     GettingDisplayParameters,
     NotifyClientLoading,
     GettingScreen,
-    GettingEncoder,
+    GettingEncoder, // TODO: Reconsider
     NegotiatingCodecs,
-    InitializingEncoder,
-    SettingClientCodec,
+    InitializingEncoder, // TODO: Reconsider
+    SettingClientCodec,  // TODO: Reconsider
     Running,
     Stopped,
 }
 
 /// Given all the ingredients to screen cast, handle a display host connection.
-pub async fn handle_display_host<T, P, E, C, St>(
+pub async fn handle_display_host<T, P, C, St>(
     screen_provider: P,
-    encoder_provider: E,
     mut display_host: DisplayHost<T>,
     cancel_notification: C,
     status_sink: St,
 ) -> DisplayHostResult<T>
 where
     T: ScreenTransport + 'static,
-    E: EncoderProvider + 'static,
     P: ScreenProvider + 'static,
     C: Stream<Item = ()> + Unpin + 'static,
     St: Sink<SystemState> + Unpin + 'static,
@@ -63,19 +65,19 @@ where
     let host_name = display_host.to_string();
     let host_name_1 = host_name.clone();
     let display_host_background_task = display_host
-        .get_background_task()
+        .background_task()
         .map(|r| r.map_err(|e| e.to_string()))
         .boxed_local();
 
     let screen_task = async move {
-        let initialized_system =
-            match screen_init(screen_provider, encoder_provider, display_host, status_sink).await {
-                Ok(system) => system,
-                Err(e) => {
-                    error!("Failed to initialize screen system: {}", e);
-                    return Err(e);
-                }
-            };
+        let initialized_system = match screen_init(screen_provider, display_host, status_sink).await
+        {
+            Ok(system) => system,
+            Err(e) => {
+                error!("Failed to initialize screen system: {}", e);
+                return Err(e);
+            }
+        };
 
         match screen_loop(initialized_system).await {
             Ok(host) => {
@@ -123,15 +125,13 @@ where
     }
 }
 
-async fn screen_init<T, P, E, St>(
+async fn screen_init<T, P, St>(
     screen_provider: P,
-    encoder_provider: E,
     mut display_host: DisplayHost<T>,
     mut status_sink: St,
-) -> Result<InitializedSystem<T, P::ScreenType, E::EncoderType, St>, String>
+) -> Result<InitializedSystem<T, P::ScreenType, St>, String>
 where
     T: ScreenTransport,
-    E: EncoderProvider,
     P: ScreenProvider,
     St: Sink<SystemState> + Unpin + 'static,
 {
@@ -205,22 +205,6 @@ where
     };
     debug!("Created virtual screen.");
 
-    debug!("Creating encoder...");
-    match status_sink.send(SystemState::GettingEncoder).await {
-        Err(_) => warn!("Failed to send getting encoder status"),
-        _ => {}
-    };
-    // Create an encoder
-    let mut encoder = match encoder_provider.create_encoder().await {
-        Err(e) => {
-            error!("Failed to create encoder: {}", e);
-            close_dev(&mut display_host).await;
-            return Err("Failed to create encoder".to_string());
-        }
-        Ok(encoder) => encoder,
-    };
-    debug!("Created encoder.");
-
     debug!("Getting format parameters...");
     let format_params = screen.get_format_parameters();
     debug!("Got format parameters: {:?}", format_params);
@@ -240,92 +224,34 @@ where
         _ => {}
     };
 
-    let supported_configurations = match encoder.get_supported_configurations(&encoder_parameters) {
-        Err(e) => {
-            error!("Failed to get supported encoder configurations: {}", e);
-            close_dev(&mut display_host).await;
-            return Err("Failed to get supported encoder configurations".to_string());
-        }
-        Ok(configs) => configs,
-    };
-
-    if supported_configurations.is_empty() {
-        error!("No supported encoder configurations available");
-        close_dev(&mut display_host).await;
-        return Err("No supported encoder configurations available".to_string());
-    }
-
-    let preferred_configurations = match display_host
-        .get_preferred_encodings(supported_configurations)
+    // TODO: Return basic info about the codec here so we can log it
+    match display_host
+        .setup_encoding_config(&encoder_parameters)
         .await
     {
         Err(e) => {
-            error!(
-                "Failed to get preferred encoder configurations from host: {}",
-                e
-            );
+            error!("Failed to negotiate and setup encoder: {}", e);
             close_dev(&mut display_host).await;
-            return Err("Failed to get preferred encoder configurations".to_string());
+            return Err("Failed to negotiate and setup encoder".to_string());
         }
-        Ok(configs) => configs,
+        Ok(_) => {}
     };
 
-    debug!(
-        "Got supported {} encoder configurations: {:#?}",
-        preferred_configurations.len(),
-        preferred_configurations
-    );
-
-    debug!("Initializing encoder...");
-    match status_sink.send(SystemState::InitializingEncoder).await {
-        Err(_) => warn!("Failed to send initializing encoder status"),
-        _ => {}
-    };
-    let encoder_init_result = encoder
-        .init(encoder_parameters, Some(preferred_configurations))
-        .await;
-    let initialized_codec = match encoder_init_result {
-        Err(e) => {
-            error!("Failed to initialize encoder: {}", e);
-            close_dev(&mut display_host).await;
-            return Err("Failed to initialize encoder".to_string());
-        }
-        Ok(config) => config,
-    };
-    debug!(
-        "Initialized encoder with {}.",
-        initialized_codec.encoder_name
-    );
-
-    debug!("Setting encoding on host...");
-
-    match status_sink.send(SystemState::SettingClientCodec).await {
-        Err(_) => warn!("Failed to send setting client codec status"),
-        _ => {}
-    };
-
-    if let Err(e) = display_host.set_encoding(initialized_codec).await {
-        error!("Failed to set encoding on host: {}", e);
-        close_dev(&mut display_host).await;
-        return Err("Failed to set encoding on host".to_string());
-    }
-    debug!("Set encoding on host.");
+    debug!("Setup encoding configuration completed");
 
     Ok(InitializedSystem {
         screen,
-        encoder,
         display_host,
         status_sink,
     })
 }
 
-async fn screen_loop<S, T, E, St>(
-    initialized_system: InitializedSystem<T, S, E, St>,
+async fn screen_loop<S, T, St>(
+    initialized_system: InitializedSystem<T, S, St>,
 ) -> DisplayHostResult<T>
 where
     S: Screen,
     T: ScreenTransport,
-    E: Encoder,
     St: Sink<SystemState> + Unpin + 'static,
 {
     let mut bad_transmission_start: Option<Instant> = None;
@@ -335,7 +261,6 @@ where
     let InitializedSystem {
         mut screen,
         display_host: mut host,
-        mut encoder,
         mut status_sink,
     } = initialized_system;
 
@@ -357,7 +282,7 @@ where
                 ScreenReadyStatus::Ready => {
                     if let Some(data) = screen.get_bytes() {
                         let now = Instant::now();
-                        let encoded_data = match encoder.encode(data).await {
+                        let encoded_data = match host.encode(data).await {
                             Ok(ed) => ed,
                             Err(e) => {
                                 error!("Failed to encode screen data: {}", e);
