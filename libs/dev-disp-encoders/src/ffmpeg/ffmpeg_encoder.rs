@@ -2,7 +2,7 @@ use std::{fmt::Debug, time::{Duration, Instant}};
 
 use dev_disp_core::{
     host::{
-        Encoder as DevDispEncoder, EncoderContentParameters, EncoderPossibleConfiguration,
+        DevDispEncoder as DevDispEncoder, EncoderContentParameters, EncoderPossibleConfiguration,
         EncoderProvider,
     },
     util::PinnedLocalFuture,
@@ -138,7 +138,7 @@ impl DevDispEncoder for FfmpegEncoder {
     fn get_supported_configurations(
         &mut self,
         parameters: &EncoderContentParameters,
-    ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
+    ) -> PinnedLocalFuture<'_, Result<Vec<EncoderPossibleConfiguration>, String>> {
 
         // TODO: Try encoders in the provider, not here on every connection!
 
@@ -171,7 +171,7 @@ impl DevDispEncoder for FfmpegEncoder {
             })
             .collect();
 
-        Ok(supported_configurations)
+        async move { Ok(supported_configurations) }.boxed_local()
     }
 
     fn init(

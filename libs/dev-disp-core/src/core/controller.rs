@@ -14,13 +14,13 @@ use log::{debug, error, info, trace, warn};
 use crate::{
     client::{DisplayHost, ScreenTransport},
     host::{
-        DisplayHostResult, Encoder, EncoderContentParameters, EncoderProvider, Screen,
-        ScreenProvider, ScreenReadyStatus,
+        DisplayHostResult, EncoderContentParameters, Screen, ScreenProvider, ScreenReadyStatus,
     },
 };
 
 const NOT_READY_DELAY: Duration = Duration::from_millis(100);
 
+/// Bespoke context object used in each phase of the controller casting session
 #[derive(Debug)]
 struct InitializedSystem<T, S, St> {
     screen: S,
@@ -33,16 +33,24 @@ struct InitializedSystem<T, S, St> {
 pub enum SystemState {
     #[default]
     Unknown,
+    /// Very beginning of controller initialization
     Initializing,
+    /// Initializing the transport layer for the screen.
     InitializingTransport,
+    /// Getting the display parameters from the screen host (remote device)
     GettingDisplayParameters,
+    /// Notifying the client that the virt screen is loading.
     NotifyClientLoading,
+    /// Acquiring the screen from the screen provider.
     GettingScreen,
     GettingEncoder, // TODO: Reconsider
+    /// Negotiating codec configuration between transport and client
     NegotiatingCodecs,
     InitializingEncoder, // TODO: Reconsider
     SettingClientCodec,  // TODO: Reconsider
+    /// Running the screen casting session.
     Running,
+    /// The screen casting session has been stopped.
     Stopped,
 }
 
@@ -119,7 +127,7 @@ where
 
     futures::select! {
         screen_result = composition_task.fuse() => screen_result,
-        _ = cancel_notification.into_future().fuse() => {
+        _ = cancel_notification.into_future().fuse() => { // TODO: Pass cancellation notification into loop fn.
             Err(format!("Display host handling for {} was cancelled", host_name_1))
         }
     }

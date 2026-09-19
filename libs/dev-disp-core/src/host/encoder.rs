@@ -84,6 +84,7 @@ pub trait Encoder {
     /// Takes in [EncoderContentParameters] that contain values pertaining to the created virtual screen,
     /// so you can determine what encoders are compatible with that. Take your time!
     /// TODO: Better error type
+    /// TODO: This should live as a function of the encoder provider maybe
     fn get_supported_configurations(
         &mut self,
         parameters: &EncoderContentParameters,
@@ -92,9 +93,10 @@ pub trait Encoder {
     /// Called first, to initialize the encoder with the given parameters.
     /// Must return the successfully initialized encoder configuration.
     /// TODO: Better error type
+    /// TODO: This should also potentially live as a function of the encoder provider.
     fn init(
         &mut self,
-        parameters: EncoderContentParameters,
+        parameters: &EncoderContentParameters,
         preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
     ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>>;
 
@@ -127,11 +129,13 @@ impl Encoder for RawEncoder {
         &mut self,
         screen_parameters: &EncoderContentParameters,
     ) -> PinnedLocalFuture<'_, Result<Vec<EncoderPossibleConfiguration>, String>> {
+        let width = screen_parameters.width;
+        let height = screen_parameters.height;
         async move {
             Ok(vec![EncoderPossibleConfiguration {
                 encoder_name: "raw".to_string(),
                 encoder_family: "raw".to_string(),
-                encoded_resolution: (screen_parameters.width, screen_parameters.height),
+                encoded_resolution: (width, height),
                 parameters: HashMap::new(),
             }])
         }
@@ -140,15 +144,17 @@ impl Encoder for RawEncoder {
 
     fn init(
         &mut self,
-        screen_parameters: EncoderContentParameters,
+        screen_parameters: &EncoderContentParameters,
         _preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
     ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
+        let width = screen_parameters.width;
+        let height = screen_parameters.height;
         async move {
             // No initialization needed for raw encoder
             Ok(EncoderPossibleConfiguration {
                 encoder_name: "raw".to_string(),
                 encoder_family: "raw".to_string(),
-                encoded_resolution: (screen_parameters.width, screen_parameters.height),
+                encoded_resolution: (width, height),
                 parameters: HashMap::new(),
             })
         }

@@ -385,7 +385,6 @@ where
                                         info!("Device '{}' initiated successfully", device_name);
                                         let handle_result = handle_display_host(
                                             screen_provider,
-                                            encoder_provider,
                                             display,
                                             ReceiverStream::new(cancel_rx),
                                             BroadcastSink::new(device_status_tx),

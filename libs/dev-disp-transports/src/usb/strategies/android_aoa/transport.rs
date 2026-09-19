@@ -107,21 +107,21 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         self.dev.reset().into_future().map(|_| Ok(())).boxed()
     }
 
-    fn get_preferred_encodings(
+    fn setup_encoding_config(
         &mut self,
-        _configurations: Vec<dev_disp_core::host::EncoderPossibleConfiguration>,
-    ) -> PinnedFuture<
-        '_,
-        Result<Vec<dev_disp_core::host::EncoderPossibleConfiguration>, TransportError>,
-    > {
-        todo!("Not implemented yet for Android AOA transport")
+        source_parameters: &dev_disp_core::host::EncoderContentParameters,
+    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+        async move { Ok(()) }.boxed()
     }
 
-    fn set_encoding(
-        &mut self,
-        _configuration: dev_disp_core::host::EncoderPossibleConfiguration,
-    ) -> PinnedFuture<'_, Result<(), TransportError>> {
-        todo!("Not implemented yet for Android AOA transport")
+    fn encode<'s, 'a>(
+        &'s mut self,
+        raw_data: &'a [u8],
+    ) -> PinnedFuture<'s, Result<&'a [u8], TransportError>>
+    where
+        'a: 's,
+    {
+        async move { Ok(raw_data) }.boxed()
     }
 
     fn send_screen_data<'s, 'a>(

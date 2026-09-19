@@ -146,7 +146,7 @@ impl ScreenTransport for SomeScreenTransport {
 
     fn setup_encoding_config(
         &mut self,
-        parameters: EncoderContentParameters,
+        parameters: &EncoderContentParameters,
     ) -> PinnedFuture<'_, Result<(), TransportError>> {
         self.inner.setup_encoding_config(parameters)
     }

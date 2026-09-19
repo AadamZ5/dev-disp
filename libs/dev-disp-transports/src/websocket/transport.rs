@@ -5,7 +5,7 @@ use async_tungstenite::{
 use dev_disp_core::{
     client::{ScreenTransport, TransportError},
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
-    host::{DisplayParameters, EncoderPossibleConfiguration},
+    host::{DisplayParameters, Encoder as DevDispEncoder, EncoderPossibleConfiguration},
     util::PinnedFuture,
 };
 use futures::{AsyncRead, AsyncWrite, SinkExt, StreamExt, channel::mpsc};
@@ -26,7 +26,8 @@ struct BackgroundContext<S> {
     tx_core_set_encoding_response: mpsc::Sender<bool>,
 }
 
-pub struct WsTransport<S> {
+pub struct WsTransport<S, E> {
+    encoder: E,
     ws_tx: WebSocketSender<S>,
     /// Reciever half of the WebSocket connection. This will be taken
     /// when the background task is started.
@@ -40,11 +41,12 @@ pub struct WsTransport<S> {
     rx_core_set_encoding_response: mpsc::Receiver<bool>,
 }
 
-impl<S> WsTransport<S>
+impl<S, E> WsTransport<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: Send + 'static,
 {
-    pub fn new(websocket: WebSocketStream<S>) -> Self {
+    pub fn new(websocket: WebSocketStream<S>, encoder: E) -> Self {
         let (ws_tx, ws_rx) = websocket.split();
 
         let (tx_protocol_init, rx_protocol_init) = mpsc::channel(2);
@@ -64,6 +66,7 @@ where
         };
 
         Self {
+            encoder,
             ws_tx,
             background_context: Some(background_ctx),
             rx_protocol_init,
@@ -163,11 +166,58 @@ where
         }
         .boxed()
     }
+
+    fn get_preferred_encodings(
+        &mut self,
+        configurations: Vec<EncoderPossibleConfiguration>,
+    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
+        async move {
+            let req_pref_encoding = WsMessageFromSource::Core(
+                DevDispMessageFromSource::GetPreferredEncodingRequest(configurations),
+            );
+            debug!("Requesting preferred encoding: {:?}", req_pref_encoding);
+            self.send_msg(req_pref_encoding).await?;
+
+            debug!("Waiting for preferred encoding response...");
+
+            self.rx_core_preferred_encoding_response
+                .next()
+                .await
+                .ok_or(TransportError::NoConnection)
+        }
+        .boxed()
+    }
+
+    fn set_encoding(
+        &mut self,
+        configuration: EncoderPossibleConfiguration,
+    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+        async move {
+            let set_encoding_msg =
+                WsMessageFromSource::Core(DevDispMessageFromSource::SetEncoding(configuration));
+            self.send_msg(set_encoding_msg).await?;
+
+            debug!("Waiting for set encoding response...");
+            self.rx_core_set_encoding_response
+                .next()
+                .await
+                .ok_or(TransportError::NoConnection)
+                .and_then(|success| {
+                    if success {
+                        Ok(())
+                    } else {
+                        Err(TransportError::Unknown)
+                    }
+                })
+        }
+        .boxed()
+    }
 }
 
-impl<S> ScreenTransport for WsTransport<S>
+impl<S, E> ScreenTransport for WsTransport<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: DevDispEncoder + Send + 'static,
 {
     fn initialize(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
         async {
@@ -223,50 +273,39 @@ where
         .boxed()
     }
 
-    fn get_preferred_encodings(
+    fn setup_encoding_config(
         &mut self,
-        configurations: Vec<EncoderPossibleConfiguration>,
-    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
+        source_parameters: &dev_disp_core::host::EncoderContentParameters,
+    ) -> PinnedFuture<'_, Result<(), TransportError>> {
         async move {
-            let req_pref_encoding = WsMessageFromSource::Core(
-                DevDispMessageFromSource::GetPreferredEncodingRequest(configurations),
-            );
-            debug!("Requesting preferred encoding: {:?}", req_pref_encoding);
-            self.send_msg(req_pref_encoding).await?;
+            let supported_encodings_here = self
+                .encoder
+                .get_supported_configurations(source_parameters)
+                .await?;
 
-            debug!("Waiting for preferred encoding response...");
+            let client_preferred_encodings = self
+                .get_preferred_encodings(supported_encodings_here)
+                .await?;
 
-            self.rx_core_preferred_encoding_response
-                .next()
-                .await
-                .ok_or(TransportError::NoConnection)
+            self.encoder
+                .init(source_parameters, Some(client_preferred_encodings))
+                .await?;
+            Ok(())
         }
         .boxed()
     }
 
-    fn set_encoding(
-        &mut self,
-        configuration: EncoderPossibleConfiguration,
-    ) -> PinnedFuture<'_, Result<(), TransportError>> {
-        async move {
-            let set_encoding_msg =
-                WsMessageFromSource::Core(DevDispMessageFromSource::SetEncoding(configuration));
-            self.send_msg(set_encoding_msg).await?;
-
-            debug!("Waiting for set encoding response...");
-            self.rx_core_set_encoding_response
-                .next()
-                .await
-                .ok_or(TransportError::NoConnection)
-                .and_then(|success| {
-                    if success {
-                        Ok(())
-                    } else {
-                        Err(TransportError::Unknown)
-                    }
-                })
-        }
-        .boxed()
+    fn encode<'s, 'a>(
+        &'s mut self,
+        raw_data: &'a [u8],
+    ) -> PinnedFuture<'s, Result<&'a [u8], TransportError>>
+    where
+        'a: 's,
+    {
+        self.encoder
+            .encode(raw_data)
+            .map(|res| res.map_err(|_| TransportError::Unknown))
+            .boxed()
     }
 
     fn send_screen_data<'s, 'a>(
