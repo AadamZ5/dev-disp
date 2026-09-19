@@ -13,9 +13,8 @@ use log::{debug, error, info, trace, warn};
 
 use crate::{
     client::{DisplayHost, ScreenTransport},
-    host::{
-        DisplayHostResult, EncoderContentParameters, Screen, ScreenProvider, ScreenReadyStatus,
-    },
+    coding::encoder::EncoderContentParameters,
+    host::{DisplayHostResult, Screen, ScreenProvider, ScreenReadyStatus},
 };
 
 const NOT_READY_DELAY: Duration = Duration::from_millis(100);

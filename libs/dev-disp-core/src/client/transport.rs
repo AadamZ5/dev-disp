@@ -8,8 +8,9 @@ use log::debug;
 use thiserror::Error;
 
 use crate::{
-    host::{DisplayParameters, EncoderContentParameters, EncoderPossibleConfiguration},
-    util::PinnedFuture,
+    coding::encoder::EncoderContentParameters,
+    host::DisplayParameters,
+    util::{PinnedFuture, PinnedLocalFuture},
 };
 
 #[derive(Debug, Error)]
@@ -35,8 +36,11 @@ impl Display for TransportError {
     }
 }
 
-/// The transport needs to be a sink that sends the screen data to the
-/// client via whatever means possible.
+/// The contract for something that can negotiate parameters and send screen data to a client.
+/// This usually exists in the place that produces the screen data, or where the virtual screen
+/// is being managed.
+///
+/// Opposite of [ScreenReceiverTransport]
 pub trait ScreenTransport {
     /// Initialization setup for the transport. Called first to allow the
     /// transport to perform any preliminary setup. You can use this to get screen size,
@@ -80,10 +84,12 @@ pub trait ScreenTransport {
     ///
     /// Perform codec negotiation with the screen host device based on the virtual screen's
     /// parameters.
-    fn setup_encoding_config(
-        &mut self,
-        source_parameters: &EncoderContentParameters,
-    ) -> PinnedFuture<'_, Result<(), TransportError>>;
+    fn setup_encoding_config<'s, 'p>(
+        &'s mut self,
+        source_parameters: &'p EncoderContentParameters,
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+    where
+        'p: 's; // The parameters generated will be alive for as long as the transport itself is alive.
 
     /// The encoding step for this transport. Defined separately to allow for performance tracing.
     ///
@@ -91,7 +97,7 @@ pub trait ScreenTransport {
     fn encode<'s, 'a>(
         &'s mut self,
         raw_data: &'a [u8],
-    ) -> PinnedFuture<'s, Result<&'a [u8], TransportError>>
+    ) -> PinnedLocalFuture<'s, Result<&'a [u8], TransportError>>
     where
         'a: 's;
 
@@ -101,9 +107,19 @@ pub trait ScreenTransport {
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         encoded_data: &'a [u8],
-    ) -> PinnedFuture<'s, Result<(), TransportError>>
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
     where
         'a: 's;
+}
+
+/// The contract for something that can receive screen data from the screen producer,
+/// and participate in negotiations for parameters and such. Usually this exists on
+/// the receiving end of the screen data pipeline, or the place that is actually
+/// going to display the screen data.
+///
+/// Opposite of [ScreenTransport]
+pub trait ScreenReceiverTransport {
+    // TODO: omg implement me
 }
 
 pub struct SomeScreenTransport {
@@ -144,17 +160,20 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.notify_loading_screen()
     }
 
-    fn setup_encoding_config(
-        &mut self,
-        parameters: &EncoderContentParameters,
-    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+    fn setup_encoding_config<'s, 'p>(
+        &'s mut self,
+        parameters: &'p EncoderContentParameters,
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+    where
+        'p: 's,
+    {
         self.inner.setup_encoding_config(parameters)
     }
 
     fn encode<'s, 'a>(
         &'s mut self,
         raw_data: &'a [u8],
-    ) -> PinnedFuture<'s, Result<&'a [u8], TransportError>>
+    ) -> PinnedLocalFuture<'s, Result<&'a [u8], TransportError>>
     where
         'a: 's,
     {
@@ -164,7 +183,7 @@ impl ScreenTransport for SomeScreenTransport {
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
-    ) -> PinnedFuture<'s, Result<(), TransportError>>
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
     where
         'a: 's,
     {

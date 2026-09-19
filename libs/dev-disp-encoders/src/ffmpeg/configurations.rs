@@ -1,11 +1,16 @@
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 
+use dev_disp_core::coding::{
+    codecs::{Av1Parameters, Codec, CodecFamily, H264Parameters, HevcParameters, Vp09Parameters},
+    encoder::EncoderContentParameters,
+};
 use ffmpeg_next::{
     codec::encoder::video::Encoder as VideoEncoder,
     ffi::{AV_LEVEL_UNKNOWN, AVPixelFormat, FF_PROFILE_UNKNOWN},
     format::Pixel,
 };
 use log::{debug, warn};
+use rust_util::string_map_builder::StringMapBuilder;
 use serde::{Deserialize, Serialize};
 
 mod pixel_serialization {
@@ -47,40 +52,6 @@ mod pixel_serialization {
     }
 }
 
-// The defined encoder families.
-#[derive(Debug, Clone)]
-pub enum FfmpegEncoderFamily {
-    Hevc,
-    H264,
-    Vp09,
-    Vp8,
-    Av1,
-}
-
-impl Display for FfmpegEncoderFamily {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FfmpegEncoderFamily::Hevc => write!(f, "hevc"),
-            FfmpegEncoderFamily::H264 => write!(f, "h264"),
-            FfmpegEncoderFamily::Vp09 => write!(f, "vp09"),
-            FfmpegEncoderFamily::Vp8 => write!(f, "vp8"),
-            FfmpegEncoderFamily::Av1 => write!(f, "av1"),
-        }
-    }
-}
-
-impl FfmpegEncoderFamily {
-    pub fn to_web_codec_id(&self) -> &'static str {
-        match self {
-            FfmpegEncoderFamily::Hevc => "hvc1",
-            FfmpegEncoderFamily::H264 => "avc1",
-            FfmpegEncoderFamily::Vp09 => "vp09",
-            FfmpegEncoderFamily::Vp8 => "vp8",
-            FfmpegEncoderFamily::Av1 => "av01",
-        }
-    }
-}
-
 /// Combines lists of FFmpeg encoder options and pixel formats
 /// to try for a particular encoder.
 ///
@@ -97,7 +68,7 @@ pub struct FfmpegEncoderConfigurationSet {
     /// The encoder's FFmpeg name, e.g. "hevc_nvenc".
     pub encoder_name: String,
     /// The encoder family, e.g. "hvc1".
-    pub encoder_family: String,
+    pub encoder_family: CodecFamily,
     /// A list of options to try this encoder with. More desired
     /// combinations should be placed first.
     pub encoder_option_sets: Vec<HashMap<String, String>>,
@@ -115,7 +86,7 @@ pub struct FfmpegEncoderConfigurationSet {
 impl FfmpegEncoderConfigurationSet {
     pub fn new<T>(
         encoder_name: T,
-        encoder_family: T,
+        encoder_family: CodecFamily,
         encoder_option_sets: Vec<HashMap<String, String>>,
         pixel_formats: Vec<Pixel>,
     ) -> Self
@@ -124,7 +95,7 @@ impl FfmpegEncoderConfigurationSet {
     {
         FfmpegEncoderConfigurationSet {
             encoder_name: encoder_name.into(),
-            encoder_family: encoder_family.into(),
+            encoder_family: encoder_family,
             encoder_option_sets,
             pixel_formats,
             encoder_option_set_index: 0,
@@ -159,8 +130,8 @@ impl Iterator for FfmpegEncoderConfigurationSet {
         };
 
         let config = FfmpegEncoderConfiguration {
-            encoder_name: self.encoder_name.clone(),
-            encoder_family: self.encoder_family.clone(),
+            codec_name: self.encoder_name.clone(),
+            codec_family: self.encoder_family.clone(),
             encoder_options: options,
             pixel_format: self.pixel_formats[self.pixel_format_index],
         };
@@ -174,8 +145,10 @@ impl Iterator for FfmpegEncoderConfigurationSet {
 /// A particular FFmpeg encoder configuration.
 #[derive(Debug, Clone)]
 pub struct FfmpegEncoderConfiguration {
-    pub encoder_name: String,
-    pub encoder_family: String,
+    /// An exact FFmpeg encoder name, e.g., "libx264".
+    pub codec_name: String,
+    pub codec_family: CodecFamily,
+    /// Encoder options for ffmpeg, these are not the internal codec parameters.
     pub encoder_options: HashMap<String, String>,
     pub pixel_format: Pixel,
 }
@@ -240,38 +213,13 @@ impl Iterator for FfmpegEncoderBruteForceIterator {
     }
 }
 
-struct StringMapBuilder {
-    inner: HashMap<String, String>,
-}
-
-impl StringMapBuilder {
-    fn new() -> Self {
-        StringMapBuilder {
-            inner: HashMap::new(),
-        }
-    }
-
-    fn insert<T1, T2>(mut self, key: T1, value: T2) -> Self
-    where
-        T1: Into<String>,
-        T2: Into<String>,
-    {
-        self.inner.insert(key.into(), value.into());
-        self
-    }
-
-    fn build(self) -> HashMap<String, String> {
-        self.inner
-    }
-}
-
 pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
     // These are provided in order of preference, top to bottom left to right.
     FfmpegEncoderBruteForceIterator::new(vec![
         // I don't think this encoder exists
         FfmpegEncoderConfigurationSet::new(
             "hevc",
-            "hvc1",
+            CodecFamily::Hevc,
             vec![
                 StringMapBuilder::new()
                     .insert("preset", "ultrafast")
@@ -285,7 +233,7 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         // it may take a long time to try to initialize and fail.
         FfmpegEncoderConfigurationSet::new(
             "hevc_nvenc",
-            "hvc1",
+            CodecFamily::Hevc,
             vec![
                 StringMapBuilder::new()
                     .insert("preset", "llhq")
@@ -318,7 +266,7 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         // Intel Quick Sync Video
         FfmpegEncoderConfigurationSet::new(
             "hevc_qsv",
-            "hvc1",
+            CodecFamily::Hevc,
             vec![
                 StringMapBuilder::new()
                     .insert("preset", "veryfast")
@@ -337,11 +285,16 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
             ],
         ),
         // AMD AMF
-        FfmpegEncoderConfigurationSet::new("hevc_vaapi", "hvc1", vec![], vec![Pixel::VAAPI]),
+        FfmpegEncoderConfigurationSet::new(
+            "hevc_vaapi",
+            CodecFamily::Hevc,
+            vec![],
+            vec![Pixel::VAAPI],
+        ),
         // Vulkan-based encoder
         FfmpegEncoderConfigurationSet::new(
             "hevc_vulkan",
-            "hvc1",
+            CodecFamily::Hevc,
             vec![
                 StringMapBuilder::new()
                     .insert("usage", "stream")
@@ -354,7 +307,7 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         // CPU-based software encoders
         FfmpegEncoderConfigurationSet::new(
             "libx265",
-            "hvc1",
+            CodecFamily::Hevc,
             vec![
                 StringMapBuilder::new()
                     .insert("preset", "ultrafast")
@@ -366,28 +319,28 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         // Don't think this exists
         FfmpegEncoderConfigurationSet::new(
             "h265",
-            "hvc1",
+            CodecFamily::Hevc,
             vec![HashMap::new()],
             vec![Pixel::YUV420P],
         ),
         // Don't think this exists
         FfmpegEncoderConfigurationSet::new(
             "x265",
-            "hvc1",
+            CodecFamily::Hevc,
             vec![HashMap::new()],
             vec![Pixel::YUV420P],
         ),
         // Don't think this exists
         FfmpegEncoderConfigurationSet::new(
             "h264",
-            "h264",
+            CodecFamily::H264,
             vec![HashMap::new()],
             vec![Pixel::YUV420P],
         ),
         // Vulkan-based h264 encoder
         FfmpegEncoderConfigurationSet::new(
             "h264_vulkan",
-            "h264",
+            CodecFamily::H264,
             vec![
                 StringMapBuilder::new()
                     .insert("tuning", "ll")
@@ -400,19 +353,19 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         // CPU-based software h264 encoder
         FfmpegEncoderConfigurationSet::new(
             "libx264",
-            "h264",
+            CodecFamily::H264,
             vec![HashMap::new()],
             vec![Pixel::YUV420P],
         ),
         FfmpegEncoderConfigurationSet::new(
             "libx264",
-            "h264",
+            CodecFamily::H264,
             vec![HashMap::new()],
             vec![Pixel::YUV420P],
         ),
         FfmpegEncoderConfigurationSet::new(
             "vp9_qsv",
-            "vp09",
+            CodecFamily::Vp09,
             vec![HashMap::new()],
             vec![
                 Pixel::NV12,
@@ -424,13 +377,13 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         ),
         FfmpegEncoderConfigurationSet::new(
             "vp9_vaapi",
-            "vp09",
+            CodecFamily::Vp09,
             vec![HashMap::default()],
             vec![Pixel::VAAPI],
         ),
         FfmpegEncoderConfigurationSet::new(
             "libvpx-vp9",
-            "vp09",
+            CodecFamily::Vp09,
             // Tuned with realtime screen encoding by following
             // https://developers.google.com/media/vp9/live-encoding
             vec![
@@ -461,7 +414,7 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         ),
         FfmpegEncoderConfigurationSet::new(
             "libvpx",
-            "vp8",
+            CodecFamily::Vp8,
             vec![
                 StringMapBuilder::new()
                     .insert("deadline", "realtime")
@@ -475,7 +428,7 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
         ),
         FfmpegEncoderConfigurationSet::new(
             "libaom-av1",
-            "av1",
+            CodecFamily::Av1,
             vec![
                 StringMapBuilder::new()
                     .insert("cpu-used", "8")
@@ -494,12 +447,14 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
 // TODO: This is pretty much getting codec parameters that the web codecs expect! Is there
 // TODO: a more elegant way to structure this or define the contracts? Should our encoders
 // TODO: crate define the supported codecs and parameters?
-pub fn get_relevant_codec_parameters(
+pub fn get_codec_params(
     encoder_preset: &FfmpegEncoderConfiguration,
     encoder: &VideoEncoder,
-) -> HashMap<String, String> {
-    match encoder_preset.encoder_family.as_str() {
-        "vp09" => unsafe {
+    input_parameters: &EncoderContentParameters,
+) -> Option<Codec> {
+    match encoder_preset.codec_family {
+        CodecFamily::Raw => None,
+        CodecFamily::Vp09 => unsafe {
             let ptr = encoder.as_ptr();
 
             let pix_fmt = (*ptr).pix_fmt;
@@ -544,18 +499,14 @@ pub fn get_relevant_codec_parameters(
             let level = (*ptr).level;
             let level = if level == AV_LEVEL_UNKNOWN { 10 } else { level };
 
-            StringMapBuilder::new()
-                .insert("profile", profile.to_string())
-                .insert("level", level.to_string())
-                .insert("bitDepth", bit_depth.to_string())
-                // (
-                //     "chromaSubsampling",
-                //     chroma_subsampling,
-                // ),
-                .build()
+            Some(Codec::Vp09(Vp09Parameters {
+                bit_depth,
+                profile: profile as u8,
+                level: level as u8,
+            }))
         },
-        "vp8" => HashMap::new(),
-        "hvc1" => unsafe {
+        CodecFamily::Vp8 => Some(Codec::Vp8),
+        CodecFamily::Hevc => unsafe {
             let ptr = encoder.as_ptr();
 
             let profile = (*ptr).profile;
@@ -579,20 +530,20 @@ pub fn get_relevant_codec_parameters(
             let level = if level == AV_LEVEL_UNKNOWN { 93 } else { level };
 
             // TODO: Find out how to get this value properly.
-            let tier_letter = "L";
+            let tier_letter = 'L';
 
             let constraints = 0xB0;
 
-            StringMapBuilder::new()
-                .insert("profile", profile.to_string())
-                .insert("compatibility", format!("{:02X}", compat))
-                .insert("level", level.to_string())
-                .insert("tier", tier_letter)
-                .insert("constraints", format!("{:02X}", constraints))
-                .build()
+            Some(Codec::Hevc(HevcParameters {
+                profile: profile as u8,
+                level: level as u8,
+                compatibility: compat,
+                tier: tier_letter,
+                constraints,
+            }))
         },
 
-        "avc1" | "avc3" | "h264" => unsafe {
+        CodecFamily::Av1 => unsafe {
             let ptr = encoder.as_ptr();
 
             let profile = (*ptr).profile;
@@ -610,19 +561,39 @@ pub fn get_relevant_codec_parameters(
             let level = if level == AV_LEVEL_UNKNOWN { 30 } else { level };
 
             warn!("AVC encoder profile constraints flags not yet implemented!");
-
-            StringMapBuilder::new()
-                .insert("profile", profile.to_string())
-                .insert("level", level.to_string())
-                .insert("constraintFlags", "00")
-                .build()
+            Some(Codec::Av1(Av1Parameters {
+                profile: profile as u8,
+                level: level as u8,
+                // TODO: Add proper constraint flags
+                constraint_flags: 0x00,
+            }))
         },
-        _ => {
-            warn!(
-                "No parameter logic defined for encoder family {}",
-                encoder_preset.encoder_family
-            );
-            HashMap::new()
-        }
+
+        CodecFamily::H264 => unsafe {
+            let ptr = encoder.as_ptr();
+
+            let profile = (*ptr).profile;
+            let profile = if profile == FF_PROFILE_UNKNOWN {
+                warn!(
+                    "FF_PROFILE_UNKNOWN ({}): Assuming default H264 profile 66 (Baseline)",
+                    profile
+                );
+                66
+            } else {
+                profile
+            };
+
+            let level = (*ptr).level;
+            let level = if level == AV_LEVEL_UNKNOWN { 30 } else { level };
+
+            warn!("H264 encoder profile constraints flags not yet implemented!");
+
+            Some(Codec::H264(H264Parameters {
+                profile: profile as u8,
+                level: level as u8,
+                // TODO: Add proper constraint flags
+                constraint_flags: 0x00,
+            }))
+        },
     }
 }

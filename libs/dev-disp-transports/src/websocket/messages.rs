@@ -1,6 +1,7 @@
+use dev_disp_core::coding::encoder::EncoderPossibleCodec;
 pub use dev_disp_core::{
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
-    host::{DisplayParameters, EncoderPossibleConfiguration},
+    host::DisplayParameters,
 };
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,11 @@ pub struct WsMessageDeviceInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WsMessageSetEncodingResponse {
+    pub success: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum WsMessageFromSource<'a> {
     /// Used to ask new connection if it is in the right place
@@ -30,6 +36,12 @@ pub enum WsMessageFromSource<'a> {
 
     /// Used to request that the device is really ready to receive screen data
     RequestProtocolInit(WsMessageProtocolInit),
+
+    /// Used to inform the client of the server's supported encoding configurations
+    RequestPreferredEncodings(Vec<EncoderPossibleCodec>),
+
+    /// Tell the client to start using this encoding.
+    SetEncoding(EncoderPossibleCodec),
 
     /// Used to forward a core logic message to the client
     Core(DevDispMessageFromSource<'a>),
@@ -45,6 +57,12 @@ pub enum WsMessageFromClient {
 
     /// Used to assure the server we are ready to display stuff
     ResponseProtocolInit(WsMessageProtocolInit),
+
+    /// Used to respond to the server's request for preferred encodings.
+    ResponsePreferredEncodings(Vec<EncoderPossibleCodec>),
+
+    /// Used to respond to the server's request to set the encoding.
+    ResponseSetEncoding(WsMessageSetEncodingResponse),
 
     /// Used to give a core-logic message to the server
     Core(DevDispMessageFromClient),

@@ -4,9 +4,13 @@ use async_tungstenite::{
 
 use dev_disp_core::{
     client::{ScreenTransport, TransportError},
+    coding::encoder::{
+        Encoder, EncoderContentParameters, EncoderPossibleCodec, map_external_to_internal_configs,
+        map_internal_to_external_configs,
+    },
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
-    host::{DisplayParameters, Encoder as DevDispEncoder, EncoderPossibleConfiguration},
-    util::PinnedFuture,
+    host::DisplayParameters,
+    util::{PinnedFuture, PinnedLocalFuture},
 };
 use futures::{AsyncRead, AsyncWrite, SinkExt, StreamExt, channel::mpsc};
 use futures_util::FutureExt;
@@ -22,7 +26,7 @@ struct BackgroundContext<S> {
     tx_protocol_init: mpsc::Sender<WsMessageProtocolInit>,
     tx_device_info: mpsc::Sender<WsMessageDeviceInfo>,
     tx_core_display_params_update: mpsc::Sender<DisplayParameters>,
-    tx_core_preferred_encoding_response: mpsc::Sender<Vec<EncoderPossibleConfiguration>>,
+    tx_core_preferred_encoding_response: mpsc::Sender<Vec<EncoderPossibleCodec>>,
     tx_core_set_encoding_response: mpsc::Sender<bool>,
 }
 
@@ -37,14 +41,14 @@ pub struct WsTransport<S, E> {
     rx_device_info: mpsc::Receiver<WsMessageDeviceInfo>,
 
     rx_core_display_params_update: mpsc::Receiver<DisplayParameters>,
-    rx_core_preferred_encoding_response: mpsc::Receiver<Vec<EncoderPossibleConfiguration>>,
+    rx_core_preferred_encoding_response: mpsc::Receiver<Vec<EncoderPossibleCodec>>,
     rx_core_set_encoding_response: mpsc::Receiver<bool>,
 }
 
 impl<S, E> WsTransport<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    E: Send + 'static,
+    E: Encoder + Send + 'static,
 {
     pub fn new(websocket: WebSocketStream<S>, encoder: E) -> Self {
         let (ws_tx, ws_rx) = websocket.split();
@@ -131,25 +135,25 @@ where
                                     .await
                                     .map_err(|e| TransportError::Other(Box::new(e)))?;
                             }
+                            WsMessageFromClient::ResponseSetEncoding(response) => {
+                                background_ctx
+                                    .tx_core_set_encoding_response
+                                    .send(response.success)
+                                    .await
+                                    .map_err(|e| TransportError::Other(Box::new(e)))?;
+                            },
+                            WsMessageFromClient::ResponsePreferredEncodings(response) => {
+                                background_ctx
+                                        .tx_core_preferred_encoding_response
+                                        .send(response)
+                                        .await
+                                        .map_err(|e| TransportError::Other(Box::new(e)))?;
+                            }
                             WsMessageFromClient::Core(core_msg) => match core_msg {
                                 DevDispMessageFromClient::DisplayParametersUpdate(params) => {
                                     background_ctx
                                         .tx_core_display_params_update
                                         .send(params)
-                                        .await
-                                        .map_err(|e| TransportError::Other(Box::new(e)))?;
-                                }
-                               DevDispMessageFromClient::EncodingPreferenceResponse(encoder_possible_configurations) => {
-                                    background_ctx
-                                        .tx_core_preferred_encoding_response
-                                        .send(encoder_possible_configurations)
-                                        .await
-                                        .map_err(|e| TransportError::Other(Box::new(e)))?;
-                                },
-                                DevDispMessageFromClient::SetEncodingResponse(success) => {
-                                    background_ctx
-                                        .tx_core_set_encoding_response
-                                        .send(success)
                                         .await
                                         .map_err(|e| TransportError::Other(Box::new(e)))?;
                                 }
@@ -169,12 +173,10 @@ where
 
     fn get_preferred_encodings(
         &mut self,
-        configurations: Vec<EncoderPossibleConfiguration>,
-    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
+        configurations: Vec<EncoderPossibleCodec>,
+    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleCodec>, TransportError>> {
         async move {
-            let req_pref_encoding = WsMessageFromSource::Core(
-                DevDispMessageFromSource::GetPreferredEncodingRequest(configurations),
-            );
+            let req_pref_encoding = WsMessageFromSource::RequestPreferredEncodings(configurations);
             debug!("Requesting preferred encoding: {:?}", req_pref_encoding);
             self.send_msg(req_pref_encoding).await?;
 
@@ -190,11 +192,10 @@ where
 
     fn set_encoding(
         &mut self,
-        configuration: EncoderPossibleConfiguration,
+        configuration: EncoderPossibleCodec,
     ) -> PinnedFuture<'_, Result<(), TransportError>> {
         async move {
-            let set_encoding_msg =
-                WsMessageFromSource::Core(DevDispMessageFromSource::SetEncoding(configuration));
+            let set_encoding_msg = WsMessageFromSource::SetEncoding(configuration);
             self.send_msg(set_encoding_msg).await?;
 
             debug!("Waiting for set encoding response...");
@@ -217,7 +218,7 @@ where
 impl<S, E> ScreenTransport for WsTransport<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    E: DevDispEncoder + Send + 'static,
+    E: Encoder + Send + 'static,
 {
     fn initialize(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
         async {
@@ -273,26 +274,55 @@ where
         .boxed()
     }
 
-    fn setup_encoding_config(
-        &mut self,
-        source_parameters: &dev_disp_core::host::EncoderContentParameters,
-    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+    fn setup_encoding_config<'s, 'p>(
+        &'s mut self,
+        source_parameters: &'p EncoderContentParameters,
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+    where
+        'p: 's,
+    {
         async move {
+            // Get the internal representation of our encoder options, and then
+            // convert them to external representations (no internal data `T`)
+            // and ask the client which they can use.
+            //
+            // Then map that back to our internal repr and tell our encoder to use
+            // those configurations.
+
             let supported_encodings_here = self
                 .encoder
                 .get_supported_configurations(source_parameters)
-                .await?;
+                .await
+                .map_err(|_| TransportError::Unknown)?;
+
+            let (external_configs, internal_map) =
+                map_internal_to_external_configs(supported_encodings_here);
 
             let client_preferred_encodings = self
-                .get_preferred_encodings(supported_encodings_here)
-                .await?;
+                .get_preferred_encodings(external_configs)
+                .await
+                .map_err(|_| TransportError::Unknown)?;
 
-            self.encoder
-                .init(source_parameters, Some(client_preferred_encodings))
-                .await?;
+            let client_preferred_encodings_internal =
+                map_external_to_internal_configs(client_preferred_encodings, &internal_map)
+                    .collect::<Vec<_>>();
+
+            let all_encodings_internal = internal_map.values().collect::<Vec<_>>();
+
+            let current_encoding = self
+                .encoder
+                .set_codec(
+                    source_parameters,
+                    Some(client_preferred_encodings_internal),
+                    all_encodings_internal,
+                )
+                .await
+                .map_err(|_| TransportError::Unknown)?;
+
+            self.set_encoding(current_encoding.for_send(0)).await?;
             Ok(())
         }
-        .boxed()
+        .boxed_local()
     }
 
     fn encode<'s, 'a>(

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use dev_disp_transports::websocket::messages::{
-    DisplayParameters, EncoderPossibleConfiguration, WsMessageDeviceInfo,
+    DisplayParameters, EncoderPossibleCodec, WsMessageDeviceInfo,
 };
 use js_sys::{Function, SharedArrayBuffer};
 use serde::{Deserialize, Serialize};
@@ -141,10 +141,10 @@ pub struct JsEncoderPossibleConfiguration {
     pub parameters: HashMap<String, String>,
 }
 
-impl From<JsEncoderPossibleConfiguration> for EncoderPossibleConfiguration {
+impl From<JsEncoderPossibleConfiguration> for EncoderPossibleCodec {
     fn from(val: JsEncoderPossibleConfiguration) -> Self {
-        EncoderPossibleConfiguration {
-            encoder_name: val.encoder_name,
+        EncoderPossibleCodec {
+            display_name: val.encoder_name,
             encoder_family: val.encoder_family,
             encoded_resolution: val.encoded_resolution,
             parameters: val.parameters,
@@ -152,10 +152,10 @@ impl From<JsEncoderPossibleConfiguration> for EncoderPossibleConfiguration {
     }
 }
 
-impl From<EncoderPossibleConfiguration> for JsEncoderPossibleConfiguration {
-    fn from(val: EncoderPossibleConfiguration) -> Self {
+impl From<EncoderPossibleCodec> for JsEncoderPossibleConfiguration {
+    fn from(val: EncoderPossibleCodec) -> Self {
         JsEncoderPossibleConfiguration {
-            encoder_name: val.encoder_name,
+            encoder_name: val.display_name,
             encoder_family: val.encoder_family,
             encoded_resolution: val.encoded_resolution,
             parameters: val.parameters,

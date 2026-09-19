@@ -3,12 +3,11 @@ use std::{
     pin::Pin,
 };
 
-use futures_util::FutureExt;
-
 use crate::{
     client::{ScreenTransport, SomeScreenTransport, TransportError},
-    host::{DisplayParameters, EncoderContentParameters, EncoderPossibleConfiguration},
-    util::PinnedFuture,
+    coding::encoder::EncoderContentParameters,
+    host::DisplayParameters,
+    util::{PinnedFuture, PinnedLocalFuture},
 };
 
 /// The display host is the device that is hosting the screen, not
@@ -90,7 +89,7 @@ where
     pub fn encode<'s, 'a>(
         &'s mut self,
         raw_data: &'a [u8],
-    ) -> PinnedFuture<'s, Result<&'a [u8], TransportError>>
+    ) -> PinnedLocalFuture<'s, Result<&'a [u8], TransportError>>
     where
         'a: 's,
     {
@@ -103,7 +102,7 @@ where
     pub fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>>
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
     where
         'a: 's,
     {

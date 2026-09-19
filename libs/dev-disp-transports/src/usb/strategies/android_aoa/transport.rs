@@ -2,8 +2,9 @@ use std::{pin::Pin, time::Duration};
 
 use dev_disp_core::{
     client::{ScreenTransport, TransportError},
+    coding::encoder::{Encoder, EncoderContentParameters},
     host::DisplayParameters,
-    util::PinnedFuture,
+    util::{PinnedFuture, PinnedLocalFuture},
 };
 use futures_util::{FutureExt, future};
 use log::debug;
@@ -21,22 +22,27 @@ const USB_TIMEOUT: Duration = Duration::from_millis(200);
 /// This facilitates communication to an Android device
 /// running corresponding software, via AOA (Android
 /// Open Accessory) mode.
-pub struct AndroidAoaScreenHostTransport {
+pub struct AndroidAoaScreenHostTransport<T> {
     dev_info: DeviceInfo,
     dev: Device,
     ifc: Interface,
     bulk_in: Endpoint<Bulk, In>,
     bulk_out: Endpoint<Bulk, Out>,
     out_buffer: Option<Buffer>,
+    encoder: T,
 }
 
-impl AndroidAoaScreenHostTransport {
+impl<T> AndroidAoaScreenHostTransport<T>
+where
+    T: Encoder,
+{
     pub fn new(
         device: Device,
         device_info: DeviceInfo,
         ifc: Interface,
         bulk_in: Endpoint<Bulk, In>,
         bulk_out: Endpoint<Bulk, Out>,
+        encoder: T,
     ) -> Self {
         Self {
             dev: device,
@@ -45,6 +51,7 @@ impl AndroidAoaScreenHostTransport {
             bulk_in,
             bulk_out,
             out_buffer: None,
+            encoder,
         }
     }
 
@@ -57,7 +64,10 @@ impl AndroidAoaScreenHostTransport {
     }
 }
 
-impl ScreenTransport for AndroidAoaScreenHostTransport {
+impl<T> ScreenTransport for AndroidAoaScreenHostTransport<T>
+where
+    T: Encoder + Send,
+{
     fn initialize<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>> {
         let mut data = [0u8; 512];
         let data_size = match MessageToAndroid::GetScreenInfo(Message { id: 0, payload: () })
@@ -107,17 +117,20 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         self.dev.reset().into_future().map(|_| Ok(())).boxed()
     }
 
-    fn setup_encoding_config(
-        &mut self,
-        source_parameters: &dev_disp_core::host::EncoderContentParameters,
-    ) -> PinnedFuture<'_, Result<(), TransportError>> {
+    fn setup_encoding_config<'s, 'p>(
+        &'s mut self,
+        _source_parameters: &'p EncoderContentParameters,
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+    where
+        'p: 's,
+    {
         async move { Ok(()) }.boxed()
     }
 
     fn encode<'s, 'a>(
         &'s mut self,
         raw_data: &'a [u8],
-    ) -> PinnedFuture<'s, Result<&'a [u8], TransportError>>
+    ) -> PinnedLocalFuture<'s, Result<&'a [u8], TransportError>>
     where
         'a: 's,
     {
@@ -127,7 +140,7 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>>
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
     where
         'a: 's,
     {
@@ -183,6 +196,6 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
                 .status
                 .map_err(|e| TransportError::Other(Box::new(e)))
         }
-        .boxed()
+        .boxed_local()
     }
 }

@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use dev_disp_transports::websocket::messages::{
-    DevDispMessageFromClient, DevDispMessageFromSource, DisplayParameters,
-    EncoderPossibleConfiguration, WsMessageFromClient, WsMessageFromSource,
+    DevDispMessageFromClient, DevDispMessageFromSource, DisplayParameters, EncoderPossibleCodec,
+    WsMessageFromClient, WsMessageFromSource,
 };
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use js_sys::{Promise, SharedArrayBuffer, Uint8Array};
@@ -277,7 +277,7 @@ where
                                     >(js_value)?
                                     .into_iter()
                                     .map(|js_config| js_config.into())
-                                    .collect::<Vec<EncoderPossibleConfiguration>>();
+                                    .collect::<Vec<EncoderPossibleCodec>>();
 
                                 let resp = WsMessageFromClient::Core(
                                     DevDispMessageFromClient::EncodingPreferenceResponse(

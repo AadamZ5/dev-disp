@@ -3,6 +3,7 @@ use std::{collections::HashMap, error::Error, pin::Pin, sync::Arc};
 use async_tungstenite::{WebSocketStream, tungstenite::Message};
 use dev_disp_core::{
     client::DisplayHost,
+    coding::encoder::Encoder,
     host::{ConnectableDevice, ConnectableDeviceInfo, DeviceDiscovery, StreamingDeviceDiscovery},
     util::{PinnedFuture, PinnedLocalFuture},
 };
@@ -51,11 +52,12 @@ impl<S> Clone for WsDeviceCandidate<S> {
     }
 }
 
-impl<S> ConnectableDevice for WsDeviceCandidate<S>
+impl<S, E> ConnectableDevice for WsDeviceCandidate<S>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: Encoder + Send + 'static,
 {
-    type Transport = WsTransport<S>;
+    type Transport = WsTransport<S, E>;
 
     fn connect(
         mut self,
