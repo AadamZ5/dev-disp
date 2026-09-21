@@ -1,6 +1,7 @@
 use std::{
     fmt::{Debug, Display},
     future,
+    time::Duration,
 };
 
 use futures_util::FutureExt;
@@ -36,6 +37,58 @@ impl Display for TransportError {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum TransportSendError {
+    #[error("Failed to encode data")]
+    EncodeError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("Failed to send data")]
+    SendError(Box<dyn std::error::Error + Send + Sync>),
+}
+
+#[derive(Debug, Clone)]
+pub enum TransportSendMetrics {
+    /// No metrics recorded
+    None,
+    /// Encoding and sending metrics were recorded
+    EncodeAndSend {
+        encoded_bytes: usize,
+        sent_bytes: usize,
+        encode_time: Duration,
+        send_time: Duration,
+    },
+    /// Sending metrics were recorded
+    Send {
+        sent_bytes: usize,
+        send_time: Duration,
+    },
+}
+
+impl Display for TransportSendMetrics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransportSendMetrics::None => write!(f, "n/a"),
+            TransportSendMetrics::EncodeAndSend {
+                encoded_bytes,
+                sent_bytes,
+                encode_time,
+                send_time,
+            } => {
+                write!(
+                    f,
+                    "encoded_bytes={}, sent_bytes={}, encode_time={:?}, send_time={:?}",
+                    encoded_bytes, sent_bytes, encode_time, send_time
+                )
+            }
+            TransportSendMetrics::Send {
+                sent_bytes,
+                send_time,
+            } => {
+                write!(f, "sent_bytes={}, send_time={:?}", sent_bytes, send_time)
+            }
+        }
+    }
+}
+
 /// The contract for something that can negotiate parameters and send screen data to a client.
 /// This usually exists in the place that produces the screen data, or where the virtual screen
 /// is being managed.
@@ -49,10 +102,10 @@ pub trait ScreenTransport {
     /// Encoder setup is handled later in [Self::setup_encoding_config], try not to do that here.
     /// The controller logic notifies the control application of what phase of initialization the
     /// connection is currently in.
-    fn initialize(&mut self) -> PinnedFuture<'_, Result<(), TransportError>>;
+    fn initialize(&mut self) -> PinnedLocalFuture<'_, Result<(), TransportError>>;
 
     /// Notifies the transport that the virtual screen is currently being created.
-    fn notify_loading_screen(&self) -> PinnedFuture<'_, Result<(), TransportError>> {
+    fn notify_loading_screen(&self) -> PinnedLocalFuture<'_, Result<(), TransportError>> {
         async { Err(TransportError::NotImplemented) }.boxed()
     }
 
@@ -62,20 +115,21 @@ pub trait ScreenTransport {
     ///
     /// Used before creating the virtual screen, so we know what parameters to
     /// create the virtual screen with
-    fn get_display_config(&mut self)
-    -> PinnedFuture<'_, Result<DisplayParameters, TransportError>>;
+    fn get_display_config(
+        &mut self,
+    ) -> PinnedLocalFuture<'_, Result<DisplayParameters, TransportError>>;
 
     /// Used when the business logic deems that the loop is ending, and the connection will be closed.
     /// Purely a hook to allow the transport to notify the client of a graceful shutdown, and optionally
     /// return the client back to the "available" pool.
     /// TODO: Allow to pass owned `self` here, not an `&mut self`
-    fn close(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
+    fn close(&mut self) -> PinnedLocalFuture<'_, Result<(), TransportError>> {
         future::ready(Ok(())).boxed()
     }
 
     /// Optional function that runs in the background while the transport is active,
     /// started before initialization. Cannot hold onto self reference.
-    fn background<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
+    fn background<'s, 'a>(&'s mut self) -> PinnedLocalFuture<'a, Result<(), TransportError>> {
         debug!("Default transport background impl");
         future::ready(Ok(())).boxed()
     }
@@ -91,23 +145,13 @@ pub trait ScreenTransport {
     where
         'p: 's; // The parameters generated will be alive for as long as the transport itself is alive.
 
-    /// The encoding step for this transport. Defined separately to allow for performance tracing.
-    ///
-    /// TODO: Consider changing the future to be non-boxed if possible for performance
-    fn encode<'s, 'a>(
-        &'s mut self,
-        raw_data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<&'a [u8], TransportError>>
-    where
-        'a: 's;
-
-    /// The transmission step for this transport, responsible for sending the encoded screen data to the client.
+    /// The point where the transport optionally encodes and delivers the data to the client.
     ///
     /// TODO: Consider changing the future to be non-boxed if possible for performance
     fn send_screen_data<'s, 'a>(
         &'s mut self,
-        encoded_data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+        raw_data: &'a [u8],
+    ) -> PinnedLocalFuture<'s, Result<TransportSendMetrics, TransportSendError>>
     where
         'a: 's;
 }
@@ -142,21 +186,21 @@ impl SomeScreenTransport {
 }
 
 impl ScreenTransport for SomeScreenTransport {
-    fn initialize(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
+    fn initialize(&mut self) -> PinnedLocalFuture<'_, Result<(), TransportError>> {
         self.inner.initialize()
     }
 
     fn get_display_config(
         &mut self,
-    ) -> PinnedFuture<'_, Result<DisplayParameters, TransportError>> {
+    ) -> PinnedLocalFuture<'_, Result<DisplayParameters, TransportError>> {
         self.inner.get_display_config()
     }
 
-    fn background<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
+    fn background<'s, 'a>(&'s mut self) -> PinnedLocalFuture<'a, Result<(), TransportError>> {
         self.inner.background()
     }
 
-    fn notify_loading_screen(&self) -> PinnedFuture<'_, Result<(), TransportError>> {
+    fn notify_loading_screen(&self) -> PinnedLocalFuture<'_, Result<(), TransportError>> {
         self.inner.notify_loading_screen()
     }
 
@@ -170,27 +214,17 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.setup_encoding_config(parameters)
     }
 
-    fn encode<'s, 'a>(
-        &'s mut self,
-        raw_data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<&'a [u8], TransportError>>
-    where
-        'a: 's,
-    {
-        self.inner.encode(raw_data)
-    }
-
     fn send_screen_data<'s, 'a>(
         &'s mut self,
-        data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+        raw_data: &'a [u8],
+    ) -> PinnedLocalFuture<'s, Result<TransportSendMetrics, TransportSendError>>
     where
         'a: 's,
     {
-        self.inner.send_screen_data(data)
+        self.inner.send_screen_data(raw_data)
     }
 
-    fn close(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
+    fn close(&mut self) -> PinnedLocalFuture<'_, Result<(), TransportError>> {
         self.inner.close()
     }
 }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::{
     coding::codecs::{Codec, CodecFamily, RawParameters},
@@ -39,6 +40,10 @@ pub struct EncoderPossibleCodec {
     pub encoded_resolution: (u32, u32),
 }
 
+/// Internal encoder focused type that explains details about what the encoder supports and its configuration.
+///
+/// This type is transformed internally during the mapping to its external representation (`EncoderPossibleCodec`).
+/// See [map_internal_to_external_configs], [map_external_to_internal_configs] and [EncoderPossibleCodecInternal::for_send].
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EncoderPossibleCodecInternal<T> {
     pub display_name: String,
@@ -54,6 +59,20 @@ impl<T> From<EncoderPossibleCodecInternal<T>> for EncoderPossibleCodec {
             display_name: internal.display_name,
             codec: internal.codec,
             encoded_resolution: internal.encoded_resolution,
+        }
+    }
+}
+
+impl<T> Clone for EncoderPossibleCodecInternal<T>
+where
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        EncoderPossibleCodecInternal {
+            display_name: self.display_name.clone(),
+            codec: self.codec.clone(),
+            encoded_resolution: self.encoded_resolution.clone(),
+            data: self.data.clone(),
         }
     }
 }
@@ -117,11 +136,16 @@ where
         .filter_map(|external| internal_map.get(&external.id))
 }
 
-/// **Deprecated**: This trait may be removed in future versions.
-/// Encoding is a responsibility of the transport, not a separate component.
+/// A basic reusable encoder contract that you can accept as an input for your transport.
+///
+/// It is not required that a transport accept any specific encoder implementation;
+/// it can choose to support multiple encoders or none at all, or even a bespoke directly integrated
+/// implementation.
 pub trait Encoder {
     /// The type of the implementation-specific data associated with the encoder.
     type CodecData;
+
+    type Error: std::error::Error + Send + Sync;
 
     /// Implementation-specific code to understand what configurations this local machine supports.
     /// Takes in [EncoderContentParameters] that contain values pertaining to the created virtual screen,
@@ -132,7 +156,10 @@ pub trait Encoder {
     fn get_supported_configurations(
         &mut self,
         parameters: &EncoderContentParameters,
-    ) -> PinnedLocalFuture<'_, Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, String>>;
+    ) -> PinnedLocalFuture<
+        '_,
+        Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, Self::Error>,
+    >;
 
     /// Called first, to initialize the encoder with the given parameters.
     /// Must return the successfully initialized encoder configuration.
@@ -151,17 +178,21 @@ pub trait Encoder {
         parameters: &'p EncoderContentParameters,
         preferred_encoders: Option<Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>>,
         offered_encoders: Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>,
-    ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, String>>
+    ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, Self::Error>>
     where
         'p: 's;
 
     /// Encodes a frame of raw data, returning the encoded data.
+    ///
+    /// The returned bytes lifetime should be `'s` so that structs can
+    /// return references to internal buffers from this function.
+    ///
     /// TODO: Better error type
     /// TODO: Consider changing the future to be non-boxed if possible for performance
     fn encode<'s, 'a>(
         &'s mut self,
         raw_data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<&'s [u8], String>>
+    ) -> PinnedLocalFuture<'s, Result<&'s [u8], Self::Error>>
     where
         'a: 's;
 }
@@ -174,7 +205,15 @@ pub trait EncoderProvider {
     }
 
     // TODO: Better error type, async!
-    fn create_encoder(&self) -> PinnedLocalFuture<'_, Result<Self::EncoderType, String>>;
+    fn create_encoder(&self) -> PinnedFuture<'_, Result<Self::EncoderType, String>>;
+}
+
+#[derive(Error, Debug)]
+pub enum RawEncoderError {
+    #[error("Unknown error")]
+    Unknown,
+    #[error("No raw encoder option found during encoder selection")]
+    NoRawEncoderOptionFound,
 }
 
 pub struct RawEncoder;
@@ -182,11 +221,15 @@ pub struct RawEncoder;
 impl Encoder for RawEncoder {
     type CodecData = ();
 
+    type Error = RawEncoderError;
+
     fn get_supported_configurations(
         &mut self,
         screen_parameters: &EncoderContentParameters,
-    ) -> PinnedLocalFuture<'_, Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, String>>
-    {
+    ) -> PinnedLocalFuture<
+        '_,
+        Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, Self::Error>,
+    > {
         let width = screen_parameters.encoder_input_parameters.width;
         let height = screen_parameters.encoder_input_parameters.height;
         let stride = screen_parameters.encoder_input_parameters.stride;
@@ -212,7 +255,7 @@ impl Encoder for RawEncoder {
         _screen_parameters: &'p EncoderContentParameters,
         _preferred_encoders: Option<Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>>,
         offered_encoders: Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>,
-    ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, String>>
+    ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, Self::Error>>
     where
         'p: 's,
     {
@@ -223,7 +266,7 @@ impl Encoder for RawEncoder {
                 .iter()
                 .find(|enc| enc.codec.family() == CodecFamily::Raw)
                 .map(|enc| *enc)
-                .ok_or("Raw encoder not found in offered codecs!".to_string())
+                .ok_or(RawEncoderError::NoRawEncoderOptionFound)
         }
         .boxed_local()
     }
@@ -231,7 +274,7 @@ impl Encoder for RawEncoder {
     fn encode<'s, 'a>(
         &'s mut self,
         raw_data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<&'s [u8], String>>
+    ) -> PinnedLocalFuture<'s, Result<&'s [u8], Self::Error>>
     where
         'a: 's,
     {
@@ -240,5 +283,16 @@ impl Encoder for RawEncoder {
             Ok(raw_data)
         }
         .boxed_local()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RawEncoderProvider;
+
+impl EncoderProvider for RawEncoderProvider {
+    type EncoderType = RawEncoder;
+
+    fn create_encoder(&self) -> PinnedFuture<'_, Result<Self::EncoderType, String>> {
+        async move { Ok(RawEncoder) }.boxed()
     }
 }

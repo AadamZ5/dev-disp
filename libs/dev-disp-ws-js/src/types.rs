@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use dev_disp_transports::websocket::messages::{
-    DisplayParameters, EncoderPossibleCodec, WsMessageDeviceInfo,
-};
+use dev_disp_core::coding::encoder::EncoderPossibleCodec;
+use dev_disp_transports::websocket::messages::{DisplayParameters, WsMessageDeviceInfo};
 use js_sys::{Function, SharedArrayBuffer};
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
@@ -135,6 +134,7 @@ impl From<JsDisplayParameters> for WsMessageDeviceInfo {
 #[tsify(from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
 pub struct JsEncoderPossibleConfiguration {
+    pub id: u32,
     pub encoder_name: String,
     pub encoder_family: String,
     pub encoded_resolution: (u32, u32),
@@ -144,6 +144,7 @@ pub struct JsEncoderPossibleConfiguration {
 impl From<JsEncoderPossibleConfiguration> for EncoderPossibleCodec {
     fn from(val: JsEncoderPossibleConfiguration) -> Self {
         EncoderPossibleCodec {
+            id: val.id,
             display_name: val.encoder_name,
             encoder_family: val.encoder_family,
             encoded_resolution: val.encoded_resolution,

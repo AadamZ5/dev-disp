@@ -2,14 +2,15 @@ use crate::util::BroadcastSink;
 use arc_swap::ArcSwap;
 use dev_disp_core::{
     client::ScreenTransport,
+    coding::encoder::EncoderProvider,
     core::{SystemState, handle_display_host},
     daemon::api::{
         DevDispApi, DeviceCollectionStatus, DiscoveryId, DiscoveryRef, DisplayHostId,
         DisplayHostRef, DisplayHostStatus, InitializationState,
     },
     host::{
-        ConnectableDevice, DeviceDiscovery, EncoderProvider, PollingDeviceDiscovery,
-        ScreenProvider, StreamingDeviceDiscovery,
+        ConnectableDevice, DeviceDiscovery, PollingDeviceDiscovery, ScreenProvider,
+        StreamingDeviceDiscovery,
     },
     util::{PinnedFuture, PinnedLocalFuture, PinnedStream},
 };

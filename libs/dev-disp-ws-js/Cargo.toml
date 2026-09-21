@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bincode = { version = "2.0.1", features = ["serde"] }
+dev-disp-core = { path = "../../libs/dev-disp-core" }
 dev-disp-transports = { path = "../../libs/dev-disp-transports", features = [
   "ws",
   "wasm",

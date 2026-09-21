@@ -1,10 +1,13 @@
 use std::{
     fmt::{Debug, Display},
-    pin::Pin,
+    time::Duration,
 };
 
 use crate::{
-    client::{ScreenTransport, SomeScreenTransport, TransportError},
+    client::{
+        ScreenTransport, SomeScreenTransport, TransportError, TransportSendError,
+        TransportSendMetrics,
+    },
     coding::encoder::EncoderContentParameters,
     host::DisplayParameters,
     util::{PinnedFuture, PinnedLocalFuture},
@@ -46,7 +49,9 @@ where
         self.client_id
     }
 
-    pub fn background_task<'s, 'a>(&'s mut self) -> PinnedFuture<'a, Result<(), TransportError>>
+    pub fn background_task<'s, 'a>(
+        &'s mut self,
+    ) -> PinnedLocalFuture<'a, Result<(), TransportError>>
     where
         'a: 's,
     {
@@ -83,30 +88,17 @@ where
             .await
     }
 
-    /// See [ScreenTransport::encode] for more details.
-    ///
-    /// TODO: Consider changing the future to be non-boxed if possible for performance
-    pub fn encode<'s, 'a>(
-        &'s mut self,
-        raw_data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<&'a [u8], TransportError>>
-    where
-        'a: 's,
-    {
-        self.transport.encode(raw_data)
-    }
-
     /// See [ScreenTransport::send_screen_data] for more details.
     ///
     /// TODO: Consider changing the future to be non-boxed if possible for performance
     pub fn send_screen_data<'s, 'a>(
         &'s mut self,
-        data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+        raw_data: &'a [u8],
+    ) -> PinnedLocalFuture<'s, Result<TransportSendMetrics, TransportSendError>>
     where
         'a: 's,
     {
-        self.transport.send_screen_data(data)
+        self.transport.send_screen_data(raw_data)
     }
 
     /// See [ScreenTransport::close] for more details.

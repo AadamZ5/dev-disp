@@ -12,7 +12,7 @@ use futures_util::FutureExt;
 use log::{debug, error, info, trace, warn};
 
 use crate::{
-    client::{DisplayHost, ScreenTransport},
+    client::{DisplayHost, ScreenTransport, TransportError, TransportSendError},
     coding::encoder::EncoderContentParameters,
     host::{DisplayHostResult, Screen, ScreenProvider, ScreenReadyStatus},
 };
@@ -289,52 +289,42 @@ where
                 ScreenReadyStatus::Ready => {
                     if let Some(data) = screen.get_bytes() {
                         let now = Instant::now();
-                        let encoded_data = match host.encode(data).await {
-                            Ok(ed) => ed,
-                            Err(e) => {
-                                error!("Failed to encode screen data: {}", e);
-                                err = Some("Failed to encode screen data".to_string());
-                                break;
-                            }
-                        };
-                        let encode_time = now.elapsed();
-                        let send_result = host.send_screen_data(encoded_data).await;
+                        let send_result = host.send_screen_data(data).await;
                         let send_time = now.elapsed();
-                        if let Err(e) = send_result {
-                            error!("Error during transmission to screen host: {}", e);
-                            let bad_transmission_elapsed =
-                                if let Some(start) = bad_transmission_start {
-                                    start.elapsed()
-                                } else {
-                                    bad_transmission_start = Some(Instant::now());
-                                    Duration::ZERO
-                                };
-                            bad_transmission_count += 1;
 
-                            if bad_transmission_elapsed >= Duration::from_secs(5)
-                                && bad_transmission_count >= 5
-                            {
-                                error!(
-                                    "Too many bad transmissions ({} errors in {}ms), closing connection",
-                                    bad_transmission_count,
-                                    bad_transmission_elapsed.as_millis()
+                        match send_result {
+                            Ok(metrics) => {
+                                trace!(
+                                    "Screen data sent successfully: {} (total {:?})",
+                                    metrics, send_time
                                 );
-                                err =
-                                    Some("Too many bad transmissions to display host".to_string());
-                                break;
                             }
-                        } else {
-                            bad_transmission_start = None;
-                            bad_transmission_count = 0;
-                            let kbs = encoded_data.len() as f64 / 1024.0 / send_time.as_secs_f64();
-                            trace!(
-                                "Sent {} bytes to display host in {}ms ({:.2} KB/s, encode time: {}ms, send time: {}ms)",
-                                encoded_data.len(),
-                                send_time.as_millis(),
-                                kbs,
-                                encode_time.as_millis(),
-                                (send_time - encode_time).as_millis()
-                            );
+                            Err(e) => {
+                                // If we got an error, track for recurring bad transmissions
+                                error!("Transport failed to deliver bytes: {:?}", e);
+                                let bad_transmission_elapsed =
+                                    if let Some(start) = bad_transmission_start {
+                                        start.elapsed()
+                                    } else {
+                                        bad_transmission_start = Some(Instant::now());
+                                        Duration::ZERO
+                                    };
+                                bad_transmission_count += 1;
+
+                                if bad_transmission_elapsed >= Duration::from_secs(5)
+                                    && bad_transmission_count >= 5
+                                {
+                                    error!(
+                                        "Too many bad transmissions ({} errors in {}ms), closing connection",
+                                        bad_transmission_count,
+                                        bad_transmission_elapsed.as_millis()
+                                    );
+                                    err = Some(
+                                        "Too many bad transmissions to display host".to_string(),
+                                    );
+                                    break;
+                                }
+                            }
                         }
                     } else {
                         error!("Bytes were missing after declared ready!");

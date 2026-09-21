@@ -5,7 +5,7 @@ use futures_util::{FutureExt, StreamExt, stream::unfold};
 
 use crate::{
     client::{DisplayHost, ScreenTransport},
-    util::PinnedFuture,
+    util::{PinnedFuture, PinnedLocalFuture},
 };
 
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ pub trait ConnectableDevice: Sized {
     /// the connected device.
     fn connect(
         self,
-    ) -> PinnedFuture<
+    ) -> PinnedLocalFuture<
         'static,
         Result<DisplayHost<Self::Transport>, Box<dyn std::error::Error + Send + Sync>>,
     >;

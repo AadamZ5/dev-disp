@@ -1,7 +1,7 @@
 use std::{pin::Pin, time::Duration};
 
 use dev_disp_core::{
-    client::{ScreenTransport, TransportError},
+    client::{ScreenTransport, TransportError, TransportSendError, TransportSendMetrics},
     coding::encoder::{Encoder, EncoderContentParameters},
     host::DisplayParameters,
     util::{PinnedFuture, PinnedLocalFuture},
@@ -68,7 +68,7 @@ impl<T> ScreenTransport for AndroidAoaScreenHostTransport<T>
 where
     T: Encoder + Send,
 {
-    fn initialize<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>> {
+    fn initialize<'s>(&'s mut self) -> PinnedLocalFuture<'s, Result<(), TransportError>> {
         let mut data = [0u8; 512];
         let data_size = match MessageToAndroid::GetScreenInfo(Message { id: 0, payload: () })
             .serialize_into(&mut data)
@@ -101,7 +101,7 @@ where
 
     fn get_display_config(
         &mut self,
-    ) -> PinnedFuture<'_, Result<DisplayParameters, TransportError>> {
+    ) -> PinnedLocalFuture<'_, Result<DisplayParameters, TransportError>> {
         future::ready(Ok(DisplayParameters {
             host_dev_name: self
                 .dev_info
@@ -113,7 +113,7 @@ where
         .boxed()
     }
 
-    fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send>> {
+    fn close(&mut self) -> PinnedLocalFuture<'_, Result<(), TransportError>> {
         self.dev.reset().into_future().map(|_| Ok(())).boxed()
     }
 
@@ -127,20 +127,10 @@ where
         async move { Ok(()) }.boxed()
     }
 
-    fn encode<'s, 'a>(
-        &'s mut self,
-        raw_data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<&'a [u8], TransportError>>
-    where
-        'a: 's,
-    {
-        async move { Ok(raw_data) }.boxed()
-    }
-
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+    ) -> PinnedLocalFuture<'s, Result<TransportSendMetrics, TransportSendError>>
     where
         'a: 's,
     {
@@ -150,7 +140,7 @@ where
         });
         let heaped_data = match screen_update.serialize() {
             Ok(vec) => vec,
-            Err(e) => return future::err(TransportError::Other(Box::new(e))).boxed(),
+            Err(e) => return future::err(TransportSendError::EncodeError(Box::new(e))).boxed(),
         };
 
         let mut out_buffer = self
@@ -194,7 +184,11 @@ where
             self.out_buffer.replace(completion.buffer);
             completion
                 .status
-                .map_err(|e| TransportError::Other(Box::new(e)))
+                .map_err(|e| TransportSendError::SendError(Box::new(e)))
+                .map(|_| TransportSendMetrics::Send {
+                    sent_bytes: data_len,
+                    send_time: elapsed,
+                })
         }
         .boxed_local()
     }

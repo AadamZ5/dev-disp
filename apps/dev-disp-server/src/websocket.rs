@@ -1,4 +1,7 @@
-use dev_disp_core::util::{PinnedLocalFuture, PinnedStream};
+use dev_disp_core::{
+    coding::encoder::EncoderProvider,
+    util::{PinnedLocalFuture, PinnedStream},
+};
 use dev_disp_transports::websocket::discovery::WsDiscovery;
 use futures_util::{FutureExt, StreamExt, stream};
 use log::{error, info};
@@ -30,11 +33,17 @@ pub async fn create_tcp_client_stream() -> PinnedStream<'static, Compat<TcpStrea
     incoming_client_stream
 }
 
-pub async fn create_websocket_and_bg_task() -> (
-    WsDiscovery<Compat<TcpStream>>,
+pub async fn create_websocket_and_bg_task<E>(
+    encoder_provider: E,
+) -> (
+    WsDiscovery<Compat<TcpStream>, E>,
     PinnedLocalFuture<'static, Result<(), String>>,
-) {
-    let ws_discovery = WsDiscovery::new();
+)
+where
+    E: EncoderProvider + Clone + Send + Sync + 'static,
+    E::EncoderType: 'static,
+{
+    let ws_discovery = WsDiscovery::new(encoder_provider);
     let incoming_client_stream = create_tcp_client_stream().await;
     let ws_listen = ws_discovery.listen(incoming_client_stream).boxed_local();
     (ws_discovery, ws_listen)
