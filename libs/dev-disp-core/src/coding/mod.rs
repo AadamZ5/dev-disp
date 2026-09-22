@@ -3,4 +3,5 @@
 //! data pass-through implementations.
 
 pub mod codecs;
+pub mod decoder;
 pub mod encoder;

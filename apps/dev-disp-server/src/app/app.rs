@@ -2,7 +2,6 @@ use crate::util::BroadcastSink;
 use arc_swap::ArcSwap;
 use dev_disp_core::{
     client::ScreenTransport,
-    coding::encoder::EncoderProvider,
     core::{SystemState, handle_display_host},
     daemon::api::{
         DevDispApi, DeviceCollectionStatus, DiscoveryId, DiscoveryRef, DisplayHostId,
@@ -144,29 +143,25 @@ impl DiscoveryMethod {
 
 /// App keeps track of the current available devices, and in-use devices.
 #[derive(Debug, Clone)]
-pub struct App<S, E>
+pub struct App<S>
 where
     S: ScreenProvider + Clone + Send + 'static,
-    E: EncoderProvider + Clone + Send + 'static,
 {
     screen_provider: S,
-    encoder_provider: E,
     available_devices: Arc<RwLock<HashMap<DiscoveryId, HashMap<DisplayHostId, ReadyDeviceRef>>>>,
     in_use_devices: Arc<RwLock<HashMap<DiscoveryId, HashMap<DisplayHostId, InUseDeviceRef>>>>,
     discovery_methods: Arc<RwLock<HashMap<DiscoveryId, DiscoveryMethod>>>,
     devices_change_tx: broadcast::Sender<()>,
 }
 
-impl<S, E> App<S, E>
+impl<S> App<S>
 where
     S: ScreenProvider + Clone + Send + 'static,
-    E: EncoderProvider + Clone + Send + 'static,
 {
-    pub fn new(screen_provider: S, encoder_provider: E) -> Self {
+    pub fn new(screen_provider: S) -> Self {
         let (devices_change_tx, _) = broadcast::channel(128);
         Self {
             screen_provider,
-            encoder_provider,
             available_devices: Arc::new(RwLock::new(HashMap::new())),
             in_use_devices: Arc::new(RwLock::new(HashMap::new())),
             discovery_methods: Arc::new(RwLock::new(HashMap::new())),
@@ -257,7 +252,6 @@ where
         let available_devices = self.available_devices.clone();
         let in_use_devices = self.in_use_devices.clone();
         let screen_provider = self.screen_provider.clone();
-        let encoder_provider = self.encoder_provider.clone();
         let devices_change_tx = self.devices_change_tx.clone();
         let discovery_methods = self.discovery_methods.clone();
 
@@ -267,7 +261,6 @@ where
         async move {
             let discovery_id = discovery_id;
             let screen_provider = screen_provider;
-            let encoder_provider = encoder_provider;
             let devices_change_tx = devices_change_tx;
             let discovery_methods = discovery_methods;
 
@@ -304,7 +297,6 @@ where
                     entry.insert(device_ref.id.clone(), device_ref);
 
                     let screen_provider_clone = screen_provider.clone();
-                    let encoder_provider_clone = encoder_provider.clone();
                     let available_devices = available_devices.clone();
                     let in_use_devices = in_use_devices.clone();
                     let discovery_id = discovery_id.clone();
@@ -315,7 +307,6 @@ where
                         let info = info;
                         let device = device;
                         let screen_provider = screen_provider_clone;
-                        let encoder_provider = encoder_provider_clone;
                         let available_devices = available_devices;
                         let in_use_devices = in_use_devices;
                         let discovery_id = discovery_id;
@@ -560,10 +551,9 @@ where
     }
 }
 
-impl<S, E> DevDispApi for App<S, E>
+impl<S> DevDispApi for App<S>
 where
     S: ScreenProvider + Clone + Send + 'static,
-    E: EncoderProvider + Clone + Send + 'static,
 {
     fn get_devices(
         &self,

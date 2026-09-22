@@ -82,6 +82,7 @@ pub struct Av1Parameters {
     pub profile: u8,
     pub level: u8,
     pub constraint_flags: u8,
+    pub bit_depth: u8,
 }
 
 impl Default for Av1Parameters {
@@ -91,6 +92,7 @@ impl Default for Av1Parameters {
             profile: 66,
             level: 30,
             constraint_flags: 0x00,
+            bit_depth: 8,
         }
     }
 }
@@ -139,6 +141,7 @@ impl Codec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum CodecFamily {
     #[default]
     Raw,

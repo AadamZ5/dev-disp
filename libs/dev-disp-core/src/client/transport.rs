@@ -40,9 +40,9 @@ impl Display for TransportError {
 #[derive(Debug, Error)]
 pub enum TransportSendError {
     #[error("Failed to encode data")]
-    EncodeError(Box<dyn std::error::Error + Send + Sync>),
+    EncodeError(Box<dyn std::error::Error + Send>),
     #[error("Failed to send data")]
-    SendError(Box<dyn std::error::Error + Send + Sync>),
+    SendError(Box<dyn std::error::Error + Send>),
 }
 
 #[derive(Debug, Clone)]
@@ -162,8 +162,41 @@ pub trait ScreenTransport {
 /// going to display the screen data.
 ///
 /// Opposite of [ScreenTransport]
-pub trait ScreenReceiverTransport {
-    // TODO: omg implement me
+pub trait ScreenTransportReceiver {
+    type Error: std::error::Error + Send;
+
+    /// Handle an initialization call from the [ScreenTransport] implementation.
+    fn initialize(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+
+    /// The listen loop for receiving screen data and handling incoming messages from the [ScreenTransport].
+    fn listen(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+}
+
+/// The thing that adapts the [ScreenTransportReceiver] to some higher-level controller logic.
+pub trait ScreenReceiverController {
+    type Error: std::error::Error + Send;
+
+    /// Initialize any resources before receiving.
+    fn initialize(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+
+    /// Handle the notification that the virtual screen is being prepared
+    fn on_loading_screen(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+
+    /// Provides the display parameters that this receiver can host.
+    fn provide_display_config(
+        &mut self,
+    ) -> PinnedLocalFuture<'_, Result<DisplayParameters, Self::Error>>;
+
+    /// Called when the receiver is being gracefully closed and should release any resources.
+    fn close(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+
+    /// Optional background task used by the receiver controller.
+    fn background<'s, 'a>(&'s mut self) -> PinnedLocalFuture<'a, Result<(), Self::Error>> {
+        async { Ok(()) }.boxed_local()
+    }
+
+    /// The point where the screen data is received and optionally decoded before being displayed.
+    fn on_screen_data(&mut self, data: &[u8]) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
 }
 
 pub struct SomeScreenTransport {

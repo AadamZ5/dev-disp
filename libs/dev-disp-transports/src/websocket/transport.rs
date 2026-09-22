@@ -85,6 +85,8 @@ where
         Self::send_msg_with_sender(&mut self.ws_tx, msg).await
     }
 
+    /// Send a message using the provided WebSocket sender, instead of implicitly using the internally
+    /// captured one. Useful for separating mutable references (not using `&mut self`)
     async fn send_msg_with_sender<'a, S1>(
         tx: &mut WebSocketSender<S1>,
         msg: WsMessageFromSource<'a>,
@@ -101,7 +103,8 @@ where
         Ok(())
     }
 
-    fn _background_task<'a>(&mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
+    /// Spawner for the background task
+    fn background_task<'a>(&mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
         let background_ctx = self.background_context.take();
 
         async move {
@@ -261,7 +264,7 @@ where
     }
 
     fn background<'a>(&mut self) -> PinnedLocalFuture<'a, Result<(), TransportError>> {
-        self._background_task()
+        self.background_task()
     }
 
     fn get_display_config(

@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
+use crate::codecs::JsCodec;
+
 mod serialize_function {
     use js_sys::Function;
     use serde::{Deserializer, Serializer};
@@ -135,20 +137,18 @@ impl From<JsDisplayParameters> for WsMessageDeviceInfo {
 #[serde(rename_all = "camelCase")]
 pub struct JsEncoderPossibleConfiguration {
     pub id: u32,
-    pub encoder_name: String,
-    pub encoder_family: String,
+    pub display_name: String,
+    pub codec: JsCodec,
     pub encoded_resolution: (u32, u32),
-    pub parameters: HashMap<String, String>,
 }
 
 impl From<JsEncoderPossibleConfiguration> for EncoderPossibleCodec {
     fn from(val: JsEncoderPossibleConfiguration) -> Self {
         EncoderPossibleCodec {
             id: val.id,
-            display_name: val.encoder_name,
-            encoder_family: val.encoder_family,
+            display_name: val.display_name,
+            codec: val.codec.into(),
             encoded_resolution: val.encoded_resolution,
-            parameters: val.parameters,
         }
     }
 }
@@ -156,10 +156,10 @@ impl From<JsEncoderPossibleConfiguration> for EncoderPossibleCodec {
 impl From<EncoderPossibleCodec> for JsEncoderPossibleConfiguration {
     fn from(val: EncoderPossibleCodec) -> Self {
         JsEncoderPossibleConfiguration {
-            encoder_name: val.display_name,
-            encoder_family: val.encoder_family,
+            id: val.id,
+            display_name: val.display_name,
+            codec: val.codec.into(),
             encoded_resolution: val.encoded_resolution,
-            parameters: val.parameters,
         }
     }
 }

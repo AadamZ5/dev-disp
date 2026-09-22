@@ -459,24 +459,7 @@ pub fn get_codec_params(
 
             let pix_fmt = (*ptr).pix_fmt;
 
-            let (bit_depth, chroma_subsampling) = match pix_fmt {
-                AVPixelFormat::AV_PIX_FMT_YUV420P => (8, 1),
-                AVPixelFormat::AV_PIX_FMT_YUV422P => (8, 2),
-                AVPixelFormat::AV_PIX_FMT_YUV444P => (8, 3),
-                AVPixelFormat::AV_PIX_FMT_YUV440P => (8, 0),
-                AVPixelFormat::AV_PIX_FMT_YUVA420P => (8, 1),
-                AVPixelFormat::AV_PIX_FMT_YUV420P10LE => (10, 1),
-                AVPixelFormat::AV_PIX_FMT_YUV422P10LE => (10, 2),
-                AVPixelFormat::AV_PIX_FMT_YUV444P10LE => (10, 3),
-                AVPixelFormat::AV_PIX_FMT_YUVA420P10LE => (10, 1),
-                AVPixelFormat::AV_PIX_FMT_YUV420P12LE => (12, 1),
-                AVPixelFormat::AV_PIX_FMT_YUV422P12LE => (12, 2),
-                AVPixelFormat::AV_PIX_FMT_YUV444P12LE => (12, 3),
-                _ => {
-                    warn!("Unexpected pixel format {:?} for vp09 encoder", pix_fmt);
-                    (8, 0)
-                }
-            };
+            let (bit_depth, chroma_subsampling) = get_bit_depth_chroma_ss(pix_fmt);
 
             let profile = (*ptr).profile;
             let profile = if profile == FF_PROFILE_UNKNOWN {
@@ -560,12 +543,16 @@ pub fn get_codec_params(
             let level = (*ptr).level;
             let level = if level == AV_LEVEL_UNKNOWN { 30 } else { level };
 
+            let px_fmt = (*ptr).pix_fmt;
+            let (bit_depth, _chroma_subsampling) = get_bit_depth_chroma_ss(px_fmt);
+
             warn!("AVC encoder profile constraints flags not yet implemented!");
             Some(Codec::Av1(Av1Parameters {
                 profile: profile as u8,
                 level: level as u8,
                 // TODO: Add proper constraint flags
                 constraint_flags: 0x00,
+                bit_depth,
             }))
         },
 
@@ -596,4 +583,30 @@ pub fn get_codec_params(
             }))
         },
     }
+}
+
+fn get_bit_depth_chroma_ss(px: AVPixelFormat) -> (u8, u8) {
+    let (bit_depth, chroma_subsampling) = match px {
+        AVPixelFormat::AV_PIX_FMT_YUV420P => (8, 1),
+        AVPixelFormat::AV_PIX_FMT_YUV422P => (8, 2),
+        AVPixelFormat::AV_PIX_FMT_YUV444P => (8, 3),
+        AVPixelFormat::AV_PIX_FMT_YUV440P => (8, 0),
+        AVPixelFormat::AV_PIX_FMT_YUVA420P => (8, 1),
+        AVPixelFormat::AV_PIX_FMT_YUV420P10LE => (10, 1),
+        AVPixelFormat::AV_PIX_FMT_YUV422P10LE => (10, 2),
+        AVPixelFormat::AV_PIX_FMT_YUV444P10LE => (10, 3),
+        AVPixelFormat::AV_PIX_FMT_YUVA420P10LE => (10, 1),
+        AVPixelFormat::AV_PIX_FMT_YUV420P12LE => (12, 1),
+        AVPixelFormat::AV_PIX_FMT_YUV422P12LE => (12, 2),
+        AVPixelFormat::AV_PIX_FMT_YUV444P12LE => (12, 3),
+        _ => {
+            warn!(
+                "Unexpected pixel format {:?} while determining bit depth and chroma subsampling",
+                px
+            );
+            (8, 0)
+        }
+    };
+
+    (bit_depth, chroma_subsampling)
 }

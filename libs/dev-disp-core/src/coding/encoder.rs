@@ -145,7 +145,7 @@ pub trait Encoder {
     /// The type of the implementation-specific data associated with the encoder.
     type CodecData;
 
-    type Error: std::error::Error + Send + Sync;
+    type Error: std::error::Error + Send;
 
     /// Implementation-specific code to understand what configurations this local machine supports.
     /// Takes in [EncoderContentParameters] that contain values pertaining to the created virtual screen,

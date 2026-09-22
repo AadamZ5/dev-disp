@@ -33,7 +33,7 @@ async fn main() {
     let screen_provider = get_screen_provider().await;
     let encoder_provider = get_encoder_provider().await;
     let mut endpoint = get_endpoint().await;
-    let app = App::new(screen_provider.clone(), encoder_provider.clone());
+    let app = App::new(screen_provider.clone());
 
     tokio::spawn(endpoint.serve_api(app.clone()));
 
