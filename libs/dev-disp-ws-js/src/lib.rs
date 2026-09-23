@@ -13,7 +13,7 @@ use crate::{
 };
 
 mod client;
-mod codecs;
+mod receiver;
 mod types;
 mod util;
 

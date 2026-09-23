@@ -1,7 +1,7 @@
 #[cfg(feature = "ws-host")]
-pub mod discovery;
+pub mod codec_negotiation;
 #[cfg(feature = "ws-host")]
-pub mod encoder;
+pub mod discovery;
 #[cfg(feature = "ws-host")]
 pub mod transport;
 

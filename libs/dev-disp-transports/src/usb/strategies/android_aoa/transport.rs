@@ -1,10 +1,10 @@
-use std::{pin::Pin, time::Duration};
+use std::time::Duration;
 
 use dev_disp_core::{
     client::{ScreenTransport, TransportError, TransportSendError, TransportSendMetrics},
-    coding::encoder::{Encoder, EncoderContentParameters},
-    host::DisplayParameters,
-    util::{PinnedFuture, PinnedLocalFuture},
+    coding::encoder::Encoder,
+    host::{DisplayParameters, ScreenContentParameters},
+    util::PinnedLocalFuture,
 };
 use futures_util::{FutureExt, future};
 use log::debug;
@@ -117,9 +117,9 @@ where
         self.dev.reset().into_future().map(|_| Ok(())).boxed()
     }
 
-    fn setup_encoding_config<'s, 'p>(
+    fn prepare_send_screen_data<'s, 'p>(
         &'s mut self,
-        _source_parameters: &'p EncoderContentParameters,
+        _source_parameters: &'p ScreenContentParameters,
     ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
     where
         'p: 's,

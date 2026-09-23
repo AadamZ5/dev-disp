@@ -1,16 +1,12 @@
-use std::{
-    fmt::{Debug, Display},
-    time::Duration,
-};
+use std::fmt::{Debug, Display};
 
 use crate::{
     client::{
         ScreenTransport, SomeScreenTransport, TransportError, TransportSendError,
         TransportSendMetrics,
     },
-    coding::encoder::EncoderContentParameters,
-    host::DisplayParameters,
-    util::{PinnedFuture, PinnedLocalFuture},
+    host::{DisplayParameters, ScreenContentParameters},
+    util::PinnedLocalFuture,
 };
 
 /// The display host is the device that is hosting the screen, not
@@ -76,15 +72,17 @@ where
         self.transport.get_display_config().await
     }
 
-    /// Performs codec negotiation with the screen host device.
-    /// See [ScreenTransport::setup_encoding_config] or your specific implementation
+    /// Prepares the device to receive screen data, using the screen content parameters
+    /// provided.
+    ///
+    /// See [ScreenTransport::prepare_send_screen_data] or your specific implementation
     /// of that trait for more details.
-    pub async fn setup_encoding_config(
+    pub async fn prepare_send_screen_data(
         &mut self,
-        source_parameters: &EncoderContentParameters,
+        source_parameters: &ScreenContentParameters,
     ) -> Result<(), TransportError> {
         self.transport
-            .setup_encoding_config(source_parameters)
+            .prepare_send_screen_data(source_parameters)
             .await
     }
 

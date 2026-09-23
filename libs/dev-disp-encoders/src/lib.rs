@@ -2,5 +2,7 @@
 //!
 //! Encoders here can be used within the framework to handle packing or unpacking visual data.
 
+pub mod toolkit;
+
 pub mod ffmpeg;
 pub(crate) mod util;

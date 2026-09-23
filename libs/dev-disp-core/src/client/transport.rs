@@ -9,9 +9,8 @@ use log::debug;
 use thiserror::Error;
 
 use crate::{
-    coding::encoder::EncoderContentParameters,
-    host::DisplayParameters,
-    util::{PinnedFuture, PinnedLocalFuture},
+    host::{DisplayParameters, ScreenContentParameters},
+    util::PinnedLocalFuture,
 };
 
 #[derive(Debug, Error)]
@@ -75,15 +74,23 @@ impl Display for TransportSendMetrics {
             } => {
                 write!(
                     f,
-                    "encoded_bytes={}, sent_bytes={}, encode_time={:?}, send_time={:?}",
-                    encoded_bytes, sent_bytes, encode_time, send_time
+                    "encoded_bytes={}, sent_bytes={}, encode_time={}ms, send_time={}ms",
+                    encoded_bytes,
+                    sent_bytes,
+                    encode_time.as_millis(),
+                    send_time.as_millis()
                 )
             }
             TransportSendMetrics::Send {
                 sent_bytes,
                 send_time,
             } => {
-                write!(f, "sent_bytes={}, send_time={:?}", sent_bytes, send_time)
+                write!(
+                    f,
+                    "sent_bytes={}, send_time={}ms",
+                    sent_bytes,
+                    send_time.as_millis()
+                )
             }
         }
     }
@@ -93,7 +100,7 @@ impl Display for TransportSendMetrics {
 /// This usually exists in the place that produces the screen data, or where the virtual screen
 /// is being managed.
 ///
-/// Opposite of [ScreenReceiverTransport]
+/// Opposite of [ScreenTransportReceiver]
 pub trait ScreenTransport {
     /// Initialization setup for the transport. Called first to allow the
     /// transport to perform any preliminary setup. You can use this to get screen size,
@@ -134,13 +141,14 @@ pub trait ScreenTransport {
         future::ready(Ok(())).boxed()
     }
 
-    /// Used when the business logic wants to set up the encoding configuration for the transport.
+    /// Called once after the virtual screen has been created, and we will soon begin sending
+    /// screen data through the transport.
     ///
-    /// Perform codec negotiation with the screen host device based on the virtual screen's
-    /// parameters.
-    fn setup_encoding_config<'s, 'p>(
+    /// You can perform codec negotiation with the screen host device based on the virtual screen's
+    /// parameters here.
+    fn prepare_send_screen_data<'s, 'p>(
         &'s mut self,
-        source_parameters: &'p EncoderContentParameters,
+        source_parameters: &'p ScreenContentParameters,
     ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
     where
         'p: 's; // The parameters generated will be alive for as long as the transport itself is alive.
@@ -165,15 +173,24 @@ pub trait ScreenTransport {
 pub trait ScreenTransportReceiver {
     type Error: std::error::Error + Send;
 
+    /// Data to give to the adapter during the [ScreenReceiverAdapter::prepare_send_screen_data] call.
+    type PreReceiveData;
+
+    /// This is the facade or adapter that takes the incoming messages and adapts them to higher-level application logic.
+    type Adapter: ScreenReceiverAdapter<Self::PreReceiveData>;
+
     /// Handle an initialization call from the [ScreenTransport] implementation.
-    fn initialize(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+    fn initialize<'s>(&'s mut self) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
 
     /// The listen loop for receiving screen data and handling incoming messages from the [ScreenTransport].
-    fn listen(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+    fn listen<'s>(&'s mut self) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
 }
 
-/// The thing that adapts the [ScreenTransportReceiver] to some higher-level controller logic.
-pub trait ScreenReceiverController {
+/// The thing that adapts the [ScreenTransportReceiver] to some higher-level platform-specific application logic.
+///
+/// Type `T` represents the transport-specific data that will be provided to the adapter during the preparation phase,
+/// before screen data is sent.
+pub trait ScreenReceiverAdapter<T> {
     type Error: std::error::Error + Send;
 
     /// Initialize any resources before receiving.
@@ -195,8 +212,17 @@ pub trait ScreenReceiverController {
         async { Ok(()) }.boxed_local()
     }
 
+    fn prepare_receive_screen_data(
+        &mut self,
+        parameters: &ScreenContentParameters,
+        transport_data: T,
+    ) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+
     /// The point where the screen data is received and optionally decoded before being displayed.
-    fn on_screen_data(&mut self, data: &[u8]) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+    fn recieve_screen_data(
+        &mut self,
+        data: &[u8],
+    ) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
 }
 
 pub struct SomeScreenTransport {
@@ -237,14 +263,14 @@ impl ScreenTransport for SomeScreenTransport {
         self.inner.notify_loading_screen()
     }
 
-    fn setup_encoding_config<'s, 'p>(
+    fn prepare_send_screen_data<'s, 'p>(
         &'s mut self,
-        parameters: &'p EncoderContentParameters,
+        parameters: &'p ScreenContentParameters,
     ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
     where
         'p: 's,
     {
-        self.inner.setup_encoding_config(parameters)
+        self.inner.prepare_send_screen_data(parameters)
     }
 
     fn send_screen_data<'s, 'a>(

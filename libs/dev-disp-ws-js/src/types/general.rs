@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use dev_disp_core::coding::encoder::EncoderPossibleCodec;
 use dev_disp_transports::websocket::messages::{DisplayParameters, WsMessageDeviceInfo};
 use js_sys::{Function, SharedArrayBuffer};
@@ -7,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::codecs::JsCodec;
+use crate::types::JsCodec;
 
 mod serialize_function {
     use js_sys::Function;

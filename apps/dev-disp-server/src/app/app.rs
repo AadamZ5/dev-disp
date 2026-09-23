@@ -710,6 +710,7 @@ fn system_state_to_init_state(state: &SystemState) -> Option<InitializationState
         SystemState::NegotiatingCodecs => Some(InitializationState::NegotiatingCodecs),
         SystemState::InitializingEncoder => Some(InitializationState::InitializingEncoder),
         SystemState::SettingClientCodec => Some(InitializationState::SettingClientCodec),
+        SystemState::PreparingClient => Some(InitializationState::PreparingClient),
         SystemState::Running | SystemState::Stopped => None,
     }
 }

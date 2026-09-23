@@ -5,11 +5,11 @@ use async_tungstenite::{
 use dev_disp_core::{
     client::{ScreenTransport, TransportError, TransportSendError, TransportSendMetrics},
     coding::encoder::{
-        Encoder, EncoderContentParameters, EncoderPossibleCodec, map_external_to_internal_configs,
+        Encoder, EncoderPossibleCodec, map_external_to_internal_configs,
         map_internal_to_external_configs,
     },
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
-    host::DisplayParameters,
+    host::{DisplayParameters, ScreenContentParameters},
     util::{PinnedFuture, PinnedLocalFuture},
 };
 use futures::{AsyncRead, AsyncWrite, SinkExt, StreamExt, channel::mpsc};
@@ -286,9 +286,9 @@ where
         .boxed_local()
     }
 
-    fn setup_encoding_config<'s, 'p>(
+    fn prepare_send_screen_data<'s, 'p>(
         &'s mut self,
-        source_parameters: &'p EncoderContentParameters,
+        source_parameters: &'p ScreenContentParameters,
     ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
     where
         'p: 's,

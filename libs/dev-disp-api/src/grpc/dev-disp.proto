@@ -22,6 +22,7 @@ enum InitializationPhase {
   NEGOTIATING_CODECS = 7;
   INITIALIZING_ENCODER = 8;
   SETTING_CLIENT_CODEC = 9;
+  PREPARING_CLIENT = 10;
 }
 
 message DeviceStatus {

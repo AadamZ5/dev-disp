@@ -39,5 +39,5 @@ pub trait Decoder {
     fn decode<'s, 'e, 'd>(
         &'s mut self,
         encoded_data: &'e [u8],
-    ) -> PinnedLocalFuture<'_, Result<DecoderAction<'d>, Self::Error>>;
+    ) -> PinnedLocalFuture<'s, Result<DecoderAction<'d>, Self::Error>>;
 }

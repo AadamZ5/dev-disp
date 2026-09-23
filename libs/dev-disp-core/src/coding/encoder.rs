@@ -6,24 +6,9 @@ use thiserror::Error;
 
 use crate::{
     coding::codecs::{Codec, CodecFamily, RawParameters},
-    host::ScreenOutputParameters,
+    host::ScreenContentParameters,
     util::{PinnedFuture, PinnedLocalFuture},
 };
-
-/// Represents the content parameters we will be encoding at. Used to prepare encoders and request what encodings
-/// will be supported with these params.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EncoderContentParameters {
-    /// TODO: Will this ever differ from [encoder_input_parameters.width]
-    pub width: u32,
-    /// TODO: Will this ever differ from [encoder_input_parameters.height]
-    pub height: u32,
-    pub bitrate: u32,
-    pub fps: u32,
-    /// The parameters of the virtual screen generated output data, that will
-    /// be sent to the encoder.
-    pub encoder_input_parameters: ScreenOutputParameters,
-}
 
 /// A possible configuration for an encoder, including its name, supported resolution. Useful to send
 /// to your client implementation.
@@ -155,7 +140,7 @@ pub trait Encoder {
     /// TODO: This should live as a function of the encoder provider maybe
     fn get_supported_configurations(
         &mut self,
-        parameters: &EncoderContentParameters,
+        parameters: &ScreenContentParameters,
     ) -> PinnedLocalFuture<
         '_,
         Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, Self::Error>,
@@ -175,7 +160,7 @@ pub trait Encoder {
     /// TODO: This should also potentially live as a function of the encoder provider.
     fn set_codec<'s, 'p>(
         &'s mut self,
-        parameters: &'p EncoderContentParameters,
+        parameters: &'p ScreenContentParameters,
         preferred_encoders: Option<Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>>,
         offered_encoders: Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>,
     ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, Self::Error>>
@@ -225,15 +210,15 @@ impl Encoder for RawEncoder {
 
     fn get_supported_configurations(
         &mut self,
-        screen_parameters: &EncoderContentParameters,
+        screen_parameters: &ScreenContentParameters,
     ) -> PinnedLocalFuture<
         '_,
         Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, Self::Error>,
     > {
-        let width = screen_parameters.encoder_input_parameters.width;
-        let height = screen_parameters.encoder_input_parameters.height;
-        let stride = screen_parameters.encoder_input_parameters.stride;
-        let pixel_format = screen_parameters.encoder_input_parameters.format;
+        let width = screen_parameters.virtual_screen_format_parameters.width;
+        let height = screen_parameters.virtual_screen_format_parameters.height;
+        let stride = screen_parameters.virtual_screen_format_parameters.stride;
+        let pixel_format = screen_parameters.virtual_screen_format_parameters.format;
         async move {
             Ok(vec![EncoderPossibleCodecInternal::<Self::CodecData> {
                 display_name: "raw".to_string(),
@@ -252,7 +237,7 @@ impl Encoder for RawEncoder {
 
     fn set_codec<'s, 'p>(
         &'s mut self,
-        _screen_parameters: &'p EncoderContentParameters,
+        _screen_parameters: &'p ScreenContentParameters,
         _preferred_encoders: Option<Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>>,
         offered_encoders: Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>,
     ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, Self::Error>>

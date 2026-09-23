@@ -1,7 +1,7 @@
 use std::{fmt::Debug, time::{Duration, Instant}};
 
 use dev_disp_core::{
-    coding::{encoder::{Encoder as DevDispEncoder, EncoderContentParameters, EncoderPossibleCodecInternal, EncoderProvider}}, util::{PinnedFuture, PinnedLocalFuture},
+    coding::{encoder::{Encoder as DevDispEncoder, EncoderPossibleCodecInternal, EncoderProvider}}, host::ScreenContentParameters, util::{PinnedFuture, PinnedLocalFuture},
 };
 use ffmpeg_next::{
     self as ffmpeg, Dictionary, codec::{encoder::video::Encoder as VideoEncoder}, format::Pixel,
@@ -12,8 +12,8 @@ use log::{debug, info, trace};
 use thiserror::Error;
 
 use crate::{
-    ffmpeg::{FfmpegEncoderError::FfmpegInitError, config_file::FfmpegConfiguration, configurations::{
-        FfmpegEncoderBruteForceIterator, FfmpegEncoderConfiguration, get_codec_params, get_encoders
+    ffmpeg::{config_file::FfmpegConfiguration, configurations::{
+        FfmpegEncoderBruteForceIterator, FfmpegEncoderConfiguration, get_codec_params
     }}, util::ffmpeg_format_from_internal_format,
 };
 
@@ -21,7 +21,7 @@ struct FfmpegEncoderState {
     encoder: VideoEncoder,
     scaler: Option<ScalingContext>,
     encoder_fmt: Pixel,
-    given_params: EncoderContentParameters,
+    given_params: ScreenContentParameters,
     frame_index: u64,
     out_buf: Vec<u8>,
 }
@@ -72,7 +72,7 @@ pub struct FfmpegEncoder {
 }
 
 pub fn setup_ffmpeg_encoder(
-    parameters: &EncoderContentParameters,
+    parameters: &ScreenContentParameters,
     configuration: &FfmpegEncoderConfiguration,
 ) -> Result<VideoEncoder, FfmpegEncoderError> {
     let codec = ffmpeg::encoder::find_by_name(&configuration.codec_name)
@@ -109,13 +109,13 @@ impl FfmpegEncoder {
 
     fn try_init(
         &mut self,
-        parameters: &EncoderContentParameters,
+        parameters: &ScreenContentParameters,
         configuration: &FfmpegEncoderConfiguration,
     ) -> Result<FfmpegEncoderState, FfmpegEncoderError> {
         let encoder = setup_ffmpeg_encoder(&parameters, configuration)?;
 
         let src_format =
-            ffmpeg_format_from_internal_format(&parameters.encoder_input_parameters.format);
+            ffmpeg_format_from_internal_format(&parameters.virtual_screen_format_parameters.format);
         let dst_format = configuration.pixel_format;
 
         // If the source format matches the encoder's required format, no
@@ -126,8 +126,8 @@ impl FfmpegEncoder {
             Some(
                 ScalingContext::get(
                     src_format,
-                    parameters.encoder_input_parameters.width,
-                    parameters.encoder_input_parameters.height,
+                    parameters.virtual_screen_format_parameters.width,
+                    parameters.virtual_screen_format_parameters.height,
                     configuration.pixel_format,
                     parameters.width,
                     parameters.height,
@@ -164,7 +164,7 @@ impl DevDispEncoder for FfmpegEncoder {
 
     fn get_supported_configurations(
         &mut self,
-        parameters: &EncoderContentParameters,
+        parameters: &ScreenContentParameters,
     ) -> PinnedLocalFuture<'_, Result<Vec<EncoderPossibleCodecInternal<FfmpegEncoderConfiguration>>, FfmpegEncoderError>> {
 
         // TODO: Try encoders in the provider, not here on every connection!
@@ -213,10 +213,10 @@ impl DevDispEncoder for FfmpegEncoder {
 
     fn set_codec<'s ,'p>(
         &'s mut self,
-        parameters: &'p EncoderContentParameters,
+        parameters: &'p ScreenContentParameters,
         preferred_encoders: Option<Vec<&'p EncoderPossibleCodecInternal<FfmpegEncoderConfiguration>>>,
         offered_encoders: Vec<&'p EncoderPossibleCodecInternal<FfmpegEncoderConfiguration>>,
-    ) -> PinnedLocalFuture<'_, Result<&'p EncoderPossibleCodecInternal<FfmpegEncoderConfiguration>, Self::Error>> where 'p: 's {
+    ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<FfmpegEncoderConfiguration>, Self::Error>> where 'p: 's {
         async move {
             ffmpeg::init().map_err(FfmpegEncoderError::FfmpegInitError)?;
 
@@ -303,14 +303,14 @@ impl DevDispEncoder for FfmpegEncoder {
 
             // Frame representing input data before scaling
             let mut input_frame = Video::new(
-                ffmpeg_format_from_internal_format(&state.given_params.encoder_input_parameters.format),
-                state.given_params.encoder_input_parameters.width,
-                state.given_params.encoder_input_parameters.height,
+                ffmpeg_format_from_internal_format(&state.given_params.virtual_screen_format_parameters.format),
+                state.given_params.virtual_screen_format_parameters.width,
+                state.given_params.virtual_screen_format_parameters.height,
             );
             let alloc_input_frame = start.elapsed();
 
-            let height = state.given_params.encoder_input_parameters.height as usize;
-            let src_stride = state.given_params.encoder_input_parameters.stride as usize;
+            let height = state.given_params.virtual_screen_format_parameters.height as usize;
+            let src_stride = state.given_params.virtual_screen_format_parameters.stride as usize;
             let dst_stride = input_frame.stride(0);
             let data = input_frame.data_mut(0);
 

@@ -5,7 +5,7 @@ use dev_disp_core::{
     },
     util::{PinnedFuture, PinnedStream},
 };
-use futures::{Stream, stream};
+use futures::stream;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
 
@@ -283,6 +283,7 @@ impl From<proto::InitializationPhase> for InitializationState {
             proto::InitializationPhase::SettingClientCodec => {
                 InitializationState::SettingClientCodec
             }
+            proto::InitializationPhase::PreparingClient => InitializationState::PreparingClient,
         }
     }
 }

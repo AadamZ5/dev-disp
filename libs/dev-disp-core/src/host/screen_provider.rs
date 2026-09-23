@@ -26,8 +26,9 @@ pub enum VirtualScreenPixelFormat {
     Abgr8888,
 }
 
+/// Parameters explaining what kind of screen data the virtual screen subsystem is producing
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScreenOutputParameters {
+pub struct ScreenFormatParameters {
     /// Our intermediate pixel format representation.
     pub format: VirtualScreenPixelFormat,
 
@@ -60,6 +61,22 @@ pub struct ScreenOutputParameters {
 
     /// Any additional meta data associated with the screen output
     pub meta_data: Option<HashMap<String, String>>,
+}
+
+/// Represents the content parameters we will be attempting to transmit. The
+/// [Self::width] and [Self::height] represent the dimensions of the content we will be transmitting, which
+/// is usually the same as those present in [Self::encoder_input_parameters]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScreenContentParameters {
+    /// TODO: Will this ever differ from [virtual_screen_source_parameters.width]
+    pub width: u32,
+    /// TODO: Will this ever differ from [virtual_screen_source_parameters.height]
+    pub height: u32,
+    pub bitrate: u32,
+    pub fps: u32,
+    /// The parameters of the virtual screen generated output data, that will
+    /// be sent to the encoder.
+    pub virtual_screen_format_parameters: ScreenFormatParameters,
 }
 
 // TODO: Change `DisplayHost<T>` to be a type-changed result type like `FinishedDisplayHost` (no <T>) that allows the transport to de-initialize properly
@@ -142,7 +159,7 @@ pub enum ScreenReadyStatus {
 /// to a client
 pub trait Screen {
     // TODO: Should encoder types live here?
-    fn get_format_parameters(&self) -> ScreenOutputParameters;
+    fn get_format_parameters(&self) -> ScreenFormatParameters;
 
     /// Background task started before the screen is used during looping. Cannot
     /// hold onto self reference.

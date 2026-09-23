@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
-use dev_disp_core::coding::{
-    codecs::{Av1Parameters, Codec, CodecFamily, H264Parameters, HevcParameters, Vp09Parameters},
-    encoder::EncoderContentParameters,
+use dev_disp_core::{
+    coding::codecs::{
+        Av1Parameters, Codec, CodecFamily, H264Parameters, HevcParameters, Vp09Parameters,
+    },
+    host::ScreenContentParameters,
 };
 use ffmpeg_next::{
     codec::encoder::video::Encoder as VideoEncoder,
@@ -450,7 +452,7 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
 pub fn get_codec_params(
     encoder_preset: &FfmpegEncoderConfiguration,
     encoder: &VideoEncoder,
-    input_parameters: &EncoderContentParameters,
+    input_parameters: &ScreenContentParameters,
 ) -> Option<Codec> {
     match encoder_preset.codec_family {
         CodecFamily::Raw => None,

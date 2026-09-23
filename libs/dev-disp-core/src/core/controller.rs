@@ -12,9 +12,8 @@ use futures_util::FutureExt;
 use log::{debug, error, info, trace, warn};
 
 use crate::{
-    client::{DisplayHost, ScreenTransport, TransportError, TransportSendError},
-    coding::encoder::EncoderContentParameters,
-    host::{DisplayHostResult, Screen, ScreenProvider, ScreenReadyStatus},
+    client::{DisplayHost, ScreenTransport},
+    host::{DisplayHostResult, Screen, ScreenContentParameters, ScreenProvider, ScreenReadyStatus},
 };
 
 const NOT_READY_DELAY: Duration = Duration::from_millis(100);
@@ -44,9 +43,11 @@ pub enum SystemState {
     GettingScreen,
     GettingEncoder, // TODO: Reconsider
     /// Negotiating codec configuration between transport and client
-    NegotiatingCodecs,
+    NegotiatingCodecs, // TODO: Reconsider
     InitializingEncoder, // TODO: Reconsider
-    SettingClientCodec,  // TODO: Reconsider
+    SettingClientCodec, // TODO: Reconsider
+    /// Preparing the client to receive screen data.
+    PreparingClient,
     /// Running the screen casting session.
     Running,
     /// The screen casting session has been stopped.
@@ -216,35 +217,36 @@ where
     let format_params = screen.get_format_parameters();
     debug!("Got format parameters: {:?}", format_params);
 
-    let encoder_parameters = EncoderContentParameters {
+    let screen_content_parameters = ScreenContentParameters {
         // Note here, formatting to the same width/height as the screen
         width: format_params.width,
         height: format_params.height,
 
         bitrate: 1000000, // TODO: Make this configurable?
         fps: 60,          // TODO: Make this configurable?
-        encoder_input_parameters: format_params,
+        virtual_screen_format_parameters: format_params,
     };
 
-    match status_sink.send(SystemState::NegotiatingCodecs).await {
-        Err(_) => warn!("Failed to send negotiating codecs status"),
+    debug!("Preparing client with screen content parameters...");
+
+    match status_sink.send(SystemState::PreparingClient).await {
+        Err(_) => warn!("Failed to send preparing client status"),
         _ => {}
     };
 
-    // TODO: Return basic info about the codec here so we can log it
     match display_host
-        .setup_encoding_config(&encoder_parameters)
+        .prepare_send_screen_data(&screen_content_parameters)
         .await
     {
         Err(e) => {
-            error!("Failed to negotiate and setup encoder: {}", e);
+            error!("Failed to prepare client to receive screen data: {}", e);
             close_dev(&mut display_host).await;
             return Err("Failed to negotiate and setup encoder".to_string());
         }
         Ok(_) => {}
     };
 
-    debug!("Setup encoding configuration completed");
+    debug!("Client prepared to receive screen data");
 
     Ok(InitializedSystem {
         screen,
@@ -295,8 +297,9 @@ where
                         match send_result {
                             Ok(metrics) => {
                                 trace!(
-                                    "Screen data sent successfully: {} (total {:?})",
-                                    metrics, send_time
+                                    "Screen data sent successfully: {} (total {}ms)",
+                                    metrics,
+                                    send_time.as_millis()
                                 );
                             }
                             Err(e) => {
