@@ -1,31 +1,48 @@
-use dev_disp_core::{client::ScreenTransportReceiver, util::PinnedLocalFuture};
+use dev_disp_core::{
+    client::ScreenReceiverAdapter, client::ScreenTransportReceiver, util::PinnedLocalFuture,
+};
+use dev_disp_transports::websocket::transport::WsReceiverPrepState;
 use futures::FutureExt;
 use thiserror::Error;
 
 pub struct JsAdapter {}
 
-pub struct JsWsReceiver {}
-
-pub struct JsTransportData {}
-
 #[derive(Debug, Error)]
-pub enum JsWsReceiverError {
-    #[error("Initialization failed")]
-    InitializationFailed,
-    #[error("Listen failed")]
-    ListenFailed,
-}
+pub enum JsAdapterError {}
 
-impl ScreenTransportReceiver for JsWsReceiver {
-    type Error = JsWsReceiverError;
-
-    type Adapter = JsAdapter;
+impl<'a> ScreenReceiverAdapter<WsReceiverPrepState<'a>> for JsAdapter {
+    type Error = JsAdapterError;
 
     fn initialize(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>> {
-        async { Ok(()) }.boxed_local()
+        todo!()
     }
 
-    fn listen(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>> {
+    fn on_loading_screen(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>> {
+        todo!()
+    }
+
+    fn provide_display_config(
+        &mut self,
+    ) -> PinnedLocalFuture<'_, Result<dev_disp_core::host::DisplayParameters, Self::Error>> {
+        todo!()
+    }
+
+    fn close(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>> {
+        todo!()
+    }
+
+    fn prepare_receive_screen_data(
+        &mut self,
+        parameters: &dev_disp_core::host::ScreenContentParameters,
+        transport_data: WsReceiverPrepState<'a>,
+    ) -> PinnedLocalFuture<'_, Result<(), Self::Error>> {
+        todo!()
+    }
+
+    fn recieve_screen_data(
+        &mut self,
+        data: &[u8],
+    ) -> PinnedLocalFuture<'_, Result<(), Self::Error>> {
         todo!()
     }
 }

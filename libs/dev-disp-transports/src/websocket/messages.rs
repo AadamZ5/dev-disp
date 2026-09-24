@@ -1,4 +1,4 @@
-use dev_disp_core::coding::encoder::EncoderPossibleCodec;
+use dev_disp_core::{coding::encoder::CodecOption, host::ScreenContentParameters};
 pub use dev_disp_core::{
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
     host::DisplayParameters,
@@ -20,6 +20,18 @@ pub struct WsMessageDeviceInfo {
     pub resolution: (u32, u32),
 }
 
+impl From<DisplayParameters> for WsMessageDeviceInfo {
+    fn from(display_parameters: DisplayParameters) -> Self {
+        Self {
+            name: display_parameters.host_dev_name,
+            resolution: (
+                display_parameters.resolution.0,
+                display_parameters.resolution.1,
+            ),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WsMessageSetEncodingResponse {
     pub success: bool,
@@ -38,10 +50,10 @@ pub enum WsMessageFromSource<'a> {
     RequestProtocolInit(WsMessageProtocolInit),
 
     /// Used to inform the client of the server's supported encoding configurations
-    RequestPreferredEncodings(Vec<EncoderPossibleCodec>),
+    RequestPreferredEncodings(ScreenContentParameters, Vec<CodecOption>),
 
     /// Tell the client to start using this encoding.
-    SetEncoding(EncoderPossibleCodec),
+    SetEncoding(CodecOption),
 
     /// Used to forward a core logic message to the client
     Core(DevDispMessageFromSource<'a>),
@@ -59,7 +71,7 @@ pub enum WsMessageFromClient {
     ResponseProtocolInit(WsMessageProtocolInit),
 
     /// Used to respond to the server's request for preferred encodings.
-    ResponsePreferredEncodings(Vec<EncoderPossibleCodec>),
+    ResponsePreferredEncodings(Vec<CodecOption>),
 
     /// Used to respond to the server's request to set the encoding.
     ResponseSetEncoding(WsMessageSetEncodingResponse),

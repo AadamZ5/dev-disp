@@ -1,4 +1,4 @@
-use dev_disp_core::coding::encoder::EncoderPossibleCodec;
+use dev_disp_core::coding::encoder::CodecOption;
 use dev_disp_transports::websocket::messages::{DisplayParameters, WsMessageDeviceInfo};
 use js_sys::{Function, SharedArrayBuffer};
 use serde::{Deserialize, Serialize};
@@ -140,9 +140,9 @@ pub struct JsEncoderPossibleConfiguration {
     pub encoded_resolution: (u32, u32),
 }
 
-impl From<JsEncoderPossibleConfiguration> for EncoderPossibleCodec {
+impl From<JsEncoderPossibleConfiguration> for CodecOption {
     fn from(val: JsEncoderPossibleConfiguration) -> Self {
-        EncoderPossibleCodec {
+        CodecOption {
             id: val.id,
             display_name: val.display_name,
             codec: val.codec.into(),
@@ -151,8 +151,8 @@ impl From<JsEncoderPossibleConfiguration> for EncoderPossibleCodec {
     }
 }
 
-impl From<EncoderPossibleCodec> for JsEncoderPossibleConfiguration {
-    fn from(val: EncoderPossibleCodec) -> Self {
+impl From<CodecOption> for JsEncoderPossibleConfiguration {
+    fn from(val: CodecOption) -> Self {
         JsEncoderPossibleConfiguration {
             id: val.id,
             display_name: val.display_name,

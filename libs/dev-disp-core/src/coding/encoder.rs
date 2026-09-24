@@ -13,7 +13,7 @@ use crate::{
 /// A possible configuration for an encoder, including its name, supported resolution. Useful to send
 /// to your client implementation.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EncoderPossibleCodec {
+pub struct CodecOption {
     /// Used during negotiation. This ID helps identify the specific encoder configuration.
     /// If not needed, just set to default or 0.
     pub id: u32,
@@ -30,16 +30,16 @@ pub struct EncoderPossibleCodec {
 /// This type is transformed internally during the mapping to its external representation (`EncoderPossibleCodec`).
 /// See [map_internal_to_external_configs], [map_external_to_internal_configs] and [EncoderPossibleCodecInternal::for_send].
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EncoderPossibleCodecInternal<T> {
+pub struct CodecOptionInternal<T> {
     pub display_name: String,
     pub codec: Codec,
     pub encoded_resolution: (u32, u32),
     pub data: T,
 }
 
-impl<T> From<EncoderPossibleCodecInternal<T>> for EncoderPossibleCodec {
-    fn from(internal: EncoderPossibleCodecInternal<T>) -> Self {
-        EncoderPossibleCodec {
+impl<T> From<CodecOptionInternal<T>> for CodecOption {
+    fn from(internal: CodecOptionInternal<T>) -> Self {
+        CodecOption {
             id: 0,
             display_name: internal.display_name,
             codec: internal.codec,
@@ -48,12 +48,12 @@ impl<T> From<EncoderPossibleCodecInternal<T>> for EncoderPossibleCodec {
     }
 }
 
-impl<T> Clone for EncoderPossibleCodecInternal<T>
+impl<T> Clone for CodecOptionInternal<T>
 where
     T: Clone,
 {
     fn clone(&self) -> Self {
-        EncoderPossibleCodecInternal {
+        CodecOptionInternal {
             display_name: self.display_name.clone(),
             codec: self.codec.clone(),
             encoded_resolution: self.encoded_resolution.clone(),
@@ -62,10 +62,10 @@ where
     }
 }
 
-impl<T> EncoderPossibleCodecInternal<T> {
+impl<T> CodecOptionInternal<T> {
     /// Clone my fields, and create me without the type data associated
-    pub fn for_send(&self, id: u32) -> EncoderPossibleCodec {
-        EncoderPossibleCodec {
+    pub fn for_send(&self, id: u32) -> CodecOption {
+        CodecOption {
             id,
             display_name: self.display_name.clone(),
             codec: self.codec.clone(),
@@ -88,12 +88,9 @@ pub struct EncoderCodecResult {
 /// 2. A hashmap mapping the unique ID to the corresponding internal configuration (`EncoderPossibleCodecInternal<D>`).
 pub fn map_internal_to_external_configs<T, D>(
     internal_configs: T,
-) -> (
-    Vec<EncoderPossibleCodec>,
-    HashMap<u32, EncoderPossibleCodecInternal<D>>,
-)
+) -> (Vec<CodecOption>, HashMap<u32, CodecOptionInternal<D>>)
 where
-    T: IntoIterator<Item = EncoderPossibleCodecInternal<D>>,
+    T: IntoIterator<Item = CodecOptionInternal<D>>,
 {
     let fold_state = (Vec::new(), HashMap::new());
 
@@ -111,10 +108,10 @@ where
 
 pub fn map_external_to_internal_configs<T, D>(
     external_configs: T,
-    internal_map: &HashMap<u32, EncoderPossibleCodecInternal<D>>,
-) -> impl Iterator<Item = &EncoderPossibleCodecInternal<D>>
+    internal_map: &HashMap<u32, CodecOptionInternal<D>>,
+) -> impl Iterator<Item = &CodecOptionInternal<D>>
 where
-    T: IntoIterator<Item = EncoderPossibleCodec>,
+    T: IntoIterator<Item = CodecOption>,
 {
     external_configs
         .into_iter()
@@ -141,10 +138,7 @@ pub trait Encoder {
     fn get_supported_configurations(
         &mut self,
         parameters: &ScreenContentParameters,
-    ) -> PinnedLocalFuture<
-        '_,
-        Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, Self::Error>,
-    >;
+    ) -> PinnedLocalFuture<'_, Result<Vec<CodecOptionInternal<Self::CodecData>>, Self::Error>>;
 
     /// Called first, to initialize the encoder with the given parameters.
     /// Must return the successfully initialized encoder configuration.
@@ -161,9 +155,9 @@ pub trait Encoder {
     fn set_codec<'s, 'p>(
         &'s mut self,
         parameters: &'p ScreenContentParameters,
-        preferred_encoders: Option<Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>>,
-        offered_encoders: Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>,
-    ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, Self::Error>>
+        preferred_encoders: Option<Vec<&'p CodecOptionInternal<Self::CodecData>>>,
+        offered_encoders: Vec<&'p CodecOptionInternal<Self::CodecData>>,
+    ) -> PinnedLocalFuture<'s, Result<&'p CodecOptionInternal<Self::CodecData>, Self::Error>>
     where
         'p: 's;
 
@@ -211,16 +205,13 @@ impl Encoder for RawEncoder {
     fn get_supported_configurations(
         &mut self,
         screen_parameters: &ScreenContentParameters,
-    ) -> PinnedLocalFuture<
-        '_,
-        Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, Self::Error>,
-    > {
+    ) -> PinnedLocalFuture<'_, Result<Vec<CodecOptionInternal<Self::CodecData>>, Self::Error>> {
         let width = screen_parameters.virtual_screen_format_parameters.width;
         let height = screen_parameters.virtual_screen_format_parameters.height;
         let stride = screen_parameters.virtual_screen_format_parameters.stride;
         let pixel_format = screen_parameters.virtual_screen_format_parameters.format;
         async move {
-            Ok(vec![EncoderPossibleCodecInternal::<Self::CodecData> {
+            Ok(vec![CodecOptionInternal::<Self::CodecData> {
                 display_name: "raw".to_string(),
                 encoded_resolution: (width, height),
                 codec: Codec::Raw(RawParameters {
@@ -238,9 +229,9 @@ impl Encoder for RawEncoder {
     fn set_codec<'s, 'p>(
         &'s mut self,
         _screen_parameters: &'p ScreenContentParameters,
-        _preferred_encoders: Option<Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>>,
-        offered_encoders: Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>,
-    ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, Self::Error>>
+        _preferred_encoders: Option<Vec<&'p CodecOptionInternal<Self::CodecData>>>,
+        offered_encoders: Vec<&'p CodecOptionInternal<Self::CodecData>>,
+    ) -> PinnedLocalFuture<'s, Result<&'p CodecOptionInternal<Self::CodecData>, Self::Error>>
     where
         'p: 's,
     {

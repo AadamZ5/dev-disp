@@ -1,5 +1,5 @@
 use crate::{
-    coding::encoder::EncoderPossibleCodec, host::VirtualScreenPixelFormat, util::PinnedLocalFuture,
+    coding::encoder::CodecOption, host::VirtualScreenPixelFormat, util::PinnedLocalFuture,
 };
 
 pub struct DecodedFrame {
@@ -26,14 +26,11 @@ pub trait Decoder {
     /// that the backend offered.
     fn get_preferred_configurations(
         &mut self,
-        possible_configurations: Vec<&EncoderPossibleCodec>,
-    ) -> PinnedLocalFuture<'_, Vec<&EncoderPossibleCodec>>;
+        possible_configurations: Vec<&CodecOption>,
+    ) -> PinnedLocalFuture<'_, Vec<&CodecOption>>;
 
     /// After the backend selects an encoding, this function is called to set the chosen codec for the decoder.
-    fn set_codec(
-        &mut self,
-        codec: &EncoderPossibleCodec,
-    ) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+    fn set_codec(&mut self, codec: &CodecOption) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
 
     /// Perform the decoding action.
     fn decode<'s, 'e, 'd>(

@@ -26,5 +26,5 @@ json-strip-comments = { version = "3.1.0", optional = true }
 rust-util = { path = "../rust-util" }
 
 [features]
-default = [""]
+default = []
 ffmpeg = ["ffmpeg-next", "json-strip-comments"]

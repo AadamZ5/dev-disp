@@ -77,6 +77,7 @@ pub fn status_to_display_string(status: &DisplayHostStatus) -> String {
                 InitializationState::NegotiatingCodecs => "Negotiating codecs with client",
                 InitializationState::InitializingEncoder => "Initializing encoder",
                 InitializationState::SettingClientCodec => "Setting client codec",
+                InitializationState::PreparingClient => "Preparing client",
             };
 
             format!("Initializing: {}", phase_display_str)

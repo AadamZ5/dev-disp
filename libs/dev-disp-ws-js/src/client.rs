@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use dev_disp_core::coding::encoder::EncoderPossibleCodec;
+use dev_disp_core::coding::encoder::CodecOption;
 use dev_disp_transports::websocket::messages::{
     DevDispMessageFromClient, DevDispMessageFromSource, DisplayParameters, WsMessageFromClient,
     WsMessageFromSource, WsMessageSetEncodingResponse,
@@ -228,7 +228,10 @@ where
                             }
                         }
                     }
-                    WsMessageFromSource::RequestPreferredEncodings(encodings) => {
+                    WsMessageFromSource::RequestPreferredEncodings(
+                        _screen_parameters,
+                        encodings,
+                    ) => {
                         debug!(
                             "Handling GetPreferredEncodingRequest message with {} configurations",
                             encodings.len()
@@ -282,7 +285,7 @@ where
                         >(js_value)?
                         .into_iter()
                         .map(|js_config| js_config.into())
-                        .collect::<Vec<EncoderPossibleCodec>>();
+                        .collect::<Vec<CodecOption>>();
 
                         let resp =
                             WsMessageFromClient::ResponsePreferredEncodings(preferred_encodings);

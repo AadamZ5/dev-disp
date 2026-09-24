@@ -1,7 +1,7 @@
 use dev_disp_core::{
     coding::encoder::{
-        Encoder, EncoderPossibleCodec, EncoderPossibleCodecInternal,
-        map_external_to_internal_configs, map_internal_to_external_configs,
+        CodecOption, CodecOptionInternal, Encoder, map_external_to_internal_configs,
+        map_internal_to_external_configs,
     },
     host::ScreenContentParameters,
     util::PinnedLocalFuture,
@@ -17,16 +17,15 @@ use crate::websocket::messages::{WsMessageFromClient, WsMessageFromSource};
 pub trait CodecChecker {
     fn check_codecs<'s>(
         &'s self,
-        possible_codecs: &Vec<EncoderPossibleCodec>,
-    ) -> PinnedLocalFuture<'s, Vec<EncoderPossibleCodec>>;
+        screen_parameters: ScreenContentParameters,
+        possible_codecs: &Vec<CodecOption>,
+    ) -> PinnedLocalFuture<'s, Vec<CodecOption>>;
 }
 
 #[derive(Debug, Error)]
 pub enum ClientNegotiationError {
     #[error("No compatible codecs found")]
-    NoCompatibleCodecs {
-        possible_codecs: Vec<EncoderPossibleCodec>,
-    },
+    NoCompatibleCodecs { possible_codecs: Vec<CodecOption> },
     #[error("No codecs were provided by the server")]
     NoCodecsProvided,
     #[error("Failed to send message to the server")]
@@ -39,17 +38,20 @@ pub async fn negotiate_as_client<'a, Tx, Rx, C>(
     mut tx: Tx,
     mut rx: Rx,
     codec_checker: C,
-) -> Result<EncoderPossibleCodec, ClientNegotiationError>
+) -> Result<CodecOption, ClientNegotiationError>
 where
     Tx: Sink<WsMessageFromClient> + Unpin,
     Tx::Error: std::error::Error + 'static,
     Rx: Stream<Item = WsMessageFromSource<'a>> + Unpin,
     C: CodecChecker,
 {
-    let possible_codecs = loop {
+    let (screen_parameters, possible_codecs) = loop {
         match rx.next().await {
-            Some(WsMessageFromSource::RequestPreferredEncodings(possible_codecs)) => {
-                break possible_codecs;
+            Some(WsMessageFromSource::RequestPreferredEncodings(
+                screen_parameters,
+                codec_options,
+            )) => {
+                break (screen_parameters, codec_options);
             }
             Some(msg) => {
                 warn!(
@@ -61,7 +63,9 @@ where
         }
     };
 
-    let preferred_encodings = codec_checker.check_codecs(&possible_codecs).await;
+    let preferred_encodings = codec_checker
+        .check_codecs(screen_parameters, &possible_codecs)
+        .await;
 
     if preferred_encodings.is_empty() {
         return Err(ClientNegotiationError::NoCompatibleCodecs { possible_codecs });
@@ -98,17 +102,14 @@ pub trait CodecProvider {
     fn get_supported_codecs<'s>(
         &'s mut self,
         screen_content_parameters: &ScreenContentParameters,
-    ) -> PinnedLocalFuture<
-        's,
-        Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, Self::Error>,
-    >;
+    ) -> PinnedLocalFuture<'s, Result<Vec<CodecOptionInternal<Self::CodecData>>, Self::Error>>;
 
     fn set_codec<'s, 'p>(
         &'s mut self,
         parameters: &'p ScreenContentParameters,
-        preferred_encoders: Option<Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>>,
-        offered_encoders: Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>,
-    ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, Self::Error>>
+        preferred_encoders: Option<Vec<&'p CodecOptionInternal<Self::CodecData>>>,
+        offered_encoders: Vec<&'p CodecOptionInternal<Self::CodecData>>,
+    ) -> PinnedLocalFuture<'s, Result<&'p CodecOptionInternal<Self::CodecData>, Self::Error>>
     where
         'p: 's;
 }
@@ -123,19 +124,16 @@ where
     fn get_supported_codecs<'s>(
         &'s mut self,
         screen_content_parameters: &ScreenContentParameters,
-    ) -> PinnedLocalFuture<
-        's,
-        Result<Vec<EncoderPossibleCodecInternal<Self::CodecData>>, Self::Error>,
-    > {
+    ) -> PinnedLocalFuture<'s, Result<Vec<CodecOptionInternal<Self::CodecData>>, Self::Error>> {
         self.get_supported_configurations(screen_content_parameters)
     }
 
     fn set_codec<'s, 'p>(
         &'s mut self,
         parameters: &'p ScreenContentParameters,
-        preferred_encoders: Option<Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>>,
-        offered_encoders: Vec<&'p EncoderPossibleCodecInternal<Self::CodecData>>,
-    ) -> PinnedLocalFuture<'s, Result<&'p EncoderPossibleCodecInternal<Self::CodecData>, Self::Error>>
+        preferred_encoders: Option<Vec<&'p CodecOptionInternal<Self::CodecData>>>,
+        offered_encoders: Vec<&'p CodecOptionInternal<Self::CodecData>>,
+    ) -> PinnedLocalFuture<'s, Result<&'p CodecOptionInternal<Self::CodecData>, Self::Error>>
     where
         'p: 's,
     {
@@ -150,7 +148,7 @@ pub enum ServerNegotiationError {
     #[error("Encoder provider failed to generate supported encodings")]
     EncoderProviderError(Box<dyn std::error::Error + 'static>),
     #[error("Failed to set codec")]
-    SetCodecFailure(Option<EncoderPossibleCodec>),
+    SetCodecFailure(Option<CodecOption>),
     #[error("Failed to send message to the client")]
     SendError(Box<dyn std::error::Error + 'static>),
     #[error("Negotiation ended before it was completed")]
@@ -162,7 +160,7 @@ pub async fn negotiate_as_server<'a, Tx, Rx, E>(
     mut tx: Tx,
     mut rx: Rx,
     codec_provider: &mut E,
-) -> Result<EncoderPossibleCodec, ServerNegotiationError>
+) -> Result<CodecOption, ServerNegotiationError>
 where
     Tx: Sink<WsMessageFromSource<'a>> + Unpin,
     Tx::Error: std::error::Error + 'static,
@@ -182,6 +180,7 @@ where
     let (external_codecs, internal_map) = map_internal_to_external_configs(possible_codecs);
 
     tx.send(WsMessageFromSource::RequestPreferredEncodings(
+        screen_content_parameters.clone(),
         external_codecs,
     ))
     .await

@@ -170,20 +170,20 @@ pub trait ScreenTransport {
 /// going to display the screen data.
 ///
 /// Opposite of [ScreenTransport]
-pub trait ScreenTransportReceiver {
+///
+/// Type parameter `D` represents the transport-specific data that will be provided to the adapter
+/// during the preparation phase.
+pub trait ScreenTransportReceiver<D> {
     type Error: std::error::Error + Send;
 
-    /// Data to give to the adapter during the [ScreenReceiverAdapter::prepare_send_screen_data] call.
-    type PreReceiveData;
-
-    /// This is the facade or adapter that takes the incoming messages and adapts them to higher-level application logic.
-    type Adapter: ScreenReceiverAdapter<Self::PreReceiveData>;
-
-    /// Handle an initialization call from the [ScreenTransport] implementation.
+    /// Initialize listening facilities
     fn initialize<'s>(&'s mut self) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
 
     /// The listen loop for receiving screen data and handling incoming messages from the [ScreenTransport].
-    fn listen<'s>(&'s mut self) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
+    fn listen<'s, T>(&'s mut self, adapter: T) -> PinnedLocalFuture<'s, Result<(), Self::Error>>
+    where
+        T: ScreenReceiverAdapter<D> + 's,
+        T::Error: std::error::Error + Send + Sync;
 }
 
 /// The thing that adapts the [ScreenTransportReceiver] to some higher-level platform-specific application logic.
@@ -191,7 +191,7 @@ pub trait ScreenTransportReceiver {
 /// Type `T` represents the transport-specific data that will be provided to the adapter during the preparation phase,
 /// before screen data is sent.
 pub trait ScreenReceiverAdapter<T> {
-    type Error: std::error::Error + Send;
+    type Error: std::error::Error + Send + 'static;
 
     /// Initialize any resources before receiving.
     fn initialize(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
