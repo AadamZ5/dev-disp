@@ -1192,6 +1192,7 @@ dependencies = [
  "futures-util",
  "js-sys",
  "log",
+ "rust-util",
  "serde",
  "serde-wasm-bindgen",
  "thiserror 2.0.21",

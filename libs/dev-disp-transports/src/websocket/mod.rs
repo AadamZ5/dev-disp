@@ -5,4 +5,6 @@ pub mod discovery;
 #[cfg(feature = "ws-host")]
 pub mod transport;
 
+pub mod receiver;
+
 pub mod messages;

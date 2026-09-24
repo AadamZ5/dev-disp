@@ -1,7 +1,10 @@
 use dev_disp_core::{
-    coding::encoder::{
-        CodecOption, CodecOptionInternal, Encoder, map_external_to_internal_configs,
-        map_internal_to_external_configs,
+    coding::{
+        encoder::{
+            CodecOption, CodecOptionInternal, Encoder, map_external_to_internal_configs,
+            map_internal_to_external_configs,
+        },
+        messages::{CodecNegotiationClient, CodecNegotiationServer},
     },
     host::ScreenContentParameters,
     util::PinnedLocalFuture,
@@ -47,9 +50,8 @@ where
 {
     let (screen_parameters, possible_codecs) = loop {
         match rx.next().await {
-            Some(WsMessageFromSource::RequestPreferredEncodings(
-                screen_parameters,
-                codec_options,
+            Some(WsMessageFromSource::CodecNegotiation(
+                CodecNegotiationServer::RequestPreferredEncodings(screen_parameters, codec_options),
             )) => {
                 break (screen_parameters, codec_options);
             }
@@ -71,15 +73,17 @@ where
         return Err(ClientNegotiationError::NoCompatibleCodecs { possible_codecs });
     }
 
-    tx.send(WsMessageFromClient::ResponsePreferredEncodings(
-        preferred_encodings,
+    tx.send(WsMessageFromClient::CodecNegotiation(
+        CodecNegotiationClient::ResponsePreferredEncodings(preferred_encodings),
     ))
     .await
     .map_err(|e| ClientNegotiationError::SendError(Box::new(e)))?;
 
     let set_codec = loop {
         match rx.next().await {
-            Some(WsMessageFromSource::SetEncoding(codec)) => {
+            Some(WsMessageFromSource::CodecNegotiation(
+                CodecNegotiationServer::RequestSetEncoding(codec),
+            )) => {
                 break codec;
             }
             Some(msg) => {
@@ -179,16 +183,20 @@ where
 
     let (external_codecs, internal_map) = map_internal_to_external_configs(possible_codecs);
 
-    tx.send(WsMessageFromSource::RequestPreferredEncodings(
-        screen_content_parameters.clone(),
-        external_codecs,
+    tx.send(WsMessageFromSource::CodecNegotiation(
+        CodecNegotiationServer::RequestPreferredEncodings(
+            screen_content_parameters.clone(),
+            external_codecs,
+        ),
     ))
     .await
     .map_err(|e| ServerNegotiationError::SendError(Box::new(e)))?;
 
     let preferred_encodings = loop {
         match rx.next().await {
-            Some(WsMessageFromClient::ResponsePreferredEncodings(codecs)) => {
+            Some(WsMessageFromClient::CodecNegotiation(
+                CodecNegotiationClient::ResponsePreferredEncodings(codecs),
+            )) => {
                 break codecs;
             }
             Some(msg) => {
@@ -215,9 +223,11 @@ where
         .await
         .map_err(|_| ServerNegotiationError::SetCodecFailure(None))?;
 
-    tx.send(WsMessageFromSource::SetEncoding(set_codec.for_send(0)))
-        .await
-        .map_err(|e| ServerNegotiationError::SendError(Box::new(e)))?;
+    tx.send(WsMessageFromSource::CodecNegotiation(
+        CodecNegotiationServer::RequestSetEncoding(set_codec.for_send(0)),
+    ))
+    .await
+    .map_err(|e| ServerNegotiationError::SendError(Box::new(e)))?;
 
     Ok(set_codec.for_send(0))
 }

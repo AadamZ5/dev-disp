@@ -174,7 +174,7 @@ pub trait ScreenTransport {
 /// Type parameter `D` represents the transport-specific data that will be provided to the adapter
 /// during the preparation phase.
 pub trait ScreenTransportReceiver<D> {
-    type Error: std::error::Error + Send;
+    type Error: std::error::Error;
 
     /// Initialize listening facilities
     fn initialize<'s>(&'s mut self) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
@@ -183,15 +183,15 @@ pub trait ScreenTransportReceiver<D> {
     fn listen<'s, T>(&'s mut self, adapter: T) -> PinnedLocalFuture<'s, Result<(), Self::Error>>
     where
         T: ScreenReceiverAdapter<D> + 's,
-        T::Error: std::error::Error + Send + Sync;
+        T::Error: std::error::Error;
 }
 
 /// The thing that adapts the [ScreenTransportReceiver] to some higher-level platform-specific application logic.
 ///
-/// Type `T` represents the transport-specific data that will be provided to the adapter during the preparation phase,
+/// Type `D` represents the transport-specific data that will be provided to the adapter during the preparation phase,
 /// before screen data is sent.
-pub trait ScreenReceiverAdapter<T> {
-    type Error: std::error::Error + Send + 'static;
+pub trait ScreenReceiverAdapter<D> {
+    type Error: std::error::Error + 'static;
 
     /// Initialize any resources before receiving.
     fn initialize(&mut self) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
@@ -212,17 +212,17 @@ pub trait ScreenReceiverAdapter<T> {
         async { Ok(()) }.boxed_local()
     }
 
-    fn prepare_receive_screen_data(
-        &mut self,
-        parameters: &ScreenContentParameters,
-        transport_data: T,
-    ) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+    fn prepare_receive_screen_data<'s>(
+        &'s mut self,
+        parameters: &'s ScreenContentParameters,
+        transport_data: D,
+    ) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
 
     /// The point where the screen data is received and optionally decoded before being displayed.
-    fn recieve_screen_data(
-        &mut self,
-        data: &[u8],
-    ) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+    fn recieve_screen_data<'s>(
+        &'s mut self,
+        data: &'s [u8],
+    ) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
 }
 
 pub struct SomeScreenTransport {
@@ -292,4 +292,15 @@ impl From<Box<dyn ScreenTransport>> for SomeScreenTransport {
     fn from(value: Box<dyn ScreenTransport>) -> Self {
         Self::new_boxed(value)
     }
+}
+
+pub async fn run_listener_with_adapter<L, A, D>(
+    mut listener: L,
+    adapter: A,
+) -> Result<(), <L as ScreenTransportReceiver<D>>::Error>
+where
+    L: ScreenTransportReceiver<D>,
+    A: ScreenReceiverAdapter<D>,
+{
+    listener.listen(adapter).await
 }

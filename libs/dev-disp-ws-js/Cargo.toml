@@ -38,5 +38,6 @@ web-sys = { version = "0.3.82", features = [
   "Window",
 ] }
 ws_stream_wasm = "0.7.5"
+rust-util = { path = "../../libs/rust-util" }
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

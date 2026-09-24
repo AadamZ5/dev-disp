@@ -12,8 +12,8 @@ use crate::{
     util::{shared_array_buffer_new_fallible, OnDrop},
 };
 
+mod adapter;
 mod client;
-mod receiver;
 mod types;
 mod util;
 

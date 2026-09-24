@@ -1,4 +1,10 @@
-use dev_disp_core::{coding::encoder::CodecOption, host::ScreenContentParameters};
+use dev_disp_core::{
+    coding::{
+        encoder::CodecOption,
+        messages::{CodecNegotiationClient, CodecNegotiationServer},
+    },
+    host::ScreenContentParameters,
+};
 pub use dev_disp_core::{
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
     host::DisplayParameters,
@@ -49,11 +55,8 @@ pub enum WsMessageFromSource<'a> {
     /// Used to request that the device is really ready to receive screen data
     RequestProtocolInit(WsMessageProtocolInit),
 
-    /// Used to inform the client of the server's supported encoding configurations
-    RequestPreferredEncodings(ScreenContentParameters, Vec<CodecOption>),
-
-    /// Tell the client to start using this encoding.
-    SetEncoding(CodecOption),
+    /// Used to negotiate the codec settings between the client and the server.
+    CodecNegotiation(CodecNegotiationServer),
 
     /// Used to forward a core logic message to the client
     Core(DevDispMessageFromSource<'a>),
@@ -70,11 +73,8 @@ pub enum WsMessageFromClient {
     /// Used to assure the server we are ready to display stuff
     ResponseProtocolInit(WsMessageProtocolInit),
 
-    /// Used to respond to the server's request for preferred encodings.
-    ResponsePreferredEncodings(Vec<CodecOption>),
-
-    /// Used to respond to the server's request to set the encoding.
-    ResponseSetEncoding(WsMessageSetEncodingResponse),
+    /// Used to respond to the server's request for codec negotiation.
+    CodecNegotiation(CodecNegotiationClient),
 
     /// Used to give a core-logic message to the server
     Core(DevDispMessageFromClient),
