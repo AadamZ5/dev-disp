@@ -1104,6 +1104,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dev-disp-desktop"
+version = "0.1.0"
+dependencies = [
+ "dev-disp-core",
+ "dev-disp-encoders",
+ "dev-disp-transports",
+ "iced",
+ "rust-util",
+]
+
+[[package]]
 name = "dev-disp-encoders"
 version = "0.1.0"
 dependencies = [

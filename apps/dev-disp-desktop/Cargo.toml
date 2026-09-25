@@ -1,0 +1,20 @@
+[package]
+name = "dev-disp-desktop"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+dev-disp-transports = { path = "../../libs/dev-disp-transports", features = [
+  "ws",
+  "ws-client",
+] }
+dev-disp-core = { path = "../../libs/dev-disp-core" }
+dev-disp-encoders = { path = "../../libs/dev-disp-encoders", features = [
+  "ffmpeg",
+] }
+rust-util = { path = "../../libs/rust-util" }
+iced = "0.14.0"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
