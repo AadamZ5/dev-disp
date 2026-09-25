@@ -2,7 +2,7 @@
 
 I have an Android device with a screen, why can't I use it as another display for my laptop?!? This repository aims to create a virtual screen-extension utility that can be easily cast to other devices.
 
-![Preview animation](assets/dev-disp-2026.mp4)
+<video src="assets/dev-disp-2026.mp4" width="640" controls></video>
 
 _(Web PoC pictured above with low performance software encoding during recording)_
 
