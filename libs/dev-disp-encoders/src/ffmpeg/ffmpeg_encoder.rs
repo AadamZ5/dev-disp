@@ -1,11 +1,7 @@
 use std::{fmt::Debug, time::{Duration, Instant}};
 
 use dev_disp_core::{
-    host::{
-        Encoder as DevDispEncoder, EncoderContentParameters, EncoderPossibleConfiguration,
-        EncoderProvider,
-    },
-    util::PinnedLocalFuture,
+    host::ScreenContentParameters, util::{PinnedFuture, PinnedLocalFuture},
 };
 use ffmpeg_next::{
     self as ffmpeg, Dictionary, codec::{encoder::video::Encoder as VideoEncoder}, format::Pixel,
@@ -13,19 +9,20 @@ use ffmpeg_next::{
 };
 use futures::FutureExt;
 use log::{debug, info, trace};
+use thiserror::Error;
 
 use crate::{
+    toolkit::{encoder::{Encoder as DevDispEncoder, CodecOptionInternal, EncoderProvider}},
     ffmpeg::{config_file::FfmpegConfiguration, configurations::{
-        FfmpegEncoderBruteForceIterator, FfmpegEncoderConfiguration, get_encoders, get_relevant_codec_parameters
-    }},
-    util::ffmpeg_format_from_internal_format,
+        FfmpegEncoderBruteForceIterator, FfmpegEncoderConfiguration, get_codec_params
+    }, util::ffmpeg_format_from_internal_format}
 };
 
 struct FfmpegEncoderState {
     encoder: VideoEncoder,
     scaler: Option<ScalingContext>,
     encoder_fmt: Pixel,
-    given_params: EncoderContentParameters,
+    given_params: ScreenContentParameters,
     frame_index: u64,
     out_buf: Vec<u8>,
 }
@@ -42,6 +39,33 @@ impl Debug for FfmpegEncoderState {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum FfmpegEncoderError {
+    #[error("Unknown error")]
+    Unknown,
+    #[error("Failed to initialize ffmpeg: {0}")]
+    FfmpegInitError(ffmpeg_next::util::error::Error),
+    #[error("Unknown encoder: {0}")]
+    UnknownEncoder(String),
+    #[error("Failed to initialize ffmpeg codec: {0}")]
+    CodecInitError(ffmpeg_next::util::error::Error),
+    #[error("Failed to initialize scaler: {0}")]
+    ScalerInitError(ffmpeg_next::util::error::Error),
+    #[error("Failed to negotiate a codec")]
+    CodecNegotiationFailure(Vec<CodecOptionInternal<FfmpegEncoderConfiguration>>),
+    #[error("Encoder not initialized before trying to encode")]
+    EncoderNotInitialized,
+    #[error("Input buffer too small. Expected {expected}, got {got}")]
+    InputBufferTooSmall {
+        expected: usize,
+        got: usize,
+    },
+    #[error("Failed to send frame to encoder: {0}")]
+    EncoderSendFailed(ffmpeg_next::util::error::Error),
+    #[error("Failed to scale frame: {0}")]
+    ScaleError(ffmpeg_next::util::error::Error),
+}
+
 #[derive(Debug, Default)]
 pub struct FfmpegEncoder {
     state: Option<FfmpegEncoderState>,
@@ -49,18 +73,18 @@ pub struct FfmpegEncoder {
 }
 
 pub fn setup_ffmpeg_encoder(
-    parameters: &EncoderContentParameters,
+    parameters: &ScreenContentParameters,
     configuration: &FfmpegEncoderConfiguration,
-) -> Result<VideoEncoder, String> {
-    let codec = ffmpeg::encoder::find_by_name(&configuration.encoder_name)
-        .ok_or_else(|| format!("Encoder '{}' not found", configuration.encoder_name))?;
+) -> Result<VideoEncoder, FfmpegEncoderError> {
+    let codec = ffmpeg::encoder::find_by_name(&configuration.codec_name)
+        .ok_or_else(|| FfmpegEncoderError::UnknownEncoder(configuration.codec_name.clone()))?;
 
     debug!("Initializing ffmpeg encoder: {}", codec.name(),);
 
     let mut context = ffmpeg::codec::context::Context::new_with_codec(codec)
         .encoder()
         .video()
-        .map_err(|e| format!("Failed to create video codec context: {}", e))?;
+        .map_err(FfmpegEncoderError::CodecInitError)?;
 
     context.set_height(parameters.height);
     context.set_width(parameters.width);
@@ -72,7 +96,7 @@ pub fn setup_ffmpeg_encoder(
     let options = Dictionary::from_iter(configuration.encoder_options.clone().into_iter());
     context
         .open_with(options)
-        .map_err(|e| format!("Failed to open encoder: {}", e))
+        .map_err(FfmpegEncoderError::CodecInitError)
 }
 
 impl FfmpegEncoder {
@@ -86,13 +110,13 @@ impl FfmpegEncoder {
 
     fn try_init(
         &mut self,
-        parameters: EncoderContentParameters,
-        configuration: FfmpegEncoderConfiguration,
-    ) -> Result<FfmpegEncoderState, String> {
-        let encoder = setup_ffmpeg_encoder(&parameters, &configuration)?;
+        parameters: &ScreenContentParameters,
+        configuration: &FfmpegEncoderConfiguration,
+    ) -> Result<FfmpegEncoderState, FfmpegEncoderError> {
+        let encoder = setup_ffmpeg_encoder(&parameters, configuration)?;
 
         let src_format =
-            ffmpeg_format_from_internal_format(&parameters.encoder_input_parameters.format);
+            ffmpeg_format_from_internal_format(&parameters.virtual_screen_format_parameters.format);
         let dst_format = configuration.pixel_format;
 
         // If the source format matches the encoder's required format, no
@@ -103,14 +127,14 @@ impl FfmpegEncoder {
             Some(
                 ScalingContext::get(
                     src_format,
-                    parameters.encoder_input_parameters.width,
-                    parameters.encoder_input_parameters.height,
+                    parameters.virtual_screen_format_parameters.width,
+                    parameters.virtual_screen_format_parameters.height,
                     configuration.pixel_format,
                     parameters.width,
                     parameters.height,
                     ffmpeg::software::scaling::flag::Flags::POINT,
                 )
-                .map_err(|e| format!("Failed to create scaler: {}", e))?,
+                .map_err(FfmpegEncoderError::ScalerInitError)?,
             )
         };
 
@@ -122,7 +146,7 @@ impl FfmpegEncoder {
         let state = FfmpegEncoderState {
             encoder,
             scaler,
-            given_params: parameters,
+            given_params: parameters.clone(),
             frame_index: 0,
             encoder_fmt: configuration.pixel_format,
             // 16 KB initial buffer size for output
@@ -135,87 +159,97 @@ impl FfmpegEncoder {
 
 impl DevDispEncoder for FfmpegEncoder {
 
+    type CodecData = FfmpegEncoderConfiguration;
+
+    type Error = FfmpegEncoderError;
+
     fn get_supported_configurations(
         &mut self,
-        parameters: &EncoderContentParameters,
-    ) -> Result<Vec<EncoderPossibleConfiguration>, String> {
+        parameters: &ScreenContentParameters,
+    ) -> PinnedLocalFuture<'_, Result<Vec<CodecOptionInternal<FfmpegEncoderConfiguration>>, FfmpegEncoderError>> {
 
         // TODO: Try encoders in the provider, not here on every connection!
+        // TODO: Make this async happen in a non-blocking way!
 
         let supported_configurations: Vec<_> = FfmpegEncoderBruteForceIterator::new(self.configuration.encoder_configurations.clone())
             .filter_map(|config| match setup_ffmpeg_encoder(parameters, &config) {
                 Ok(encoder) => {
                     debug!(
                         "Encoder configuration {} supported",
-                        config.encoder_name
+                        config.codec_name
                     );
                     Some((encoder, config, parameters))
                 },
                 Err(e) => {
                     debug!(
                         "Encoder configuration {} not supported: {}",
-                        config.encoder_name, e
+                        config.codec_name, e
                     );
                     None
                 },
             })
-            .map(|(encoder, config, _)| {
-                let codec_params = get_relevant_codec_parameters(&config, &encoder);
+            .filter_map(|(encoder, config, input_parameters)| {
+                let codec_params = get_codec_params(&config, &encoder, input_parameters);
 
-                EncoderPossibleConfiguration {
-                    encoder_name: config.encoder_name,
-                    encoder_family: config.encoder_family,
-                    encoded_resolution: (parameters.width, parameters.height),
-                    parameters: codec_params,
+                match codec_params {
+                    Some(params) => Some(CodecOptionInternal{
+                        display_name: config.codec_name.to_string(),
+                        codec: params,
+                        encoded_resolution: (input_parameters.width, input_parameters.height),
+                        data: config,
+                    }),
+                    None => {
+                        debug!(
+                            "Failed to get codec parameters for configuration {}",
+                            config.codec_name
+                        );
+                        return None;
+                    }
                 }
             })
             .collect();
 
-        Ok(supported_configurations)
+        async move { Ok(supported_configurations) }.boxed_local()
     }
 
-    fn init(
-        &mut self,
-        parameters: EncoderContentParameters,
-        preferred_encoders: Option<Vec<EncoderPossibleConfiguration>>,
-    ) -> PinnedLocalFuture<'_, Result<EncoderPossibleConfiguration, String>> {
+    fn set_codec<'s ,'p>(
+        &'s mut self,
+        parameters: &'p ScreenContentParameters,
+        preferred_encoders: Option<Vec<&'p CodecOptionInternal<FfmpegEncoderConfiguration>>>,
+        offered_encoders: Vec<&'p CodecOptionInternal<FfmpegEncoderConfiguration>>,
+    ) -> PinnedLocalFuture<'s, Result<&'p CodecOptionInternal<FfmpegEncoderConfiguration>, Self::Error>> where 'p: 's {
         async move {
-            ffmpeg::init().map_err(|e| format!("Failed to initialize ffmpeg: {}", e))?;
+            ffmpeg::init().map_err(FfmpegEncoderError::FfmpegInitError)?;
 
-            let mut encoders: Box<dyn Iterator<Item = FfmpegEncoderConfiguration>>;
-
-            match preferred_encoders {
+            let mut encoders: Box<dyn Iterator<Item = &CodecOptionInternal<FfmpegEncoderConfiguration>>> = match preferred_encoders {
+                // If the client did not respond with any preference, try all offered encoders.
                 None => {
                     info!("No preferred encoders specified, will try all configured ffmpeg encoders.");
-                    encoders = Box::new(get_encoders());
+                    Box::new(offered_encoders.into_iter())
                 }
+                // Otherwise, use the client's preferred encoders in the specified order.
                 Some(ref prefs) => {
                     info!(
                         "Trying preferred encoders in order: {:?}",
                         prefs
                             .iter()
-                            .map(|e| e.encoder_name.clone())
+                            .map(|e| e.display_name.clone())
                             .collect::<Vec<_>>()
                     );
-                    let all_encoders = FfmpegEncoderBruteForceIterator::new(self.configuration.encoder_configurations.clone());
-                    encoders = Box::new(all_encoders.filter(move |config| {
-                        prefs.iter().any(|preferred| {
-                            preferred.encoder_name == config.encoder_name
-                                && preferred.encoder_family == config.encoder_family
-                        })
-                    }));
+                    
+                    Box::new(prefs.iter().map(|e| *e))
                 }
-            }
+            };
 
             while let Some(configuration) = encoders.next() {
                 debug!(
                     "Trying encoder configuration: {} with options {:#?} and pixel format {:#?}",
-                    configuration.encoder_name,
-                    configuration.encoder_options,
-                    configuration.pixel_format
+                    configuration.data.codec_name,
+                    configuration.data.encoder_options,
+                    configuration.data.pixel_format
                 );
 
-                match self.try_init(parameters.clone(), configuration.clone()) {
+                match self.try_init(parameters, &configuration.data) {
                     Ok(state) => {
 
                         let has_scaler_str = match &state.scaler {
@@ -229,20 +263,9 @@ impl DevDispEncoder for FfmpegEncoder {
 
                         debug!(
                             "Successfully initialized encoder: {} {}",
-                            configuration.encoder_name,
+                            configuration.data.codec_name,
                             has_scaler_str
                         );
-
-                        let codec_params =
-                            get_relevant_codec_parameters(&configuration, &state.encoder);
-
-
-                        let configuration = EncoderPossibleConfiguration {
-                            encoder_name: configuration.encoder_name,
-                            encoder_family: configuration.encoder_family,
-                            encoded_resolution: (parameters.width, parameters.height),
-                            parameters: codec_params,
-                        };
 
                         self.state = Some(state);
 
@@ -251,13 +274,15 @@ impl DevDispEncoder for FfmpegEncoder {
                     Err(e) => {
                         debug!(
                             "Failed to initialize encoder \"{}\": {}",
-                            configuration.encoder_name, e
+                            configuration.data.codec_name, e
                         );
                     }
                 }
             }
 
-            Err("Failed to find a codec to use!".to_string())
+            let tried_encoders = preferred_encoders.clone().map(|p| p.into_iter().cloned().collect::<Vec<_>>()).unwrap_or_else(|| Vec::new());
+
+            Err(FfmpegEncoderError::CodecNegotiationFailure(tried_encoders))
         }
         .boxed_local()
     }
@@ -265,12 +290,12 @@ impl DevDispEncoder for FfmpegEncoder {
     fn encode<'s, 'a>(
         &'s mut self,
         raw_data: &'a [u8],
-    ) -> PinnedLocalFuture<'s, Result<&'s [u8], String>>
+    ) -> PinnedLocalFuture<'s, Result<&'s [u8], Self::Error>>
     where
         'a: 's,
     {
         async move {
-            let state = self.state.as_mut().ok_or("Encoder not initialized")?;
+            let state = self.state.as_mut().ok_or(FfmpegEncoderError::EncoderNotInitialized)?;
 
             // Perform encoding on the raw data
             // Return the encoded data
@@ -279,24 +304,23 @@ impl DevDispEncoder for FfmpegEncoder {
 
             // Frame representing input data before scaling
             let mut input_frame = Video::new(
-                ffmpeg_format_from_internal_format(&state.given_params.encoder_input_parameters.format),
-                state.given_params.encoder_input_parameters.width,
-                state.given_params.encoder_input_parameters.height,
+                ffmpeg_format_from_internal_format(&state.given_params.virtual_screen_format_parameters.format),
+                state.given_params.virtual_screen_format_parameters.width,
+                state.given_params.virtual_screen_format_parameters.height,
             );
             let alloc_input_frame = start.elapsed();
 
-            let height = state.given_params.encoder_input_parameters.height as usize;
-            let src_stride = state.given_params.encoder_input_parameters.stride as usize;
+            let height = state.given_params.virtual_screen_format_parameters.height as usize;
+            let src_stride = state.given_params.virtual_screen_format_parameters.stride as usize;
             let dst_stride = input_frame.stride(0);
             let data = input_frame.data_mut(0);
 
             let expected_data = src_stride * height;
             if raw_data.len() < expected_data {
-                return Err(format!(
-                    "Input buffer too small. Expected {}, got {}",
-                    expected_data,
-                    raw_data.len()
-                ));
+                return Err(FfmpegEncoderError::InputBufferTooSmall {
+                    expected: expected_data,
+                    got: raw_data.len(),
+                });
             }
 
             let copy_start = Instant::now();
@@ -321,7 +345,7 @@ impl DevDispEncoder for FfmpegEncoder {
                 let scale_start = Instant::now();
                 scaler
                     .run(&input_frame, &mut formatted_frame)
-                    .map_err(|e| format!("Failed to scale frame: {}", e))?;
+                    .map_err(FfmpegEncoderError::ScaleError)?;
 
                 formatted_frame.set_pts(Some(state.frame_index as i64));
                 state.frame_index += 1;
@@ -338,7 +362,7 @@ impl DevDispEncoder for FfmpegEncoder {
             state
                 .encoder
                 .send_frame(&formatted_frame)
-                .map_err(|e| format!("Failed to send frame to encoder: {}", e))?;
+                .map_err(FfmpegEncoderError::EncoderSendFailed)?;
 
             state.out_buf.clear();
             let mut packet = ffmpeg::Packet::empty();
@@ -386,7 +410,10 @@ impl FfmpegEncoderProvider {
 impl EncoderProvider for FfmpegEncoderProvider {
     type EncoderType = FfmpegEncoder;
 
-    fn create_encoder(&self) -> PinnedLocalFuture<'_, Result<Self::EncoderType, String>> {
-        futures::future::ready(Ok(FfmpegEncoder::new(self.configuration.clone()))).boxed_local()
+    fn create_encoder(&self) -> PinnedFuture<'_, Result<Self::EncoderType, String>> {
+        async move {
+            Ok(FfmpegEncoder::new(self.configuration.clone()))
+        }
+        .boxed()
     }
 }

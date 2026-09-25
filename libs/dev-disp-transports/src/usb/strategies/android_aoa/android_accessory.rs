@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use dev_disp_encoders::toolkit::encoder::RawEncoder;
 use log::{debug, info};
 use nusb::{
     Device, DeviceInfo, Interface,
@@ -27,9 +28,10 @@ pub const DEV_DISP_DESCRIPTION: &str = "Device Display Host";
 pub const DEV_DISP_MANUFACTURER: &str = "Device Display";
 pub const DEV_DISP_MODEL: &str = "Screen Provider";
 
+// TODO: Stop using `RawEncoder` here
 pub async fn connect_usb_android_accessory(
     target_device_info: DeviceInfo,
-) -> Result<AndroidAoaScreenHostTransport, UsbConnectionError> {
+) -> Result<AndroidAoaScreenHostTransport<RawEncoder>, UsbConnectionError> {
     // Specific implementation for connecting via Android Accessory protocol
     // This would involve sending the appropriate control transfers
     // and managing the USB connection lifecycle.
@@ -204,6 +206,7 @@ pub async fn connect_usb_android_accessory(
         ifc,
         bulk_in,
         bulk_out,
+        RawEncoder,
     ))
 }
 

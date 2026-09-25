@@ -6,7 +6,7 @@ use std::{
 
 use dev_disp_core::{
     host::{
-        DisplayParameters, Screen, ScreenOutputParameters, ScreenProvider, ScreenReadyStatus,
+        DisplayParameters, Screen, ScreenFormatParameters, ScreenProvider, ScreenReadyStatus,
         VirtualScreenPixelFormat,
     },
     util::PinnedLocalFuture,
@@ -163,10 +163,10 @@ impl EvdiScreen {
 }
 
 impl Screen for EvdiScreen {
-    fn get_format_parameters(&self) -> ScreenOutputParameters {
+    fn get_format_parameters(&self) -> ScreenFormatParameters {
         let mode = self.mode;
 
-        ScreenOutputParameters {
+        ScreenFormatParameters {
             width: mode.width,
             height: mode.height,
             format: self.pixel_format.clone(),

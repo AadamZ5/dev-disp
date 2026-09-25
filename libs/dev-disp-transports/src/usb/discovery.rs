@@ -3,7 +3,7 @@ use std::{iter::empty, pin::Pin};
 use dev_disp_core::{
     client::{DisplayHost, SomeScreenTransport},
     host::{ConnectableDevice, ConnectableDeviceInfo, DeviceDiscovery, StreamingDeviceDiscovery},
-    util::PinnedFuture,
+    util::{PinnedFuture, PinnedLocalFuture},
 };
 use futures_util::{FutureExt, Stream, StreamExt};
 use nusb::DeviceInfo;
@@ -38,7 +38,7 @@ impl ConnectableDevice for UsbDeviceCandidate {
 
     fn connect(
         self,
-    ) -> PinnedFuture<
+    ) -> PinnedLocalFuture<
         'static,
         Result<DisplayHost<Self::Transport>, Box<dyn std::error::Error + Send + Sync>>,
     > {
@@ -57,7 +57,7 @@ impl ConnectableDevice for UsbDeviceCandidate {
                 transport,
             ))
         }
-        .boxed()
+        .boxed_local()
     }
 
     fn get_info(&self) -> ConnectableDeviceInfo {

@@ -44,14 +44,8 @@ where
 
             let ffmpeg_config = ffmpeg_config.clone();
             let _ = tokio::task::spawn_local(async move {
-                let handle_result = handle_display_host(
-                    provider_1,
-                    FfmpegEncoderProvider::new(ffmpeg_config),
-                    display,
-                    empty(),
-                    sink::drain(),
-                )
-                .await;
+                let handle_result =
+                    handle_display_host(provider_1, display, empty(), sink::drain()).await;
 
                 if let Err(e) = handle_result {
                     error!("Error handling display host: {}", e);

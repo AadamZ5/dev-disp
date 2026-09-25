@@ -6,6 +6,7 @@ use dev_disp_core::{
     host::{ConnectableDevice, ConnectableDeviceInfo, DeviceDiscovery, StreamingDeviceDiscovery},
     util::{PinnedFuture, PinnedLocalFuture},
 };
+use dev_disp_encoders::toolkit::encoder::{EncoderProvider, RawEncoderProvider};
 use futures::{
     SinkExt,
     channel::{mpsc, oneshot},
@@ -21,46 +22,62 @@ use crate::websocket::{
     transport::WsTransport,
 };
 
+/// Represents a handle to a WebSocket device candidate that can be taken.
 #[derive(Debug)]
-pub struct WsDeviceCandidate<S> {
+pub struct WsDeviceCandidate<S, E>
+where
+    E: Clone,
+{
     take_ws_tx: mpsc::Sender<oneshot::Sender<WebSocketStream<S>>>,
     device_info: ConnectableDeviceInfo,
+    encoder_provider: E,
 }
 
-impl<S> WsDeviceCandidate<S>
+// Manual `Clone` impl since there is a generic that prevents deriving `Clone` automatically.
+impl<S, E> Clone for WsDeviceCandidate<S, E>
 where
-    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: Clone,
 {
-    pub fn new(
-        take_ws_tx: mpsc::Sender<oneshot::Sender<WebSocketStream<S>>>,
-        device_info: ConnectableDeviceInfo,
-    ) -> Self {
-        Self {
-            take_ws_tx,
-            device_info,
-        }
-    }
-}
-
-impl<S> Clone for WsDeviceCandidate<S> {
     fn clone(&self) -> Self {
         Self {
             take_ws_tx: self.take_ws_tx.clone(),
             device_info: self.device_info.clone(),
+            encoder_provider: self.encoder_provider.clone(),
         }
     }
 }
 
-impl<S> ConnectableDevice for WsDeviceCandidate<S>
+impl<S, E> WsDeviceCandidate<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: Clone,
 {
-    type Transport = WsTransport<S>;
+    pub fn new(
+        take_ws_tx: mpsc::Sender<oneshot::Sender<WebSocketStream<S>>>,
+        device_info: ConnectableDeviceInfo,
+        encoder_provider: E,
+    ) -> Self {
+        Self {
+            take_ws_tx,
+            device_info,
+            encoder_provider,
+        }
+    }
+}
+
+impl<S, E> ConnectableDevice for WsDeviceCandidate<S, E>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: EncoderProvider + Clone + Send + 'static,
+{
+    type Transport = WsTransport<S, E::EncoderType>;
 
     fn connect(
         mut self,
-    ) -> PinnedFuture<'static, Result<DisplayHost<Self::Transport>, Box<dyn Error + Send + Sync>>>
-    {
+    ) -> PinnedLocalFuture<
+        'static,
+        Result<DisplayHost<Self::Transport>, Box<dyn Error + Send + Sync>>,
+    > {
         async move {
             let (get_ws_tx, get_ws_rx) = oneshot::channel();
             if let Err(e) = self.take_ws_tx.send(get_ws_tx).await {
@@ -74,13 +91,20 @@ where
                 Ok(ws) => ws,
             };
 
+            // TODO: Get an encoder here to install in the transport.
+            let encoder = self
+                .encoder_provider
+                .create_encoder()
+                .await
+                .expect("Failed to create encoder");
+
             Ok(DisplayHost::new(
                 0,
                 self.device_info.name,
-                WsTransport::new(websocket),
+                WsTransport::new(websocket, encoder),
             ))
         }
-        .boxed()
+        .boxed_local()
     }
 
     fn get_info(&self) -> ConnectableDeviceInfo {
@@ -88,19 +112,27 @@ where
     }
 }
 
-type CurrentConnections<S> = Arc<RwLock<HashMap<String, WsDeviceCandidate<S>>>>;
+type CurrentConnections<S, E> = Arc<RwLock<HashMap<String, WsDeviceCandidate<S, E>>>>;
 
 #[derive(Debug)]
-struct WsDiscoveryListenCtx<S> {
-    current_connections: CurrentConnections<S>,
+struct WsDiscoveryListenCtx<S, E>
+where
+    E: Clone,
+{
+    current_connections: CurrentConnections<S, E>,
     connections_update_tx: mpsc::Sender<()>,
+    encoder_provider: E,
 }
 
-impl<S> Clone for WsDiscoveryListenCtx<S> {
+impl<S, E> Clone for WsDiscoveryListenCtx<S, E>
+where
+    E: Clone,
+{
     fn clone(&self) -> Self {
         Self {
             current_connections: self.current_connections.clone(),
             connections_update_tx: self.connections_update_tx.clone(),
+            encoder_provider: self.encoder_provider.clone(),
         }
     }
 }
@@ -111,26 +143,31 @@ impl<S> Clone for WsDiscoveryListenCtx<S> {
 /// handshake checks are done, they will be listed as connectable devices.
 ///
 /// Once a device is chosen, it will be removed from the list of available devices.
-pub struct WsDiscovery<S> {
-    current_connections: Arc<RwLock<HashMap<String, WsDeviceCandidate<S>>>>,
-    listen_ctx: WsDiscoveryListenCtx<S>,
+pub struct WsDiscovery<S, E>
+where
+    E: EncoderProvider + Clone + Send + Sync + 'static,
+{
+    current_connections: Arc<RwLock<HashMap<String, WsDeviceCandidate<S, E>>>>,
+    listen_ctx: WsDiscoveryListenCtx<S, E>,
     connections_update_notification: mpsc::Receiver<()>,
 }
 
-impl<S> Default for WsDiscovery<S>
+impl<S> Default for WsDiscovery<S, RawEncoderProvider>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    <RawEncoderProvider as EncoderProvider>::EncoderType: Send + 'static,
 {
     fn default() -> Self {
-        Self::new()
+        Self::new(RawEncoderProvider)
     }
 }
 
-impl<S> WsDiscovery<S>
+impl<S, E> WsDiscovery<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: EncoderProvider + Clone + Send + Sync + 'static,
 {
-    pub fn new() -> Self {
+    pub fn new(encoder_provider: E) -> Self {
         let (connections_update_tx, connections_update_rx) = mpsc::channel(100);
         let current_connections = Arc::new(RwLock::new(HashMap::new()));
         Self {
@@ -138,6 +175,7 @@ where
             listen_ctx: WsDiscoveryListenCtx {
                 current_connections,
                 connections_update_tx,
+                encoder_provider,
             },
             connections_update_notification: connections_update_rx,
         }
@@ -165,13 +203,13 @@ where
             // These channels will be used to transfer a *new* future that is created
             // when a new connection comes in, to the main task loop.
             let (mut connection_task_tx, mut connection_task_rx) =
-                mpsc::channel::<Pin<Box<dyn Future<Output = ()>>>>(10);
+                mpsc::channel::<PinnedLocalFuture<'_, ()>>(10);
 
             // With this task set, we will:
             // - Loop and accept incoming connections
             // - For each incoming connection, spawn a new task to do the pre-initialization
             //   handshake, and then register the device if successful.
-            let mut tasks = FuturesUnordered::<Pin<Box<dyn Future<Output = ()>>>>::new();
+            let mut tasks = FuturesUnordered::<PinnedLocalFuture<'_, ()>>::new();
 
             let listen_ctx_ref = &listen_ctx;
 
@@ -228,7 +266,7 @@ where
     /// ensure we're talking to a client that follows the expected protocol.
     ///
     /// The returned future will live as long as the device is connected and not yet claimed.
-    async fn pre_init(listen_ctx: &WsDiscoveryListenCtx<S>, mut ws_stream: WebSocketStream<S>) {
+    async fn pre_init(listen_ctx: &WsDiscoveryListenCtx<S, E>, mut ws_stream: WebSocketStream<S>) {
         // First talk to the websocket using the pre-init messages to figure
         // out details about the connecting device.
 
@@ -356,7 +394,8 @@ where
 
         info!("Device info received: {:?}", device_info);
 
-        let device_candidate = WsDeviceCandidate::new(take_ws_tx, device_info);
+        let device_candidate =
+            WsDeviceCandidate::new(take_ws_tx, device_info, listen_ctx.encoder_provider.clone());
 
         listen_ctx
             .current_connections
@@ -384,7 +423,8 @@ where
                     break;
                 },
                 // If the WebSocket closes before being taken, we should remove it from
-                // the available connections.
+                // the available connections. This has the side-effect of draining any incoming
+                // messages from the WebSocket until it is closed or taken.
                 ws_message = ws_stream.next().fuse() => {
                     if ws_message.is_none() {
                         info!("WebSocket connection from \"{}\" closed before being taken.", &id);
@@ -398,11 +438,12 @@ where
     }
 }
 
-impl<S> DeviceDiscovery for WsDiscovery<S>
+impl<S, E> DeviceDiscovery for WsDiscovery<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: EncoderProvider + Clone + Send + Sync + 'static,
 {
-    type DeviceCandidate = WsDeviceCandidate<S>;
+    type DeviceCandidate = WsDeviceCandidate<S, E>;
 
     fn discover_devices(&self) -> PinnedFuture<'_, Vec<Self::DeviceCandidate>> {
         async move {
@@ -417,9 +458,11 @@ where
     }
 }
 
-impl<S> StreamingDeviceDiscovery for WsDiscovery<S>
+impl<S, E> StreamingDeviceDiscovery for WsDiscovery<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: EncoderProvider + Clone + Send + Sync + 'static,
+    E::EncoderType: 'static,
 {
     fn into_stream(self) -> Pin<Box<dyn Stream<Item = Vec<Self::DeviceCandidate>> + Send>> {
         Box::pin(futures::stream::unfold(self, |mut this| async move {

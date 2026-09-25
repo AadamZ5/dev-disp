@@ -17,3 +17,15 @@ pub fn ffmpeg_format_from_internal_format(
         VirtualScreenPixelFormat::Abgr8888 => ffmpeg::format::Pixel::RGBA,
     }
 }
+
+pub fn internal_format_from_ffmpeg_format(
+    format: &ffmpeg::format::Pixel,
+) -> Option<VirtualScreenPixelFormat> {
+    match format {
+        ffmpeg::format::Pixel::RGB24 => Some(VirtualScreenPixelFormat::Rgb888),
+        ffmpeg::format::Pixel::BGR24 => Some(VirtualScreenPixelFormat::Bgr888),
+        ffmpeg::format::Pixel::RGBA => Some(VirtualScreenPixelFormat::Rgba8888),
+        ffmpeg::format::Pixel::BGRA => Some(VirtualScreenPixelFormat::Bgra8888),
+        _ => None,
+    }
+}

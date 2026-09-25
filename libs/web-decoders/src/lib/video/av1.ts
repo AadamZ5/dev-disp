@@ -19,7 +19,7 @@ import { CodecDefinition } from './common';
  * as double digit decimals, unless indicated otherwise.
  * Leading or trailing zeros cannot be omitted.
  */
-export type CodevAv1Parameters = {
+export type CodecAv1Parameters = {
   profile: number; // 0..2
   level: number; // 10..63
   tier: 'M' | 'H'; // Main or High
@@ -32,7 +32,7 @@ export type CodevAv1Parameters = {
   videoFullRangeFlag?: 0 | 1;
 };
 
-export function av1ToParamString(codec: 'av01', params: CodevAv1Parameters) {
+export function av1ToParamString(codec: 'av01', params: CodecAv1Parameters) {
   let acc = '' + codec;
   acc += `.${params.profile.toString().padStart(2, '0')}`;
   acc += `.${params.level.toString().padStart(2, '0')}${params.tier}`;
@@ -65,9 +65,9 @@ export function av1ToParamString(codec: 'av01', params: CodevAv1Parameters) {
 /**
  * Overview: https://www.w3.org/TR/webcodecs-av1-codec-registration/
  *
- * @see {@link CodevAv1Parameters}
+ * @see {@link CodecAv1Parameters}
  */
-export type CodecAv1 = CodecDefinition<CodevAv1Parameters, 'av01'>;
+export type CodecAv1 = CodecDefinition<CodecAv1Parameters, 'av01'>;
 
 /**
  * @see {@link CodecAv1}

@@ -11,7 +11,9 @@ tokio = { version = "1.47.1", features = ["full", "signal", "sync"] }
 dev-disp-core = { path = "../../libs/dev-disp-core" }
 dev-disp-transports = { path = "../../libs/dev-disp-transports" }
 dev-disp-provider-evdi = { path = "../../libs/dev-disp-provider-evdi" }
-dev-disp-encoders = { path = "../../libs/dev-disp-encoders" }
+dev-disp-encoders = { path = "../../libs/dev-disp-encoders", features = [
+  "ffmpeg",
+] }
 dev-disp-api = { path = "../../libs/dev-disp-api", features = ["grpc"] }
 rust-util = { path = "../../libs/rust-util" }
 futures-util = "0.3.31"

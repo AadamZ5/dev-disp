@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-
-use dev_disp_transports::websocket::messages::{
-    DisplayParameters, EncoderPossibleConfiguration, WsMessageDeviceInfo,
-};
+use dev_disp_encoders::toolkit::encoder::CodecOption;
+use dev_disp_transports::websocket::messages::{DisplayParameters, WsMessageDeviceInfo};
 use js_sys::{Function, SharedArrayBuffer};
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
+
+use crate::types::JsCodec;
 
 mod serialize_function {
     use js_sys::Function;
@@ -135,30 +134,30 @@ impl From<JsDisplayParameters> for WsMessageDeviceInfo {
 #[tsify(from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
 pub struct JsEncoderPossibleConfiguration {
-    pub encoder_name: String,
-    pub encoder_family: String,
+    pub id: u32,
+    pub display_name: String,
+    pub codec: JsCodec,
     pub encoded_resolution: (u32, u32),
-    pub parameters: HashMap<String, String>,
 }
 
-impl From<JsEncoderPossibleConfiguration> for EncoderPossibleConfiguration {
+impl From<JsEncoderPossibleConfiguration> for CodecOption {
     fn from(val: JsEncoderPossibleConfiguration) -> Self {
-        EncoderPossibleConfiguration {
-            encoder_name: val.encoder_name,
-            encoder_family: val.encoder_family,
+        CodecOption {
+            id: val.id,
+            display_name: val.display_name,
+            codec: val.codec.into(),
             encoded_resolution: val.encoded_resolution,
-            parameters: val.parameters,
         }
     }
 }
 
-impl From<EncoderPossibleConfiguration> for JsEncoderPossibleConfiguration {
-    fn from(val: EncoderPossibleConfiguration) -> Self {
+impl From<CodecOption> for JsEncoderPossibleConfiguration {
+    fn from(val: CodecOption) -> Self {
         JsEncoderPossibleConfiguration {
-            encoder_name: val.encoder_name,
-            encoder_family: val.encoder_family,
+            id: val.id,
+            display_name: val.display_name,
+            codec: val.codec.into(),
             encoded_resolution: val.encoded_resolution,
-            parameters: val.parameters,
         }
     }
 }

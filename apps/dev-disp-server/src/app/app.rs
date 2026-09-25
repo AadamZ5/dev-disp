@@ -8,8 +8,8 @@ use dev_disp_core::{
         DisplayHostRef, DisplayHostStatus, InitializationState,
     },
     host::{
-        ConnectableDevice, DeviceDiscovery, EncoderProvider, PollingDeviceDiscovery,
-        ScreenProvider, StreamingDeviceDiscovery,
+        ConnectableDevice, DeviceDiscovery, PollingDeviceDiscovery, ScreenProvider,
+        StreamingDeviceDiscovery,
     },
     util::{PinnedFuture, PinnedLocalFuture, PinnedStream},
 };
@@ -25,6 +25,12 @@ use tokio::{
 };
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream, errors::BroadcastStreamRecvError};
 
+/// A device that has been connected/discovered, vetted, and is ready to begin
+/// hosting screen data, but the user has not initiated that yet.
+///
+/// This is purely a "satellite" item, meaning it does not hold the actual device
+/// or connection itself. It is purely a means of initiating more logic in the
+/// core app logic.
 #[derive(Debug, Clone)]
 pub struct ReadyDeviceRef {
     pub name: String,
@@ -52,13 +58,19 @@ impl ReadyDeviceRef {
     }
 }
 
+/// A device that is currently in use, meaning it has been taken from the ready state
+/// and is actively hosting (or preparing to host) screen data. This struct provides
+/// mechanisms to disconnect the device and listen to its current status.
+///
+/// This is purely a "satellite" item, meaning it does not hold the actual device
+/// or connection itself. It is purely a means of viewing the device's active state,
+/// or cancelling the current hosting session.
 #[derive(Debug, Clone)]
 pub struct InUseDeviceRef {
     pub name: String,
     pub discovery_id: String,
     pub id: String,
     pub status: Arc<ArcSwap<SystemState>>,
-    // TODO: current status atomic slot!
     disconnect_tx: mpsc::Sender<()>,
     status_tx: broadcast::Sender<SystemState>,
 }
@@ -101,6 +113,7 @@ impl InUseDeviceRef {
     }
 }
 
+/// A set-up discovery method that can be used to find available devices for a particular transport.
 #[derive(Debug, Clone)]
 struct DiscoveryMethod {
     pub id: DiscoveryId,
@@ -130,29 +143,25 @@ impl DiscoveryMethod {
 
 /// App keeps track of the current available devices, and in-use devices.
 #[derive(Debug, Clone)]
-pub struct App<S, E>
+pub struct App<S>
 where
     S: ScreenProvider + Clone + Send + 'static,
-    E: EncoderProvider + Clone + Send + 'static,
 {
     screen_provider: S,
-    encoder_provider: E,
     available_devices: Arc<RwLock<HashMap<DiscoveryId, HashMap<DisplayHostId, ReadyDeviceRef>>>>,
     in_use_devices: Arc<RwLock<HashMap<DiscoveryId, HashMap<DisplayHostId, InUseDeviceRef>>>>,
     discovery_methods: Arc<RwLock<HashMap<DiscoveryId, DiscoveryMethod>>>,
     devices_change_tx: broadcast::Sender<()>,
 }
 
-impl<S, E> App<S, E>
+impl<S> App<S>
 where
     S: ScreenProvider + Clone + Send + 'static,
-    E: EncoderProvider + Clone + Send + 'static,
 {
-    pub fn new(screen_provider: S, encoder_provider: E) -> Self {
+    pub fn new(screen_provider: S) -> Self {
         let (devices_change_tx, _) = broadcast::channel(128);
         Self {
             screen_provider,
-            encoder_provider,
             available_devices: Arc::new(RwLock::new(HashMap::new())),
             in_use_devices: Arc::new(RwLock::new(HashMap::new())),
             discovery_methods: Arc::new(RwLock::new(HashMap::new())),
@@ -243,7 +252,6 @@ where
         let available_devices = self.available_devices.clone();
         let in_use_devices = self.in_use_devices.clone();
         let screen_provider = self.screen_provider.clone();
-        let encoder_provider = self.encoder_provider.clone();
         let devices_change_tx = self.devices_change_tx.clone();
         let discovery_methods = self.discovery_methods.clone();
 
@@ -253,7 +261,6 @@ where
         async move {
             let discovery_id = discovery_id;
             let screen_provider = screen_provider;
-            let encoder_provider = encoder_provider;
             let devices_change_tx = devices_change_tx;
             let discovery_methods = discovery_methods;
 
@@ -290,7 +297,6 @@ where
                     entry.insert(device_ref.id.clone(), device_ref);
 
                     let screen_provider_clone = screen_provider.clone();
-                    let encoder_provider_clone = encoder_provider.clone();
                     let available_devices = available_devices.clone();
                     let in_use_devices = in_use_devices.clone();
                     let discovery_id = discovery_id.clone();
@@ -301,7 +307,6 @@ where
                         let info = info;
                         let device = device;
                         let screen_provider = screen_provider_clone;
-                        let encoder_provider = encoder_provider_clone;
                         let available_devices = available_devices;
                         let in_use_devices = in_use_devices;
                         let discovery_id = discovery_id;
@@ -372,7 +377,6 @@ where
                                         info!("Device '{}' initiated successfully", device_name);
                                         let handle_result = handle_display_host(
                                             screen_provider,
-                                            encoder_provider,
                                             display,
                                             ReceiverStream::new(cancel_rx),
                                             BroadcastSink::new(device_status_tx),
@@ -547,10 +551,9 @@ where
     }
 }
 
-impl<S, E> DevDispApi for App<S, E>
+impl<S> DevDispApi for App<S>
 where
     S: ScreenProvider + Clone + Send + 'static,
-    E: EncoderProvider + Clone + Send + 'static,
 {
     fn get_devices(
         &self,
@@ -707,6 +710,7 @@ fn system_state_to_init_state(state: &SystemState) -> Option<InitializationState
         SystemState::NegotiatingCodecs => Some(InitializationState::NegotiatingCodecs),
         SystemState::InitializingEncoder => Some(InitializationState::InitializingEncoder),
         SystemState::SettingClientCodec => Some(InitializationState::SettingClientCodec),
+        SystemState::PreparingClient => Some(InitializationState::PreparingClient),
         SystemState::Running | SystemState::Stopped => None,
     }
 }

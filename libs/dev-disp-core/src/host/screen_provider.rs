@@ -1,19 +1,85 @@
 use std::fmt::Display;
 
 use edid::{
-    Edid, EdidDigitalBitDepth, EdidDigitalVideoInterface, EdidEstablishedTimingSupport,
+    Edid, EdidDigitalBitDepth, EdidDigitalVideoInterface,
     descriptors::{DigitalSyncFlags, EdidDescriptor},
 };
 use futures::{FutureExt, future};
 use log::debug;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::{
     client::DisplayHost,
-    host::ScreenOutputParameters,
     util::{PinnedFuture, PinnedLocalFuture},
 };
 
+/// Well-known virtual screen pixel formats we can handle.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum VirtualScreenPixelFormat {
+    #[default]
+    Rgb888,
+    Bgr888,
+    Rgba8888,
+    Bgra8888,
+    Argb8888,
+    Abgr8888,
+}
+
+/// Parameters explaining what kind of screen data the virtual screen subsystem is producing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScreenFormatParameters {
+    /// Our intermediate pixel format representation.
+    pub format: VirtualScreenPixelFormat,
+
+    /// Width in pixels
+    pub width: u32,
+
+    /// Height in pixels
+    pub height: u32,
+
+    /// Stride in bytes
+    ///
+    /// This is the amount of bytes between the start of one row of pixels and the start of the next row.
+    /// This may be more than width * bytes_per_pixel due to padding or alignment requirements.
+    ///
+    /// In this example, notice the padding at the end of each row to align to the stride:
+    /// ```text
+    /// [ <----- ... Stride bytes ... -----> ]
+    ///
+    /// [P1][P2][P3][P4]...[Pn][PAD][PAD][PAD]  <- Row 1
+    /// [P1][P2][P3][P4]...[Pn][PAD][PAD][PAD]  <- Row 2
+    /// ...
+    /// [P1][P2][P3][P4]...[Pn][PAD][PAD][PAD]  <- Row h
+    ///
+    /// [ <-- Pixel Data ---> ][ < Padding > ]
+    /// ```
+    /// The padding at the end of each row helps align the pixel data to memory boundaries.
+    /// The stride represents the total number of bytes between the start of one row and the start
+    /// of the next row, including any padding.
+    pub stride: u32,
+
+    /// Any additional meta data associated with the screen output
+    pub meta_data: Option<HashMap<String, String>>,
+}
+
+/// Represents the content parameters we will be attempting to transmit. The
+/// [Self::width] and [Self::height] represent the dimensions of the content we will be transmitting, which
+/// is usually the same as those present in [Self::encoder_input_parameters]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScreenContentParameters {
+    /// TODO: Will this ever differ from [virtual_screen_source_parameters.width]
+    pub width: u32,
+    /// TODO: Will this ever differ from [virtual_screen_source_parameters.height]
+    pub height: u32,
+    pub bitrate: u32,
+    pub fps: u32,
+    /// The parameters of the virtual screen generated output data, that will
+    /// be sent to the encoder.
+    pub virtual_screen_format_parameters: ScreenFormatParameters,
+}
+
+// TODO: Change `DisplayHost<T>` to be a type-changed result type like `FinishedDisplayHost` (no <T>) that allows the transport to de-initialize properly
 pub type DisplayHostResult<T> = Result<DisplayHost<T>, String>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -93,7 +159,7 @@ pub enum ScreenReadyStatus {
 /// to a client
 pub trait Screen {
     // TODO: Should encoder types live here?
-    fn get_format_parameters(&self) -> ScreenOutputParameters;
+    fn get_format_parameters(&self) -> ScreenFormatParameters;
 
     /// Background task started before the screen is used during looping. Cannot
     /// hold onto self reference.

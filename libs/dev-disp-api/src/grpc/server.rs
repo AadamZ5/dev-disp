@@ -223,6 +223,7 @@ impl From<InitializationState> for proto::InitializationPhase {
             InitializationState::SettingClientCodec => {
                 proto::InitializationPhase::SettingClientCodec
             }
+            InitializationState::PreparingClient => proto::InitializationPhase::PreparingClient,
         }
     }
 }

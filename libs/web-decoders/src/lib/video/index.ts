@@ -37,3 +37,7 @@ export type VideoCodecId = (typeof VIDEO_CODEC_IDS)[number];
 export const VIDEO_CODEC_NAMES = VIDEO_CODEC_DEFINITIONS.map((def) =>
   def.displayName ? def.displayName : def.codec,
 ) as ReadonlyArray<string>;
+
+export type VideoCodecParameters = Parameters<
+  (typeof VIDEO_CODEC_DEFINITIONS)[number]['toParamString']
+>[1];

@@ -1,11 +1,11 @@
 use std::process::exit;
 
 use dev_disp_api::grpc::endpoint::DevDispGrpcEndpoint;
-use dev_disp_core::{
-    daemon::endpoint::DevDispApiEndpoint,
-    host::{EncoderProvider, ScreenProvider},
+use dev_disp_core::{daemon::endpoint::DevDispApiEndpoint, host::ScreenProvider};
+use dev_disp_encoders::{
+    ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration},
+    toolkit::encoder::EncoderProvider,
 };
-use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
 use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::FutureExt;
 use log::{LevelFilter, error, info, warn};
@@ -34,14 +34,15 @@ async fn main() {
     let screen_provider = get_screen_provider().await;
     let encoder_provider = get_encoder_provider().await;
     let mut endpoint = get_endpoint().await;
-    let app = App::new(screen_provider.clone(), encoder_provider);
+    let app = App::new(screen_provider.clone());
 
     tokio::spawn(endpoint.serve_api(app.clone()));
 
     let local_set = LocalSet::new();
     // TODO: Is this single-threaded work necessary?
     let single_thread_work = local_set.run_until(async move {
-        let (ws_discovery, ws_listen) = websocket::create_websocket_and_bg_task().await;
+        let (ws_discovery, ws_listen) =
+            websocket::create_websocket_and_bg_task(encoder_provider).await;
         let listen = tokio::task::spawn_local(ws_listen).map(|res| {
             if let Err(e) = res {
                 error!("Error setting up websocket listen task: {}", e);
@@ -113,7 +114,7 @@ async fn get_screen_provider() -> impl ScreenProvider + Clone + 'static {
     evdi_provider
 }
 
-async fn get_encoder_provider() -> impl EncoderProvider + Clone + 'static {
+async fn get_encoder_provider() -> FfmpegEncoderProvider {
     // TODO: Make this configuration hot-reloadable with a file watcher!
     let ffmpeg_config = default_path_read_or_write_default_config_for::<FfmpegConfiguration>()
         .await

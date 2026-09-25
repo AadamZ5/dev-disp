@@ -3,10 +3,16 @@ use async_tungstenite::{
 };
 
 use dev_disp_core::{
-    client::{ScreenTransport, TransportError},
+    client::{ScreenTransport, TransportError, TransportSendError, TransportSendMetrics},
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
-    host::{DisplayParameters, EncoderPossibleConfiguration},
-    util::PinnedFuture,
+    host::{DisplayParameters, ScreenContentParameters},
+    util::{PinnedFuture, PinnedLocalFuture},
+};
+use dev_disp_encoders::toolkit::{
+    encoder::{
+        CodecOption, Encoder, map_external_to_internal_configs, map_internal_to_external_configs,
+    },
+    messages::{CodecNegotiationClient, CodecNegotiationServer},
 };
 use futures::{AsyncRead, AsyncWrite, SinkExt, StreamExt, channel::mpsc};
 use futures_util::FutureExt;
@@ -22,11 +28,12 @@ struct BackgroundContext<S> {
     tx_protocol_init: mpsc::Sender<WsMessageProtocolInit>,
     tx_device_info: mpsc::Sender<WsMessageDeviceInfo>,
     tx_core_display_params_update: mpsc::Sender<DisplayParameters>,
-    tx_core_preferred_encoding_response: mpsc::Sender<Vec<EncoderPossibleConfiguration>>,
+    tx_core_preferred_encoding_response: mpsc::Sender<Vec<CodecOption>>,
     tx_core_set_encoding_response: mpsc::Sender<bool>,
 }
 
-pub struct WsTransport<S> {
+pub struct WsTransport<S, E> {
+    encoder: E,
     ws_tx: WebSocketSender<S>,
     /// Reciever half of the WebSocket connection. This will be taken
     /// when the background task is started.
@@ -36,15 +43,16 @@ pub struct WsTransport<S> {
     rx_device_info: mpsc::Receiver<WsMessageDeviceInfo>,
 
     rx_core_display_params_update: mpsc::Receiver<DisplayParameters>,
-    rx_core_preferred_encoding_response: mpsc::Receiver<Vec<EncoderPossibleConfiguration>>,
+    rx_core_preferred_encoding_response: mpsc::Receiver<Vec<CodecOption>>,
     rx_core_set_encoding_response: mpsc::Receiver<bool>,
 }
 
-impl<S> WsTransport<S>
+impl<S, E> WsTransport<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: Encoder + 'static,
 {
-    pub fn new(websocket: WebSocketStream<S>) -> Self {
+    pub fn new(websocket: WebSocketStream<S>, encoder: E) -> Self {
         let (ws_tx, ws_rx) = websocket.split();
 
         let (tx_protocol_init, rx_protocol_init) = mpsc::channel(2);
@@ -64,6 +72,7 @@ where
         };
 
         Self {
+            encoder,
             ws_tx,
             background_context: Some(background_ctx),
             rx_protocol_init,
@@ -75,17 +84,29 @@ where
     }
 
     async fn send_msg<'a>(&mut self, msg: WsMessageFromSource<'a>) -> Result<(), TransportError> {
+        Self::send_msg_with_sender(&mut self.ws_tx, msg).await
+    }
+
+    /// Send a message using the provided WebSocket sender, instead of implicitly using the internally
+    /// captured one. Useful for separating mutable references (not using `&mut self`)
+    async fn send_msg_with_sender<'a, S1>(
+        tx: &mut WebSocketSender<S1>,
+        msg: WsMessageFromSource<'a>,
+    ) -> Result<(), TransportError>
+    where
+        S1: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         // TODO: Allocate a buffer once and reuse it! Avoid heap allocation on every send
         let bytes = bincode::serde::encode_to_vec(&msg, bincode::config::standard())
             .map_err(|_| TransportError::SerializationError)?;
-        self.ws_tx
-            .send(Message::binary(bytes))
+        tx.send(Message::binary(bytes))
             .await
             .map_err(|e| TransportError::Other(Box::new(e)))?;
         Ok(())
     }
 
-    fn _background_task<'a>(&mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
+    /// Spawner for the background task
+    fn background_task<'a>(&mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
         let background_ctx = self.background_context.take();
 
         async move {
@@ -128,25 +149,29 @@ where
                                     .await
                                     .map_err(|e| TransportError::Other(Box::new(e)))?;
                             }
+                            WsMessageFromClient::CodecNegotiation(codec_negotiation) => {
+                                match codec_negotiation {
+                                    CodecNegotiationClient::ResponsePreferredEncodings(codec_options) => {
+                                        background_ctx
+                                        .tx_core_preferred_encoding_response
+                                        .send(codec_options)
+                                        .await
+                                        .map_err(|e| TransportError::Other(Box::new(e)))?;
+                                    },
+                                    CodecNegotiationClient::ResponseSetEncoding(success) => {
+                                        background_ctx
+                                    .tx_core_set_encoding_response
+                                    .send(success)
+                                    .await
+                                    .map_err(|e| TransportError::Other(Box::new(e)))?;
+                                    },
+                                }
+                            }
                             WsMessageFromClient::Core(core_msg) => match core_msg {
                                 DevDispMessageFromClient::DisplayParametersUpdate(params) => {
                                     background_ctx
                                         .tx_core_display_params_update
                                         .send(params)
-                                        .await
-                                        .map_err(|e| TransportError::Other(Box::new(e)))?;
-                                }
-                               DevDispMessageFromClient::EncodingPreferenceResponse(encoder_possible_configurations) => {
-                                    background_ctx
-                                        .tx_core_preferred_encoding_response
-                                        .send(encoder_possible_configurations)
-                                        .await
-                                        .map_err(|e| TransportError::Other(Box::new(e)))?;
-                                },
-                                DevDispMessageFromClient::SetEncodingResponse(success) => {
-                                    background_ctx
-                                        .tx_core_set_encoding_response
-                                        .send(success)
                                         .await
                                         .map_err(|e| TransportError::Other(Box::new(e)))?;
                                 }
@@ -163,13 +188,65 @@ where
         }
         .boxed()
     }
+
+    fn get_preferred_encodings(
+        &mut self,
+        screen_parameters: ScreenContentParameters,
+        configurations: Vec<CodecOption>,
+    ) -> PinnedLocalFuture<'_, Result<Vec<CodecOption>, TransportError>> {
+        async move {
+            let req_pref_encoding = WsMessageFromSource::CodecNegotiation(
+                CodecNegotiationServer::RequestPreferredEncodings(
+                    screen_parameters,
+                    configurations,
+                ),
+            );
+            debug!("Requesting preferred encoding: {:?}", req_pref_encoding);
+            self.send_msg(req_pref_encoding).await?;
+
+            debug!("Waiting for preferred encoding response...");
+
+            self.rx_core_preferred_encoding_response
+                .next()
+                .await
+                .ok_or(TransportError::NoConnection)
+        }
+        .boxed_local()
+    }
+
+    fn set_encoding(
+        &mut self,
+        codec_option: CodecOption,
+    ) -> PinnedLocalFuture<'_, Result<(), TransportError>> {
+        async move {
+            let set_encoding_msg = WsMessageFromSource::CodecNegotiation(
+                CodecNegotiationServer::RequestSetEncoding(codec_option),
+            );
+            self.send_msg(set_encoding_msg).await?;
+
+            debug!("Waiting for set encoding response...");
+            self.rx_core_set_encoding_response
+                .next()
+                .await
+                .ok_or(TransportError::NoConnection)
+                .and_then(|success| {
+                    if success {
+                        Ok(())
+                    } else {
+                        Err(TransportError::Unknown)
+                    }
+                })
+        }
+        .boxed_local()
+    }
 }
 
-impl<S> ScreenTransport for WsTransport<S>
+impl<S, E> ScreenTransport for WsTransport<S, E>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    E: Encoder + 'static,
 {
-    fn initialize(&mut self) -> PinnedFuture<'_, Result<(), TransportError>> {
+    fn initialize(&mut self) -> PinnedLocalFuture<'_, Result<(), TransportError>> {
         async {
             // TODO: Better security!
             let init_key = "yo mamma".to_string();
@@ -197,16 +274,16 @@ where
                     }
                 })
         }
-        .boxed()
+        .boxed_local()
     }
 
-    fn background<'a>(&mut self) -> PinnedFuture<'a, Result<(), TransportError>> {
-        self._background_task()
+    fn background<'a>(&mut self) -> PinnedLocalFuture<'a, Result<(), TransportError>> {
+        self.background_task()
     }
 
     fn get_display_config(
         &mut self,
-    ) -> PinnedFuture<'_, Result<dev_disp_core::host::DisplayParameters, TransportError>> {
+    ) -> PinnedLocalFuture<'_, Result<dev_disp_core::host::DisplayParameters, TransportError>> {
         async {
             let req_disp_params =
                 WsMessageFromSource::Core(DevDispMessageFromSource::GetDisplayParametersRequest);
@@ -220,67 +297,85 @@ where
                 .await
                 .ok_or(TransportError::NoConnection)
         }
-        .boxed()
+        .boxed_local()
     }
 
-    fn get_preferred_encodings(
-        &mut self,
-        configurations: Vec<EncoderPossibleConfiguration>,
-    ) -> PinnedFuture<'_, Result<Vec<EncoderPossibleConfiguration>, TransportError>> {
+    fn prepare_send_screen_data<'s, 'p>(
+        &'s mut self,
+        source_parameters: &'p ScreenContentParameters,
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+    where
+        'p: 's,
+    {
         async move {
-            let req_pref_encoding = WsMessageFromSource::Core(
-                DevDispMessageFromSource::GetPreferredEncodingRequest(configurations),
-            );
-            debug!("Requesting preferred encoding: {:?}", req_pref_encoding);
-            self.send_msg(req_pref_encoding).await?;
+            // Get the internal representation of our encoder options, and then
+            // convert them to external representations (no internal data `T`)
+            // and ask the client which they can use.
+            //
+            // Then map that back to our internal repr and tell our encoder to use
+            // those configurations.
 
-            debug!("Waiting for preferred encoding response...");
-
-            self.rx_core_preferred_encoding_response
-                .next()
+            let supported_encodings_here = self
+                .encoder
+                .get_supported_configurations(source_parameters)
                 .await
-                .ok_or(TransportError::NoConnection)
-        }
-        .boxed()
-    }
+                .map_err(|_| TransportError::Unknown)?;
 
-    fn set_encoding(
-        &mut self,
-        configuration: EncoderPossibleConfiguration,
-    ) -> PinnedFuture<'_, Result<(), TransportError>> {
-        async move {
-            let set_encoding_msg =
-                WsMessageFromSource::Core(DevDispMessageFromSource::SetEncoding(configuration));
-            self.send_msg(set_encoding_msg).await?;
+            let (external_configs, internal_map) =
+                map_internal_to_external_configs(supported_encodings_here);
 
-            debug!("Waiting for set encoding response...");
-            self.rx_core_set_encoding_response
-                .next()
+            let client_preferred_encodings = self
+                .get_preferred_encodings(source_parameters.clone(), external_configs)
                 .await
-                .ok_or(TransportError::NoConnection)
-                .and_then(|success| {
-                    if success {
-                        Ok(())
-                    } else {
-                        Err(TransportError::Unknown)
-                    }
-                })
+                .map_err(|_| TransportError::Unknown)?;
+
+            let client_preferred_encodings_internal =
+                map_external_to_internal_configs(client_preferred_encodings, &internal_map)
+                    .collect::<Vec<_>>();
+
+            let all_encodings_internal = internal_map.values().collect::<Vec<_>>();
+
+            let current_encoding = self
+                .encoder
+                .set_codec(
+                    source_parameters,
+                    Some(client_preferred_encodings_internal),
+                    all_encodings_internal,
+                )
+                .await
+                .map_err(|_| TransportError::Unknown)?;
+
+            self.set_encoding(current_encoding.for_send(0)).await?;
+            Ok(())
         }
-        .boxed()
+        .boxed_local()
     }
 
     fn send_screen_data<'s, 'a>(
         &'s mut self,
-        data: &'a [u8],
-    ) -> PinnedFuture<'s, Result<(), TransportError>>
+        raw_data: &'a [u8],
+    ) -> PinnedLocalFuture<'s, Result<TransportSendMetrics, TransportSendError>>
     where
         'a: 's,
     {
         async move {
+            let encoded_data = self
+                .encoder
+                .encode(raw_data)
+                .await
+                .map_err(|e| TransportSendError::EncodeError(Box::new(e)))?;
+
             let screen_data_msg =
-                WsMessageFromSource::Core(DevDispMessageFromSource::PutScreenData(data));
-            self.send_msg(screen_data_msg).await
+                WsMessageFromSource::Core(DevDispMessageFromSource::PutScreenData(encoded_data));
+
+            Self::send_msg_with_sender(&mut self.ws_tx, screen_data_msg)
+                .await
+                .map(|_| TransportSendMetrics::Send {
+                    sent_bytes: raw_data.len(),
+                    send_time: std::time::Duration::from_millis(0),
+                })
+                .map_err(|e| TransportSendError::SendError(Box::new(e)))
         }
-        .boxed()
+        .boxed_local()
     }
 }

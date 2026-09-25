@@ -1,16 +1,16 @@
-use std::{pin::Pin, time::Duration};
-
 use dev_disp_core::{
-    client::{ScreenTransport, TransportError},
-    host::DisplayParameters,
-    util::PinnedFuture,
+    client::{ScreenTransport, TransportError, TransportSendError, TransportSendMetrics},
+    host::{DisplayParameters, ScreenContentParameters},
+    util::PinnedLocalFuture,
 };
+use dev_disp_encoders::toolkit::encoder::Encoder;
 use futures_util::{FutureExt, future};
 use log::debug;
 use nusb::{
     Device, DeviceInfo, Endpoint, Interface,
     transfer::{Buffer, Bulk, In, Out},
 };
+use std::time::Duration;
 
 use crate::usb::strategies::android_aoa::protocol::{Message, MessageToAndroid};
 
@@ -21,22 +21,27 @@ const USB_TIMEOUT: Duration = Duration::from_millis(200);
 /// This facilitates communication to an Android device
 /// running corresponding software, via AOA (Android
 /// Open Accessory) mode.
-pub struct AndroidAoaScreenHostTransport {
+pub struct AndroidAoaScreenHostTransport<T> {
     dev_info: DeviceInfo,
     dev: Device,
     ifc: Interface,
     bulk_in: Endpoint<Bulk, In>,
     bulk_out: Endpoint<Bulk, Out>,
     out_buffer: Option<Buffer>,
+    encoder: T,
 }
 
-impl AndroidAoaScreenHostTransport {
+impl<T> AndroidAoaScreenHostTransport<T>
+where
+    T: Encoder,
+{
     pub fn new(
         device: Device,
         device_info: DeviceInfo,
         ifc: Interface,
         bulk_in: Endpoint<Bulk, In>,
         bulk_out: Endpoint<Bulk, Out>,
+        encoder: T,
     ) -> Self {
         Self {
             dev: device,
@@ -45,6 +50,7 @@ impl AndroidAoaScreenHostTransport {
             bulk_in,
             bulk_out,
             out_buffer: None,
+            encoder,
         }
     }
 
@@ -57,8 +63,11 @@ impl AndroidAoaScreenHostTransport {
     }
 }
 
-impl ScreenTransport for AndroidAoaScreenHostTransport {
-    fn initialize<'s>(&'s mut self) -> PinnedFuture<'s, Result<(), TransportError>> {
+impl<T> ScreenTransport for AndroidAoaScreenHostTransport<T>
+where
+    T: Encoder + Send,
+{
+    fn initialize<'s>(&'s mut self) -> PinnedLocalFuture<'s, Result<(), TransportError>> {
         let mut data = [0u8; 512];
         let data_size = match MessageToAndroid::GetScreenInfo(Message { id: 0, payload: () })
             .serialize_into(&mut data)
@@ -91,7 +100,7 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
 
     fn get_display_config(
         &mut self,
-    ) -> PinnedFuture<'_, Result<DisplayParameters, TransportError>> {
+    ) -> PinnedLocalFuture<'_, Result<DisplayParameters, TransportError>> {
         future::ready(Ok(DisplayParameters {
             host_dev_name: self
                 .dev_info
@@ -103,31 +112,24 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         .boxed()
     }
 
-    fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send>> {
+    fn close(&mut self) -> PinnedLocalFuture<'_, Result<(), TransportError>> {
         self.dev.reset().into_future().map(|_| Ok(())).boxed()
     }
 
-    fn get_preferred_encodings(
-        &mut self,
-        _configurations: Vec<dev_disp_core::host::EncoderPossibleConfiguration>,
-    ) -> PinnedFuture<
-        '_,
-        Result<Vec<dev_disp_core::host::EncoderPossibleConfiguration>, TransportError>,
-    > {
-        todo!("Not implemented yet for Android AOA transport")
-    }
-
-    fn set_encoding(
-        &mut self,
-        _configuration: dev_disp_core::host::EncoderPossibleConfiguration,
-    ) -> PinnedFuture<'_, Result<(), TransportError>> {
-        todo!("Not implemented yet for Android AOA transport")
+    fn prepare_send_screen_data<'s, 'p>(
+        &'s mut self,
+        _source_parameters: &'p ScreenContentParameters,
+    ) -> PinnedLocalFuture<'s, Result<(), TransportError>>
+    where
+        'p: 's,
+    {
+        async move { Ok(()) }.boxed()
     }
 
     fn send_screen_data<'s, 'a>(
         &'s mut self,
         data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 's>>
+    ) -> PinnedLocalFuture<'s, Result<TransportSendMetrics, TransportSendError>>
     where
         'a: 's,
     {
@@ -137,7 +139,7 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
         });
         let heaped_data = match screen_update.serialize() {
             Ok(vec) => vec,
-            Err(e) => return future::err(TransportError::Other(Box::new(e))).boxed(),
+            Err(e) => return future::err(TransportSendError::EncodeError(Box::new(e))).boxed(),
         };
 
         let mut out_buffer = self
@@ -181,8 +183,12 @@ impl ScreenTransport for AndroidAoaScreenHostTransport {
             self.out_buffer.replace(completion.buffer);
             completion
                 .status
-                .map_err(|e| TransportError::Other(Box::new(e)))
+                .map_err(|e| TransportSendError::SendError(Box::new(e)))
+                .map(|_| TransportSendMetrics::Send {
+                    sent_bytes: data_len,
+                    send_time: elapsed,
+                })
         }
-        .boxed()
+        .boxed_local()
     }
 }

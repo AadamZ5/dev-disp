@@ -19,6 +19,7 @@ pub enum InitializationState {
     NegotiatingCodecs,
     InitializingEncoder,
     SettingClientCodec,
+    PreparingClient,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

@@ -1,7 +1,8 @@
 pub use dev_disp_core::{
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
-    host::{DisplayParameters, EncoderPossibleConfiguration},
+    host::DisplayParameters,
 };
+use dev_disp_encoders::toolkit::messages::{CodecNegotiationClient, CodecNegotiationServer};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -19,6 +20,23 @@ pub struct WsMessageDeviceInfo {
     pub resolution: (u32, u32),
 }
 
+impl From<DisplayParameters> for WsMessageDeviceInfo {
+    fn from(display_parameters: DisplayParameters) -> Self {
+        Self {
+            name: display_parameters.host_dev_name,
+            resolution: (
+                display_parameters.resolution.0,
+                display_parameters.resolution.1,
+            ),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WsMessageSetEncodingResponse {
+    pub success: bool,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum WsMessageFromSource<'a> {
@@ -30,6 +48,9 @@ pub enum WsMessageFromSource<'a> {
 
     /// Used to request that the device is really ready to receive screen data
     RequestProtocolInit(WsMessageProtocolInit),
+
+    /// Used to negotiate the codec settings between the client and the server.
+    CodecNegotiation(CodecNegotiationServer),
 
     /// Used to forward a core logic message to the client
     Core(DevDispMessageFromSource<'a>),
@@ -45,6 +66,9 @@ pub enum WsMessageFromClient {
 
     /// Used to assure the server we are ready to display stuff
     ResponseProtocolInit(WsMessageProtocolInit),
+
+    /// Used to respond to the server's request for codec negotiation.
+    CodecNegotiation(CodecNegotiationClient),
 
     /// Used to give a core-logic message to the server
     Core(DevDispMessageFromClient),

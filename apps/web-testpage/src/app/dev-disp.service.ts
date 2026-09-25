@@ -1,8 +1,12 @@
 import { DestroyRef, inject, Injectable } from '@angular/core';
 import {
+  Av1Parameters,
   DevDispEvent,
+  H264Parameters,
+  HevcParameters,
   JsDisplayParameters,
   JsEncoderPossibleConfiguration,
+  Vp09Parameters,
   WsDispatchers,
   WsHandlers,
   connectDevDispServer,
@@ -16,7 +20,21 @@ import {
   Subject,
   Subscription,
 } from 'rxjs';
-import { SearchCodecResult, searchSupportedVideoDecoders } from 'web-decoders';
+import {
+  CodecAvcParameters,
+  CodecHevcParameters,
+  CodecVp09Parameters,
+  CodecAv1Parameters,
+  SearchCodecResult,
+  searchSupportedVideoDecoders,
+  VideoCodecId,
+  VideoCodecParameters,
+} from 'web-decoders';
+
+type JsWebCodecPossibleConfiguration = JsEncoderPossibleConfiguration & {
+  webCodecId: string;
+  webCodecParameters: VideoCodecParameters | null;
+};
 
 @Injectable({ providedIn: 'root' })
 export class DevDispService {
@@ -209,12 +227,13 @@ export class DevDispConnection {
   ) {
     console.log('Dev-disp preferred encodings requested', configs);
 
+    const webCodecs = configs.flatMap((c) => mapToWebCodecs(c));
+
     const compatibleConfigResults = await Promise.allSettled(
-      configs.map(async (cfg) => {
-        const parameters = Object.fromEntries(cfg.parameters);
+      webCodecs.map(async (cfg) => {
         const supportedDecoders = await searchSupportedVideoDecoders(
-          cfg.encoderFamily,
-          parameters,
+          cfg.webCodecId,
+          cfg.webCodecParameters ?? undefined,
           cfg.encodedResolution[0],
           cfg.encodedResolution[1],
         );
@@ -231,7 +250,7 @@ export class DevDispConnection {
           result,
         ): result is PromiseFulfilledResult<{
           supportedDecoders: SearchCodecResult[];
-          sentConfig: JsEncoderPossibleConfiguration;
+          sentConfig: JsWebCodecPossibleConfiguration;
         }> => {
           if (result.status === 'rejected') {
             console.error(`Decoding check failed`, result.reason);
@@ -240,7 +259,7 @@ export class DevDispConnection {
             result.value.supportedDecoders.length <= 0
           ) {
             console.log(
-              `Decoding not supported for "${result.value.sentConfig.encoderFamily}"`,
+              `Decoding not supported for "${result.value.sentConfig.displayName}"`,
             );
           }
 
@@ -274,18 +293,15 @@ export class DevDispConnection {
         : configuration.sentConfig.encodedResolution;
 
       return {
-        encoderName: configuration.sentConfig.encoderName,
-        encoderFamily: configuration.supportedDecoder.definition.codec,
+        codec: configuration.sentConfig.codec,
         encodedResolution: supportRes as [number, number],
-        parameters: configuration.sentConfig.parameters,
+        displayName: configuration.sentConfig.displayName,
+        id: configuration.sentConfig.id,
       } satisfies JsEncoderPossibleConfiguration;
     });
 
     possibleConfigurations.forEach((result) => {
-      console.log(
-        `Supported encoding found for ${result.encoderFamily}`,
-        result,
-      );
+      console.log(`Supported encoding found for ${result.displayName}`, result);
     });
 
     return possibleConfigurations;
@@ -294,9 +310,13 @@ export class DevDispConnection {
   private handleSetEncoding(encodingConfig: JsEncoderPossibleConfiguration) {
     console.log('Dev-disp set encoding requested', encodingConfig);
 
+    const webCodecs = mapToWebCodecs(encodingConfig);
+
     const correspondingDecoder = this.supportedDecoderConfigurations.find(
       (decodingConfig) =>
-        decodingConfig.definition.codec === encodingConfig.encoderFamily,
+        webCodecs.find(
+          (wc) => wc.webCodecId === decodingConfig.definition.codec,
+        ),
     );
     if (!correspondingDecoder) {
       console.error(
@@ -313,7 +333,9 @@ export class DevDispConnection {
       correspondingDecoder.definition.toParamString as CodecParameterStringFn
     )(
       correspondingDecoder.definition.codec,
-      Object.fromEntries(encodingConfig.parameters),
+      DEV_DISP_CODEC_PARAMS_MAP_FN_MAP[encodingConfig.codec.codecFamily](
+        encodingConfig.codec.parameters,
+      ),
     );
 
     this.decoder.configure({
@@ -323,10 +345,10 @@ export class DevDispConnection {
     });
 
     this._configuredEncoding$.next({
-      encoderName: encodingConfig.encoderName,
-      encoderFamily: encodingConfig.encoderFamily,
       encodedResolution: encodingConfig.encodedResolution,
-      parameters: encodingConfig.parameters,
+      encoderFamily: encodingConfig.codec.codecFamily,
+      encoderName: encodingConfig.displayName,
+      parameters: (encodingConfig.codec as any).parameters,
       webCodecString,
     });
   }
@@ -486,4 +508,71 @@ export function contextWebgl2Drawer(
 
     frame.close();
   };
+}
+
+const DEV_DISP_CODEC_MAPPING: Record<
+  JsEncoderPossibleConfiguration['codec']['codecFamily'],
+  VideoCodecId[]
+> = {
+  av1: ['av01'],
+  vp8: ['vp8'],
+  vp09: ['vp09'],
+  h264: ['avc1', 'avc3'],
+  hevc: ['hvc1', 'hev1'],
+  raw: [],
+};
+
+const DEV_DISP_CODEC_PARAMS_MAP_FN_MAP: Record<
+  JsEncoderPossibleConfiguration['codec']['codecFamily'],
+  (p: any) => VideoCodecParameters | null
+> = {
+  av1: (p: Av1Parameters): CodecAv1Parameters => {
+    return {
+      profile: p.profile,
+      level: p.level,
+      bitDepth: p.bit_depth,
+      tier: 'M',
+    };
+  },
+  hevc: (p: HevcParameters): CodecHevcParameters => {
+    return {
+      profile: p.profile,
+      constraints: p.constraints,
+      level: p.level,
+      tier: p.tier as 'H' | 'L',
+      compatibility: p.compatibility,
+    };
+  },
+  h264: (p: H264Parameters): CodecAvcParameters => {
+    return {
+      constraintFlags: p.constraint_flags,
+      level: p.level,
+      profile: p.profile,
+    };
+  },
+  vp09: (p: Vp09Parameters): CodecVp09Parameters => {
+    return {
+      profile: p.profile,
+      level: p.level,
+      bitDepth: p.bit_depth,
+    };
+  },
+  vp8: (p?: null) => null,
+  raw: (p?: null) => null,
+};
+
+export function mapToWebCodecs(
+  config: JsEncoderPossibleConfiguration,
+): JsWebCodecPossibleConfiguration[] {
+  const webCodecs = DEV_DISP_CODEC_MAPPING[config.codec.codecFamily];
+
+  return webCodecs.map((webCodec) => {
+    return {
+      ...config,
+      webCodecId: webCodec,
+      webCodecParameters: DEV_DISP_CODEC_PARAMS_MAP_FN_MAP[
+        config.codec.codecFamily
+      ](config.codec.parameters),
+    } satisfies JsWebCodecPossibleConfiguration;
+  });
 }
