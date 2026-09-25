@@ -1,10 +1,11 @@
 use std::process::exit;
 
 use dev_disp_api::grpc::endpoint::DevDispGrpcEndpoint;
-use dev_disp_core::{
-    coding::encoder::EncoderProvider, daemon::endpoint::DevDispApiEndpoint, host::ScreenProvider,
+use dev_disp_core::{daemon::endpoint::DevDispApiEndpoint, host::ScreenProvider};
+use dev_disp_encoders::{
+    ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration},
+    toolkit::encoder::EncoderProvider,
 };
-use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
 use dev_disp_provider_evdi::EvdiScreenProvider;
 use futures_util::FutureExt;
 use log::{LevelFilter, error, info, warn};

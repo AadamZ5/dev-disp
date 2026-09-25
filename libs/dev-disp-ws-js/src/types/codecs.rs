@@ -1,4 +1,4 @@
-use dev_disp_core::coding::codecs::{
+use dev_disp_encoders::toolkit::codecs::{
     Av1Parameters, Codec, H264Parameters, HevcParameters, RawParameters, Vp09Parameters,
 };
 use serde::{Deserialize, Serialize};

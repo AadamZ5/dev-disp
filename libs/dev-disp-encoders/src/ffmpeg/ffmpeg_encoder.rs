@@ -1,7 +1,7 @@
 use std::{fmt::Debug, time::{Duration, Instant}};
 
 use dev_disp_core::{
-    coding::{encoder::{Encoder as DevDispEncoder, CodecOptionInternal, EncoderProvider}}, host::ScreenContentParameters, util::{PinnedFuture, PinnedLocalFuture},
+    host::ScreenContentParameters, util::{PinnedFuture, PinnedLocalFuture},
 };
 use ffmpeg_next::{
     self as ffmpeg, Dictionary, codec::{encoder::video::Encoder as VideoEncoder}, format::Pixel,
@@ -12,9 +12,10 @@ use log::{debug, info, trace};
 use thiserror::Error;
 
 use crate::{
+    toolkit::{encoder::{Encoder as DevDispEncoder, CodecOptionInternal, EncoderProvider}},
     ffmpeg::{config_file::FfmpegConfiguration, configurations::{
         FfmpegEncoderBruteForceIterator, FfmpegEncoderConfiguration, get_codec_params
-    }}, util::ffmpeg_format_from_internal_format,
+    }, util::ffmpeg_format_from_internal_format}
 };
 
 struct FfmpegEncoderState {

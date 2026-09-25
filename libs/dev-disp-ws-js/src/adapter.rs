@@ -1,7 +1,7 @@
 use dev_disp_core::{
-    client::ScreenReceiverAdapter, coding::encoder::CodecOption, host::DisplayParameters,
-    util::PinnedLocalFuture,
+    client::ScreenReceiverAdapter, host::DisplayParameters, util::PinnedLocalFuture,
 };
+use dev_disp_encoders::toolkit::encoder::CodecOption;
 use dev_disp_transports::websocket::receiver::WsReceiverPrepState;
 use futures::FutureExt;
 use js_sys::{SharedArrayBuffer, Uint8Array};

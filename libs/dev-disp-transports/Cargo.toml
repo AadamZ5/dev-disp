@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 log = "0.4.28"
 dev-disp-core = { path = "../../libs/dev-disp-core" }
+# No features added, only common encoder toolkit definitions
+dev-disp-encoders = { path = "../../libs/dev-disp-encoders" }
 # TODO: I want tokio dependency out of here!
 nusb = { version = "0.2.0", features = ["tokio"], optional = true }
 thiserror = "2.0.16"

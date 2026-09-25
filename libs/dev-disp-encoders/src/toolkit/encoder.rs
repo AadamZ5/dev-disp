@@ -4,8 +4,8 @@ use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{
-    coding::codecs::{Codec, CodecFamily, RawParameters},
+use crate::toolkit::codecs::{Codec, CodecFamily, RawParameters};
+use dev_disp_core::{
     host::ScreenContentParameters,
     util::{PinnedFuture, PinnedLocalFuture},
 };

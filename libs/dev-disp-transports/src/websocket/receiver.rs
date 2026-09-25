@@ -1,19 +1,19 @@
 use bincode::error::{DecodeError, EncodeError};
 use dev_disp_core::{
     client::{ScreenReceiverAdapter, ScreenTransportReceiver},
-    coding::{
-        encoder::CodecOption,
-        messages::{CodecNegotiationClient, CodecNegotiationServer},
-    },
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
     util::PinnedLocalFuture,
+};
+use dev_disp_encoders::toolkit::{
+        encoder::CodecOption,
+        messages::{CodecNegotiationClient, CodecNegotiationServer},
 };
 use futures::{
     FutureExt, Sink, SinkExt, Stream, StreamExt,
     channel::mpsc,
     stream::{SplitSink, SplitStream},
 };
-use log::{debug, warn};
+use log::{ warn};
 use thiserror::Error;
 
 use crate::websocket::messages::{WsMessageFromClient, WsMessageFromSource};

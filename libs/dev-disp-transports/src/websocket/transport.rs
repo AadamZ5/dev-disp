@@ -4,16 +4,15 @@ use async_tungstenite::{
 
 use dev_disp_core::{
     client::{ScreenTransport, TransportError, TransportSendError, TransportSendMetrics},
-    coding::{
-        encoder::{
-            CodecOption, Encoder, map_external_to_internal_configs,
-            map_internal_to_external_configs,
-        },
-        messages::{CodecNegotiationClient, CodecNegotiationServer},
-    },
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
     host::{DisplayParameters, ScreenContentParameters},
     util::{PinnedFuture, PinnedLocalFuture},
+};
+use dev_disp_encoders::toolkit::{
+    encoder::{
+        CodecOption, Encoder, map_external_to_internal_configs, map_internal_to_external_configs,
+    },
+    messages::{CodecNegotiationClient, CodecNegotiationServer},
 };
 use futures::{AsyncRead, AsyncWrite, SinkExt, StreamExt, channel::mpsc};
 use futures_util::FutureExt;

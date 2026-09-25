@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-use crate::host::VirtualScreenPixelFormat;
+use dev_disp_core::host::VirtualScreenPixelFormat;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct RawParameters {

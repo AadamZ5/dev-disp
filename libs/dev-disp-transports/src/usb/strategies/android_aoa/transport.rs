@@ -1,17 +1,16 @@
-use std::time::Duration;
-
 use dev_disp_core::{
     client::{ScreenTransport, TransportError, TransportSendError, TransportSendMetrics},
-    coding::encoder::Encoder,
     host::{DisplayParameters, ScreenContentParameters},
     util::PinnedLocalFuture,
 };
+use dev_disp_encoders::toolkit::encoder::Encoder;
 use futures_util::{FutureExt, future};
 use log::debug;
 use nusb::{
     Device, DeviceInfo, Endpoint, Interface,
     transfer::{Buffer, Bulk, In, Out},
 };
+use std::time::Duration;
 
 use crate::usb::strategies::android_aoa::protocol::{Message, MessageToAndroid};
 

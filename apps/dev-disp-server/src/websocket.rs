@@ -1,7 +1,5 @@
-use dev_disp_core::{
-    coding::encoder::EncoderProvider,
-    util::{PinnedLocalFuture, PinnedStream},
-};
+use dev_disp_core::util::{PinnedLocalFuture, PinnedStream};
+use dev_disp_encoders::toolkit::encoder::EncoderProvider;
 use dev_disp_transports::websocket::discovery::WsDiscovery;
 use futures_util::{FutureExt, StreamExt, stream};
 use log::{error, info};

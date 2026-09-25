@@ -1169,6 +1169,7 @@ dependencies = [
  "async-tungstenite 0.32.0",
  "bincode",
  "dev-disp-core",
+ "dev-disp-encoders",
  "futures",
  "futures-locks",
  "futures-timer",
@@ -1187,6 +1188,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "dev-disp-core",
+ "dev-disp-encoders",
  "dev-disp-transports",
  "futures",
  "futures-util",

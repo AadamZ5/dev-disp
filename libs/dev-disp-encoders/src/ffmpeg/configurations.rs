@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 
-use dev_disp_core::{
-    coding::codecs::{
-        Av1Parameters, Codec, CodecFamily, H264Parameters, HevcParameters, Vp09Parameters,
-    },
-    host::ScreenContentParameters,
+use crate::toolkit::codecs::{
+    Av1Parameters, Codec, CodecFamily, H264Parameters, HevcParameters, Vp09Parameters,
 };
+use dev_disp_core::host::ScreenContentParameters;
 use ffmpeg_next::{
     codec::encoder::video::Encoder as VideoEncoder,
     ffi::{AV_LEVEL_UNKNOWN, AVPixelFormat, FF_PROFILE_UNKNOWN},

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use dev_disp_core::coding::encoder::RawEncoder;
+use dev_disp_encoders::toolkit::encoder::RawEncoder;
 use log::{debug, info};
 use nusb::{
     Device, DeviceInfo, Interface,

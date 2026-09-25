@@ -3,10 +3,10 @@ use std::{collections::HashMap, error::Error, pin::Pin, sync::Arc};
 use async_tungstenite::{WebSocketStream, tungstenite::Message};
 use dev_disp_core::{
     client::DisplayHost,
-    coding::encoder::{Encoder, EncoderProvider, RawEncoderProvider},
     host::{ConnectableDevice, ConnectableDeviceInfo, DeviceDiscovery, StreamingDeviceDiscovery},
     util::{PinnedFuture, PinnedLocalFuture},
 };
+use dev_disp_encoders::toolkit::encoder::{EncoderProvider, RawEncoderProvider};
 use futures::{
     SinkExt,
     channel::{mpsc, oneshot},

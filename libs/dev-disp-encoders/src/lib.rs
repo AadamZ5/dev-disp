@@ -6,4 +6,3 @@ pub mod toolkit;
 
 #[cfg(feature = "ffmpeg")]
 pub mod ffmpeg;
-pub(crate) mod util;

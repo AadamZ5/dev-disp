@@ -1,4 +1,4 @@
-use dev_disp_core::coding::encoder::CodecOption;
+use dev_disp_encoders::toolkit::encoder::CodecOption;
 use dev_disp_transports::websocket::messages::{DisplayParameters, WsMessageDeviceInfo};
 use js_sys::{Function, SharedArrayBuffer};
 use serde::{Deserialize, Serialize};

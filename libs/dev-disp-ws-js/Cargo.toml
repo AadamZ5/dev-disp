@@ -9,6 +9,8 @@ crate-type = ["cdylib"]
 [dependencies]
 bincode = { version = "2.0.1", features = ["serde"] }
 dev-disp-core = { path = "../../libs/dev-disp-core" }
+# No features activated, only toolkit definitions
+dev-disp-encoders = { path = "../../libs/dev-disp-encoders" }
 dev-disp-transports = { path = "../../libs/dev-disp-transports", features = [
   "ws",
   "wasm",

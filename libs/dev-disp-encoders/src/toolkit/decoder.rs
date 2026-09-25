@@ -1,6 +1,5 @@
-use crate::{
-    coding::encoder::CodecOption, host::VirtualScreenPixelFormat, util::PinnedLocalFuture,
-};
+use crate::toolkit::encoder::CodecOption;
+use dev_disp_core::{host::VirtualScreenPixelFormat, util::PinnedLocalFuture};
 
 pub struct DecodedFrame {
     pub data: Vec<u8>,

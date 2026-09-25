@@ -1,13 +1,10 @@
-use dev_disp_core::{
-    coding::{
-        encoder::{
-            CodecOption, CodecOptionInternal, Encoder, map_external_to_internal_configs,
-            map_internal_to_external_configs,
-        },
-        messages::{CodecNegotiationClient, CodecNegotiationServer},
+use dev_disp_core::{host::ScreenContentParameters, util::PinnedLocalFuture};
+use dev_disp_encoders::toolkit::{
+    encoder::{
+        CodecOption, CodecOptionInternal, Encoder, map_external_to_internal_configs,
+        map_internal_to_external_configs,
     },
-    host::ScreenContentParameters,
-    util::PinnedLocalFuture,
+    messages::{CodecNegotiationClient, CodecNegotiationServer},
 };
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::warn;

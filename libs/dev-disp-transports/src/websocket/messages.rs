@@ -1,14 +1,8 @@
-use dev_disp_core::{
-    coding::{
-        encoder::CodecOption,
-        messages::{CodecNegotiationClient, CodecNegotiationServer},
-    },
-    host::ScreenContentParameters,
-};
 pub use dev_disp_core::{
     core::{DevDispMessageFromClient, DevDispMessageFromSource},
     host::DisplayParameters,
 };
+use dev_disp_encoders::toolkit::messages::{CodecNegotiationClient, CodecNegotiationServer};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
