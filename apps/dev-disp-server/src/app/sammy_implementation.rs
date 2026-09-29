@@ -5,7 +5,9 @@ use dev_disp_core::{
     core::{get_default_config_path_for, handle_display_host},
     host::{ConnectableDevice, DeviceDiscovery, ScreenProvider},
 };
-use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
+use dev_disp_encoders::ffmpeg::encoder::{
+    FfmpegEncoderProvider, config_file::FfmpegEncoderConfiguration,
+};
 use futures_util::{sink, stream::empty};
 use log::{error, info, trace};
 
@@ -57,11 +59,11 @@ where
         let provider_1 = provider.clone();
 
         let _ = tokio::task::spawn_local(async move {
-            let ffmpeg_config = match get_default_config_path_for::<FfmpegConfiguration>() {
+            let ffmpeg_config = match get_default_config_path_for::<FfmpegEncoderConfiguration>() {
                 Ok(path) => {
-                    match config::read_configuration_or_write_default_for::<FfmpegConfiguration>(
-                        &path,
-                    )
+                    match config::read_configuration_or_write_default_for::<
+                        FfmpegEncoderConfiguration,
+                    >(&path)
                     .await
                     {
                         Ok(config) => config,
@@ -70,13 +72,13 @@ where
                                 "Failed to read or write FFmpeg configuration at {:?}: {:?}",
                                 path, e
                             );
-                            FfmpegConfiguration::default()
+                            FfmpegEncoderConfiguration::default()
                         }
                     }
                 }
                 Err(e) => {
                     error!("Failed to get default FFmpeg configuration path: {}", e);
-                    FfmpegConfiguration::default()
+                    FfmpegEncoderConfiguration::default()
                 }
             };
 

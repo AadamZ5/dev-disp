@@ -1,12 +1,15 @@
+use dev_disp_core::host::DisplayParameters;
+use futures::{channel::mpsc, SinkExt};
 use iced::{
     color,
     widget::{column, row},
     window::Id,
-    Border, Task,
+    Border, Element, Task,
 };
-use log::debug;
+use log::{debug, error, info};
+use triple_buffer::{Input, Output};
 
-use crate::worker::WorkerEvent;
+use crate::worker::{WorkerCommand, WorkerEvent};
 
 pub struct ScreenHostApp {
     producer_endpoint: String,
@@ -14,7 +17,18 @@ pub struct ScreenHostApp {
     canvas_size: Option<iced::Size>,
     window_id: Option<iced::window::Id>,
     display_buffer: Option<iced::widget::image::Handle>,
-    _backing_buffer: Vec<u8>,
+    worker_buffer: Option<Output<Vec<u8>>>,
+    worker_command_tx: Option<mpsc::Sender<WorkerCommand>>,
+    connect_url: String,
+}
+
+/// Cloneable input things that represent user input events.
+///
+/// Iced's text box needs a cloneable message... idk why
+#[derive(Debug, Clone)]
+pub enum InputEvent {
+    SetConnectUrl(String),
+    Connect,
 }
 
 #[derive(Debug)]
@@ -24,6 +38,8 @@ pub enum Message {
     ChangeCanvasSize(iced::Size),
     WindowIdChange(Option<iced::window::Id>),
     WindowSizeChange(iced::Size),
+
+    Input(InputEvent),
 }
 
 impl ScreenHostApp {
@@ -49,20 +65,37 @@ impl ScreenHostApp {
     }
 
     fn create_toolbar(&self) -> iced::Element<'_, Message> {
+        let widget_window_info = iced::widget::text(format!(
+            "Window ID: {} ({}x{})",
+            self.window_id
+                .map_or_else(|| "?".to_string(), |id| id.to_string()),
+            self.window_size.map_or_default(|s| s.width),
+            self.window_size.map_or_default(|s| s.height)
+        ));
+
+        let widget_url_textbox: Element<'_, InputEvent> =
+            iced::widget::text_input("URL", &self.connect_url)
+                .on_input(|value| InputEvent::SetConnectUrl(value))
+                .into();
+        let widget_url_textbox = widget_url_textbox.map(Message::Input);
+
+        let widget_connect_button: Element<'_, InputEvent> = iced::widget::button("Connect")
+            .on_press(InputEvent::Connect)
+            .into();
+        let widget_connect_button = widget_connect_button.map(Message::Input);
+
         let toolbar_contents = iced::widget::container(
-            row![iced::widget::text(format!(
-                "Window ID: {} ({}x{})",
-                self.window_id
-                    .map_or_else(|| "?".to_string(), |id| id.to_string()),
-                self.window_size.map_or_default(|s| s.width),
-                self.window_size.map_or_default(|s| s.height)
-            ))]
+            row![
+                widget_window_info,
+                widget_url_textbox,
+                widget_connect_button
+            ]
             .spacing(10)
-            .height(20)
+            .height(25)
             .align_y(iced::alignment::Vertical::Center),
         )
         .align_left(iced::Length::Fill)
-        .padding(10)
+        .padding(4)
         .style(|_theme| iced::widget::container::Style::default().background(color!(50, 50, 75)));
 
         column![toolbar_contents, iced::widget::rule::horizontal(1),].into()
@@ -83,7 +116,9 @@ impl ScreenHostApp {
             canvas_size: None,
             window_id: None,
             display_buffer: None,
-            _backing_buffer: backing_buffer,
+            worker_buffer: None,
+            worker_command_tx: None,
+            connect_url: String::new(),
         };
 
         let get_window_id = iced::window::latest().map(|id| Message::WindowIdChange(id));
@@ -92,14 +127,6 @@ impl ScreenHostApp {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
-        if self.display_buffer.is_none() {
-            self.display_buffer = Some(iced::widget::image::Handle::from_rgba(
-                100,
-                100,
-                self._backing_buffer.clone(),
-            ));
-        }
-
         match message {
             Message::WindowIdChange(window_id) => {
                 self.window_id = window_id;
@@ -121,9 +148,79 @@ impl ScreenHostApp {
                     return Task::done(Message::ChangeCanvasSize(size));
                 }
             }
-            Message::WorkerEvent(event) => {
-                debug!("App received worker event: {:?}", event);
-            }
+
+            Message::Input(event) => match event {
+                InputEvent::SetConnectUrl(url) => self.connect_url = url,
+                InputEvent::Connect => {
+                    if let Some(worker_command_tx) = self.worker_command_tx.as_mut() {
+                        let mut worker_command_tx = worker_command_tx.clone();
+                        let connect_url = self.connect_url.clone();
+                        return Task::future(async move {
+                            match worker_command_tx
+                                .send(WorkerCommand::Connect(connect_url))
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    error!("Failed to send connect command to worker: {:?}", e);
+                                }
+                            }
+                        })
+                        .discard();
+                    } else {
+                        error!("Worker command channel is not available");
+                    }
+                }
+            },
+            Message::WorkerEvent(event) => match event {
+                WorkerEvent::Ready(sender) => {
+                    self.worker_command_tx = Some(sender);
+                }
+                WorkerEvent::Error(worker_error) => {
+                    error!("Worker encountered an error: {:?}", worker_error);
+                }
+                WorkerEvent::Connecting(url) => {
+                    info!("Worker is connecting to {}", url);
+                }
+                WorkerEvent::Connected(url) => {
+                    info!("Worker connected to {}", url);
+                }
+                WorkerEvent::PrepareBuffer(output) => {
+                    self.worker_buffer = Some(output);
+                }
+                WorkerEvent::Disconnected => {
+                    // Idk
+                }
+                WorkerEvent::RequestDisplayParameters => {
+                    if let Some(worker_command_tx) = self.worker_command_tx.as_mut() {
+                        // Send display parameters to the worker
+
+                        let mut worker_command_tx = worker_command_tx.clone();
+                        let display_parameters = DisplayParameters {
+                            host_dev_name: "Desktop Client".to_string(),
+                            resolution: self
+                                .window_size
+                                .map(|size| unsafe {
+                                    (
+                                        size.width.to_int_unchecked(),
+                                        size.height.to_int_unchecked(),
+                                    )
+                                })
+                                .unwrap_or((800, 600)),
+                        };
+
+                        return Task::future(async move {
+                            worker_command_tx
+                                .send(WorkerCommand::SetDisplayParameters(display_parameters))
+                                .await
+                                .unwrap_or_else(|err| {
+                                    error!("Failed to send display parameters: {:?}", err);
+                                });
+                        })
+                        .discard();
+                    }
+                }
+            },
         }
 
         Task::none()

@@ -2,13 +2,16 @@
 
 use async_tungstenite::tungstenite::Message;
 use dev_disp_core::{
-    client::run_receiver_with_adapter, host::DisplayParameters, util::PinnedFuture,
+    client::run_receiver_with_adapter, host::DisplayParameters, util::PinnedLocalFuture,
 };
+use dev_disp_encoders::ffmpeg::decoder::{config_file::FfmpegDecoderConfiguration, FfmpegDecoder};
 use dev_disp_transports::websocket::receiver::WsReceiver;
-use futures::{channel::mpsc, FutureExt, SinkExt, StreamExt};
-use iced::Task;
+use futures::{channel::mpsc, stream::empty, FutureExt, SinkExt, Stream, StreamExt};
 use log::{error, warn};
-use rust_util::map_bidirectional::MapBidirectional;
+use rust_util::{
+    iced_worker_reactor::{iced_worker_reactor, Worker as IcedWorker},
+    map_bidirectional::MapBidirectional,
+};
 use thiserror::Error;
 
 use crate::{util::Runtime, worker::adapter::WsDesktopAdapter};
@@ -17,7 +20,6 @@ pub struct Worker<R> {
     runtime: R,
     connect_url: Option<String>,
     event_tx: mpsc::Sender<WorkerEvent>,
-    command_rx: mpsc::Receiver<WorkerCommand>,
 
     display_parameters: Option<DisplayParameters>,
     display_parameters_tx: Option<mpsc::Sender<DisplayParameters>>,
@@ -31,9 +33,10 @@ pub enum WorkerError {
     RuntimeFailed,
     #[error("Failed to send ready event")]
     ReadyFailed,
-
     #[error("Failed to connect to the server")]
     ConnectionFailed,
+    #[error("Worker loop encountered a failure")]
+    LoopFailure,
 }
 
 /// An event that the worker produces
@@ -69,6 +72,8 @@ pub enum WorkerCommand {
     /// The URL to connect the websocket to.
     Connect(String),
 
+    Disconnected,
+
     /// Set the display parameters that the UI currently has
     SetDisplayParameters(DisplayParameters),
 }
@@ -77,15 +82,14 @@ impl<R> Worker<R>
 where
     R: Runtime,
 {
-    pub fn connect(&mut self, url: String) -> PinnedFuture<'static, Result<(), WorkerError>> {
-        let runtime = self.runtime.clone();
+    pub fn connect(&mut self, url: String) -> PinnedLocalFuture<'static, Result<(), WorkerError>> {
         let mut event_tx = self.event_tx.clone();
         self.connect_url = Some(url.clone());
 
         let (mut display_parameters_tx, display_parameters_rx) =
             mpsc::channel::<DisplayParameters>(16);
 
-        if let Some(display_parameters) = self.display_parameters {
+        if let Some(display_parameters) = self.display_parameters.clone() {
             match display_parameters_tx.try_send(display_parameters) {
                 Ok(_) => {}
                 Err(e) => {
@@ -120,7 +124,9 @@ where
                 .await
                 .unwrap();
 
-            let adapter = WsDesktopAdapter::new(display_parameters_rx, input, todo!());
+            let ffmpeg_decoder = FfmpegDecoder::new(FfmpegDecoderConfiguration::default());
+
+            let adapter = WsDesktopAdapter::new(display_parameters_rx, input, ffmpeg_decoder);
             let receiver = WsReceiver::new(ws);
 
             // TODO: Put this on another thread?
@@ -128,7 +134,7 @@ where
 
             Ok(())
         }
-        .boxed()
+        .boxed_local()
     }
 }
 
@@ -136,18 +142,22 @@ impl<R> Worker<R>
 where
     R: crate::util::Runtime,
 {
-    pub fn new(runtime: R, event_tx: mpsc::Sender<WorkerEvent>) -> Self {
+    pub fn new(
+        runtime: R,
+        event_tx: mpsc::Sender<WorkerEvent>,
+    ) -> (Self, mpsc::Receiver<WorkerCommand>) {
         let (command_tx, command_rx) = mpsc::channel::<WorkerCommand>(100);
 
-        Self {
+        let this = Self {
             runtime,
             connect_url: None,
             event_tx,
-            command_rx,
             _command_tx: command_tx,
             display_parameters_tx: None,
             display_parameters: None,
-        }
+        };
+
+        (this, command_rx)
     }
 
     pub async fn send_ready(&mut self) -> Result<(), futures::channel::mpsc::SendError> {
@@ -155,12 +165,27 @@ where
             .send(WorkerEvent::Ready(self._command_tx.clone()))
             .await
     }
+}
 
-    pub fn update(&mut self, command: WorkerCommand) -> Task {
+impl<R> IcedWorker<WorkerCommand> for Worker<R>
+where
+    R: Runtime,
+{
+    fn initialize(&mut self) -> impl Stream<Item = WorkerCommand> + 'static {
+        empty()
+    }
+
+    fn update(&mut self, command: WorkerCommand) -> impl Stream<Item = WorkerCommand> + 'static {
         match command {
             WorkerCommand::Connect(url) => {
                 let connect_fut = self.connect(url);
-                self.runtime.spawn(connect_fut);
+                connect_fut
+                    .into_stream()
+                    .map(|res| match res {
+                        Ok(_) => WorkerCommand::Disconnected,
+                        Err(_) => WorkerCommand::Disconnected,
+                    })
+                    .boxed_local()
             }
             WorkerCommand::SetDisplayParameters(display_parameters) => {
                 self.display_parameters = Some(display_parameters.clone());
@@ -172,7 +197,9 @@ where
                         }
                     }
                 }
+                empty().boxed_local()
             }
+            WorkerCommand::Disconnected => empty().boxed_local(),
         }
     }
 }
@@ -185,16 +212,16 @@ pub async fn worker_main<R>(
 where
     R: crate::util::Runtime,
 {
-    let mut worker = Worker::new(runtime, event_sender);
+    let (mut worker, command_rx) = Worker::new(runtime, event_sender);
     if let Err(e) = worker.send_ready().await {
         error!("Failed to send ready event: {:?}", e);
         // We should exit since they probably didn't get the communication channel.
         return Err(WorkerError::ReadyFailed);
     }
 
-    while let Some(command) = worker.command_rx.next().await {
-        worker.update(command);
-    }
+    iced_worker_reactor(worker, [command_rx])
+        .await
+        .map_err(|_| WorkerError::LoopFailure)?;
 
     Ok(())
 }

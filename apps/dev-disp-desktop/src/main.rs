@@ -9,7 +9,6 @@ use crate::{
     worker::{worker_main, WorkerError, WorkerEvent},
 };
 
-mod adapter;
 mod app;
 mod util;
 mod worker;
@@ -60,7 +59,7 @@ fn spawn_background(_state: &ScreenHostApp) -> Subscription<Message> {
 
         std::thread::spawn(move || {
             let runtime = match tokio::runtime::Builder::new_multi_thread()
-                .enable_time()
+                .enable_all()
                 .worker_threads(2)
                 .build()
             {

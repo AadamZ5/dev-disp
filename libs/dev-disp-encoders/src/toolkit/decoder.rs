@@ -11,11 +11,26 @@ pub struct DecodedFrame {
 /// decoded.
 ///
 /// These are the possible actions a decoder can take.
-pub enum DecoderAction {
+pub enum DecoderAction<E> {
     /// The decoder has decoded the data and performed the necessary painting action.
     DirectPaint,
     /// The decoder has decoded the data but has not performed any painting action.
     Decode(Vec<u8>),
+    /// The data was ingested, but no frame was produced.
+    NoFrame,
+    /// An error occurred during decoding.
+    Error(E),
+}
+
+pub enum DecoderDirectAction<E> {
+    /// Frame(s) were produced,
+    Decoded,
+
+    /// The data was ingested, but no frame was produced.
+    NoFrame,
+
+    /// An error occurred during decoding.
+    Error(E),
 }
 
 pub trait Decoder {
@@ -23,24 +38,33 @@ pub trait Decoder {
 
     /// Get the encodings that this client prefers, from the list of available configurations
     /// that the backend offered.
-    fn get_preferred_configurations(
-        &mut self,
-        possible_configurations: Vec<&CodecOption>,
-    ) -> PinnedLocalFuture<'_, Vec<&CodecOption>>;
+    fn get_preferred_configurations<'s, 'd>(
+        &'s mut self,
+        possible_configurations: Vec<&'d CodecOption>,
+    ) -> PinnedLocalFuture<'s, Vec<&'d CodecOption>>
+    where
+        'd: 's;
 
     /// After the backend selects an encoding, this function is called to set the chosen codec for the decoder.
-    fn set_codec(&mut self, codec: &CodecOption) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
+    fn set_codec<'s>(
+        &'s mut self,
+        codec: &'s CodecOption,
+    ) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
 
     /// Perform the decoding action.
     fn decode<'s, 'e>(
         &'s mut self,
         encoded_data: &'e [u8],
-    ) -> PinnedLocalFuture<'s, Result<DecoderAction, Self::Error>>;
+    ) -> PinnedLocalFuture<'s, DecoderAction<Self::Error>>
+    where
+        'e: 's;
 
     /// Decodes into the specified buffer instead of allocating a new one.
     fn decode_into<'s, 'e>(
         &'s mut self,
         encoded_data: &'e [u8],
         output_buffer: &'s mut [u8],
-    ) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
+    ) -> PinnedLocalFuture<'s, DecoderDirectAction<Self::Error>>
+    where
+        'e: 's;
 }

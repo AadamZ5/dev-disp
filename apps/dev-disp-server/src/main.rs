@@ -3,7 +3,7 @@ use std::process::exit;
 use dev_disp_api::grpc::endpoint::DevDispGrpcEndpoint;
 use dev_disp_core::{daemon::endpoint::DevDispApiEndpoint, host::ScreenProvider};
 use dev_disp_encoders::{
-    ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration},
+    ffmpeg::encoder::{FfmpegEncoderProvider, config_file::FfmpegEncoderConfiguration},
     toolkit::encoder::EncoderProvider,
 };
 use dev_disp_provider_evdi::EvdiScreenProvider;
@@ -116,13 +116,14 @@ async fn get_screen_provider() -> impl ScreenProvider + Clone + 'static {
 
 async fn get_encoder_provider() -> FfmpegEncoderProvider {
     // TODO: Make this configuration hot-reloadable with a file watcher!
-    let ffmpeg_config = default_path_read_or_write_default_config_for::<FfmpegConfiguration>()
-        .await
-        .map_err(|e| {
-            error!("Failed to read or write FFmpeg configuration: {}", e);
-            e
-        })
-        .unwrap_or_default();
+    let ffmpeg_config =
+        default_path_read_or_write_default_config_for::<FfmpegEncoderConfiguration>()
+            .await
+            .map_err(|e| {
+                error!("Failed to read or write FFmpeg configuration: {}", e);
+                e
+            })
+            .unwrap_or_default();
     let ffmpeg_provider = FfmpegEncoderProvider::new(ffmpeg_config);
     ffmpeg_provider
 }

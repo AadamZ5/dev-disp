@@ -3,7 +3,7 @@ use dev_disp_core::{
     host::{DisplayParameters, ScreenContentParameters},
     util::PinnedLocalFuture,
 };
-use dev_disp_encoders::toolkit::decoder::{Decoder, DecoderAction};
+use dev_disp_encoders::toolkit::decoder::{Decoder, DecoderAction, DecoderDirectAction};
 use dev_disp_transports::websocket::receiver::WsReceiverPrepState;
 use futures::{channel::mpsc, FutureExt, StreamExt};
 use thiserror::Error;
@@ -117,10 +117,11 @@ where
         async move {
             let mut write_buffer = self.buffer_write.input_buffer_publisher();
 
-            self.decoder
-                .decode_into(data, &mut write_buffer)
-                .await
-                .map_err(|_| WsDesktopAdapterError::DecoderError)
+            match self.decoder.decode_into(data, &mut write_buffer).await {
+                DecoderDirectAction::Decoded => Ok(()),
+                DecoderDirectAction::NoFrame => Ok(()),
+                DecoderDirectAction::Error(_) => Err(WsDesktopAdapterError::DecoderError),
+            }
         }
         .boxed_local()
     }
