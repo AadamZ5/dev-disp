@@ -219,7 +219,7 @@ pub trait ScreenReceiverAdapter<D> {
     ) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
 
     /// The point where the screen data is received and optionally decoded before being displayed.
-    fn recieve_screen_data<'s>(
+    fn receive_screen_data<'s>(
         &'s mut self,
         data: &'s [u8],
     ) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
@@ -294,13 +294,13 @@ impl From<Box<dyn ScreenTransport>> for SomeScreenTransport {
     }
 }
 
-pub async fn run_listener_with_adapter<L, A, D>(
-    mut listener: L,
+pub async fn run_receiver_with_adapter<L, A, D>(
+    mut receiver: L,
     adapter: A,
 ) -> Result<(), <L as ScreenTransportReceiver<D>>::Error>
 where
     L: ScreenTransportReceiver<D>,
     A: ScreenReceiverAdapter<D>,
 {
-    listener.listen(adapter).await
+    receiver.listen(adapter).await
 }

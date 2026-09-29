@@ -11,11 +11,11 @@ pub struct DecodedFrame {
 /// decoded.
 ///
 /// These are the possible actions a decoder can take.
-pub enum DecoderAction<'a> {
+pub enum DecoderAction {
     /// The decoder has decoded the data and performed the necessary painting action.
     DirectPaint,
     /// The decoder has decoded the data but has not performed any painting action.
-    Decode(&'a [u8]),
+    Decode(Vec<u8>),
 }
 
 pub trait Decoder {
@@ -32,8 +32,15 @@ pub trait Decoder {
     fn set_codec(&mut self, codec: &CodecOption) -> PinnedLocalFuture<'_, Result<(), Self::Error>>;
 
     /// Perform the decoding action.
-    fn decode<'s, 'e, 'd>(
+    fn decode<'s, 'e>(
         &'s mut self,
         encoded_data: &'e [u8],
-    ) -> PinnedLocalFuture<'s, Result<DecoderAction<'d>, Self::Error>>;
+    ) -> PinnedLocalFuture<'s, Result<DecoderAction, Self::Error>>;
+
+    /// Decodes into the specified buffer instead of allocating a new one.
+    fn decode_into<'s, 'e>(
+        &'s mut self,
+        encoded_data: &'e [u8],
+        output_buffer: &'s mut [u8],
+    ) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
 }

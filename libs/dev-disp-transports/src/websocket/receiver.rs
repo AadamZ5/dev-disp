@@ -55,6 +55,11 @@ where
     }
 }
 
+/// This represents the data that is given to the adapter during the
+/// [ScreenReceiverAdapter::prepare_receive_screen_data] call.
+/// 
+/// This data holds methods and channels to negotiate the codec options
+/// with the server. 
 pub struct WsReceiverPrepState {
     tx: mpsc::Sender<CodecNegotiationClient>,
     rx: mpsc::Receiver<CodecNegotiationServer>,
@@ -189,7 +194,7 @@ where
                             }
                             DevDispMessageFromSource::PutScreenData(items) => {
                                 adapter
-                                    .recieve_screen_data(&items)
+                                    .receive_screen_data(&items)
                                     .await
                                     .map_err(|e| WsReceiverError::TransportError(Box::new(e)))?;
                             }
