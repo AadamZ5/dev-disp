@@ -1,5 +1,8 @@
 use crate::toolkit::encoder::CodecOption;
-use dev_disp_core::{host::VirtualScreenPixelFormat, util::PinnedLocalFuture};
+use dev_disp_core::{
+    host::{ScreenContentParameters, VirtualScreenPixelFormat},
+    util::PinnedLocalFuture,
+};
 
 pub struct DecodedFrame {
     pub data: Vec<u8>,
@@ -40,6 +43,7 @@ pub trait Decoder {
     /// that the backend offered.
     fn get_preferred_configurations<'s, 'd>(
         &'s mut self,
+        screen_parameters: &'d ScreenContentParameters,
         possible_configurations: Vec<&'d CodecOption>,
     ) -> PinnedLocalFuture<'s, Vec<&'d CodecOption>>
     where
@@ -48,6 +52,7 @@ pub trait Decoder {
     /// After the backend selects an encoding, this function is called to set the chosen codec for the decoder.
     fn set_codec<'s>(
         &'s mut self,
+        screen_parameters: &'s ScreenContentParameters,
         codec: &'s CodecOption,
     ) -> PinnedLocalFuture<'s, Result<(), Self::Error>>;
 

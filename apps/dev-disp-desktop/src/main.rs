@@ -50,6 +50,9 @@ fn application_subscriptions(_state: &ScreenHostApp) -> Subscription<Message> {
         iced::window::resize_events()
             .map(|(_id, size)| Message::WindowSizeChange(size))
             .into(),
+        iced::window::frames()
+            .map(|_| Message::AnimationFrame)
+            .into(),
     ])
 }
 
@@ -83,9 +86,6 @@ fn spawn_background(_state: &ScreenHostApp) -> Subscription<Message> {
             }
         });
 
-        event_rx.map(|event| {
-            debug!("Received worker event: {:?}", event);
-            Message::WorkerEvent(event)
-        })
+        event_rx.map(Message::WorkerEvent)
     })
 }

@@ -2,22 +2,22 @@ use dev_disp_core::host::DisplayParameters;
 use futures::{channel::mpsc, SinkExt};
 use iced::{
     color,
+    wgpu::wgc::resource::TextureDimensionError::HeightNotMultipleOf,
     widget::{column, row},
-    window::Id,
-    Border, Element, Task,
+    Element, Task,
 };
-use log::{debug, error, info};
-use triple_buffer::{Input, Output};
+use log::{debug, error, info, warn};
+use triple_buffer::Output;
 
-use crate::worker::{WorkerCommand, WorkerEvent};
+use crate::worker::{WorkerCommand, WorkerEvent, WorkerRenderContext};
 
 pub struct ScreenHostApp {
     producer_endpoint: String,
     window_size: Option<iced::Size>,
     canvas_size: Option<iced::Size>,
     window_id: Option<iced::window::Id>,
-    display_buffer: Option<iced::widget::image::Handle>,
-    worker_buffer: Option<Output<Vec<u8>>>,
+    image_handle: Option<iced::widget::image::Handle>,
+    worker_render_context: Option<WorkerRenderContext>,
     worker_command_tx: Option<mpsc::Sender<WorkerCommand>>,
     connect_url: String,
 }
@@ -40,6 +40,8 @@ pub enum Message {
     WindowSizeChange(iced::Size),
 
     Input(InputEvent),
+
+    AnimationFrame,
 }
 
 impl ScreenHostApp {
@@ -50,9 +52,9 @@ impl ScreenHostApp {
             return iced::widget::space().into();
         };
 
-        if let Some(display_buffer) = &self.display_buffer {
+        if let Some(image_handle) = &self.image_handle {
             return iced::widget::Container::new(
-                iced::widget::image(display_buffer)
+                iced::widget::image(image_handle)
                     .width(size.width)
                     .height(size.height)
                     .content_fit(iced::ContentFit::Contain),
@@ -104,19 +106,13 @@ impl ScreenHostApp {
 
 impl ScreenHostApp {
     pub fn new(producer_endpoint: String) -> (Self, Task<Message>) {
-        let red = [255, 0, 0, 255];
-        let mut backing_buffer = Vec::new();
-        for _ in 0..(100 * 100) {
-            backing_buffer.extend_from_slice(&red);
-        }
-
         let this = Self {
             producer_endpoint,
             window_size: None,
             canvas_size: None,
             window_id: None,
-            display_buffer: None,
-            worker_buffer: None,
+            image_handle: None,
+            worker_render_context: None,
             worker_command_tx: None,
             connect_url: String::new(),
         };
@@ -136,17 +132,29 @@ impl ScreenHostApp {
                     return Task::none();
                 }
             }
+            Message::AnimationFrame => {
+                // Handle animation frame updates here if needed
+                if let Some(render_context) = &mut self.worker_render_context {
+                    if !render_context.buffer.update() {
+                        return Task::none();
+                    }
+                    // Paint the latest data to our image handle
+                    let bytes = render_context.buffer.output_buffer();
+                    let (width, height) = render_context.comitted_size;
+
+                    self.image_handle = Some(iced::widget::image::Handle::from_rgba(
+                        width,
+                        height,
+                        Vec::from(&bytes[..(width * height * 4) as usize]),
+                    ))
+                }
+            }
             Message::ChangeCanvasSize(size) => {
                 self.canvas_size = Some(size);
             }
             Message::WindowSizeChange(size) => {
                 self.window_size = Some(size);
-
-                // Canvas only implicitly sized on first window sizing
-                if self.canvas_size.is_none() {
-                    // In the future, this may be an async operation?
-                    return Task::done(Message::ChangeCanvasSize(size));
-                }
+                self.canvas_size = Some(size);
             }
 
             Message::Input(event) => match event {
@@ -185,16 +193,22 @@ impl ScreenHostApp {
                 WorkerEvent::Connected(url) => {
                     info!("Worker connected to {}", url);
                 }
-                WorkerEvent::PrepareBuffer(output) => {
-                    self.worker_buffer = Some(output);
+                WorkerEvent::PrepareRender(render_context) => {
+                    info!(
+                        "Preparing render with context {:?}",
+                        render_context.comitted_size
+                    );
+                    let size = render_context.comitted_size;
+                    self.worker_render_context = Some(render_context);
+                    //self.canvas_size = Some(size.into());
                 }
                 WorkerEvent::Disconnected => {
                     // Idk
                 }
                 WorkerEvent::RequestDisplayParameters => {
+                    debug!("Worker requested display parameters");
                     if let Some(worker_command_tx) = self.worker_command_tx.as_mut() {
                         // Send display parameters to the worker
-
                         let mut worker_command_tx = worker_command_tx.clone();
                         let display_parameters = DisplayParameters {
                             host_dev_name: "Desktop Client".to_string(),
@@ -210,6 +224,11 @@ impl ScreenHostApp {
                         };
 
                         return Task::future(async move {
+                            debug!(
+                                "Sending display parameters to worker: {:?}",
+                                display_parameters
+                            );
+
                             worker_command_tx
                                 .send(WorkerCommand::SetDisplayParameters(display_parameters))
                                 .await
@@ -218,6 +237,8 @@ impl ScreenHostApp {
                                 });
                         })
                         .discard();
+                    } else {
+                        warn!("Worker requested display parameters, but the command channel is not available to send them!");
                     }
                 }
             },

@@ -13,7 +13,7 @@ use futures::{
     channel::mpsc,
     stream::{SplitSink, SplitStream},
 };
-use log::{ warn};
+use log::{ debug, warn};
 use thiserror::Error;
 
 use crate::websocket::messages::{WsMessageFromClient, WsMessageFromSource};
