@@ -7,7 +7,11 @@ edition = "2024"
 dev-disp-core = { path = "../../libs/dev-disp-core" }
 dev-disp-api = { path = "../../libs/dev-disp-api" }
 log = "0.4.28"
-futures = "0.3.31"
+futures = { version = "0.3.34", features = [
+  "std",
+  "alloc",
+  "async-await",
+], default-features = false }
 futures-util = "0.3.31"
 iced = { version = "0.14.0", features = [
   "tokio",

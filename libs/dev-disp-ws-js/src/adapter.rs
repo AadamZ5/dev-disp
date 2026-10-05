@@ -191,7 +191,7 @@ impl<'a> ScreenReceiverAdapter<WsReceiverPrepState> for JsAdapter {
         .boxed_local()
     }
 
-    fn recieve_screen_data<'s>(
+    fn receive_screen_data<'s>(
         &'s mut self,
         data: &'s [u8],
     ) -> PinnedLocalFuture<'s, Result<(), Self::Error>> {

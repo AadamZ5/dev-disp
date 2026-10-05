@@ -1,0 +1,31 @@
+[package]
+name = "dev-disp-desktop"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+dev-disp-transports = { path = "../../libs/dev-disp-transports", features = [
+  "ws",
+  "ws-client",
+] }
+dev-disp-core = { path = "../../libs/dev-disp-core" }
+dev-disp-encoders = { path = "../../libs/dev-disp-encoders", features = [
+  "ffmpeg",
+] }
+rust-util = { path = "../../libs/rust-util" }
+iced = { version = "0.14.0", features = ["image", "tokio"] }
+async-tungstenite = { version = "0.35.0", features = ["tokio-runtime"] }
+futures = { version = "0.3.34", features = [
+  "std",
+  "alloc",
+  "async-await",
+], default-features = false }
+tokio = { version = "1.53.1", features = ["full"] }
+log = "0.4.34"
+thiserror = "2.0.21"
+env_logger = "0.11.11"
+triple_buffer = "9.0.0"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
