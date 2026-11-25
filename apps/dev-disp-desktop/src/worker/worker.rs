@@ -6,7 +6,7 @@ use dev_disp_core::{
 };
 use dev_disp_encoders::ffmpeg::decoder::{config_file::FfmpegDecoderConfiguration, FfmpegDecoder};
 use dev_disp_transports::websocket::receiver::WsReceiver;
-use futures::{channel::mpsc, stream::empty, FutureExt, SinkExt, Stream, StreamExt};
+use futures::{channel::mpsc, select, stream::empty, FutureExt, SinkExt, Stream, StreamExt};
 use log::{debug, error, info, warn};
 use rust_util::{
     iced_worker_reactor::{iced_worker_reactor, Worker as IcedWorker},
@@ -16,13 +16,14 @@ use thiserror::Error;
 
 use crate::{util::Runtime, worker::adapter::WsDesktopAdapter};
 
-pub struct Worker<R> {
-    runtime: R,
+pub struct Worker {
     connect_url: Option<String>,
     event_tx: mpsc::Sender<WorkerEvent>,
 
     display_parameters: Option<DisplayParameters>,
     display_parameters_tx: Option<mpsc::Sender<DisplayParameters>>,
+
+    disconnect_tx: Option<mpsc::Sender<()>>,
 
     _command_tx: mpsc::Sender<WorkerCommand>,
 }
@@ -79,23 +80,24 @@ pub enum WorkerEvent {
 pub enum WorkerCommand {
     /// The URL to connect the websocket to.
     Connect(String),
+    /// Stop the current connection
+    Disconnect,
 
+    /// Disconnection completed
     Disconnected,
 
     /// Set the display parameters that the UI currently has
     SetDisplayParameters(DisplayParameters),
 }
 
-impl<R> Worker<R>
-where
-    R: Runtime,
-{
+impl Worker {
     pub fn connect(&mut self, url: String) -> PinnedLocalFuture<'static, Result<(), WorkerError>> {
         let mut event_tx = self.event_tx.clone();
         self.connect_url = Some(url.clone());
 
         let (mut display_parameters_tx, display_parameters_rx) =
             mpsc::channel::<DisplayParameters>(16);
+        let (disconnect_tx, mut disconnect_rx) = mpsc::channel::<()>(1);
 
         // If we have display parameters, send them now. If not, request them from the UI
         if let Some(display_parameters) = self.display_parameters.clone() {
@@ -122,6 +124,7 @@ where
         }
 
         self.display_parameters_tx = Some(display_parameters_tx);
+        self.disconnect_tx = Some(disconnect_tx);
 
         async move {
             let (ws, _) = async_tungstenite::tokio::connect_async(url)
@@ -167,7 +170,12 @@ where
             let receiver = WsReceiver::new(ws);
 
             // TODO: Put this on another thread?
-            let _ = run_receiver_with_adapter(receiver, adapter).await;
+            // Run connection raced with disconnect
+            let disconnect_fut = disconnect_rx.next();
+            select! {
+                _ = disconnect_fut.fuse() => {},
+                _ = run_receiver_with_adapter(receiver, adapter).fuse() => {},
+            }
 
             info!("Receiver finished");
 
@@ -177,23 +185,17 @@ where
     }
 }
 
-impl<R> Worker<R>
-where
-    R: crate::util::Runtime,
-{
-    pub fn new(
-        runtime: R,
-        event_tx: mpsc::Sender<WorkerEvent>,
-    ) -> (Self, mpsc::Receiver<WorkerCommand>) {
+impl Worker {
+    pub fn new(event_tx: mpsc::Sender<WorkerEvent>) -> (Self, mpsc::Receiver<WorkerCommand>) {
         let (command_tx, command_rx) = mpsc::channel::<WorkerCommand>(100);
 
         let this = Self {
-            runtime,
             connect_url: None,
             event_tx,
             _command_tx: command_tx,
             display_parameters_tx: None,
             display_parameters: None,
+            disconnect_tx: None,
         };
 
         (this, command_rx)
@@ -206,10 +208,7 @@ where
     }
 }
 
-impl<R> IcedWorker<WorkerCommand> for Worker<R>
-where
-    R: Runtime,
-{
+impl IcedWorker<WorkerCommand> for Worker {
     fn initialize(&mut self) -> impl Stream<Item = WorkerCommand> + 'static {
         empty()
     }
@@ -254,6 +253,17 @@ where
                 }
                 empty().boxed_local()
             }
+            WorkerCommand::Disconnect => {
+                debug!("Worker received disconnect command");
+                match self.disconnect_tx.take() {
+                    Some(mut tx) => match tx.try_send(()) {
+                        Ok(_) => debug!("Sen't disconnect notification"),
+                        Err(e) => error!("Failed to send disconnect: {:?}", e),
+                    },
+                    None => {}
+                }
+                empty().boxed_local()
+            }
             WorkerCommand::Disconnected => empty().boxed_local(),
         }
     }
@@ -267,7 +277,7 @@ pub async fn worker_main<R>(
 where
     R: crate::util::Runtime,
 {
-    let (mut worker, command_rx) = Worker::new(runtime, event_sender);
+    let (mut worker, command_rx) = Worker::new(event_sender);
     if let Err(e) = worker.send_ready().await {
         error!("Failed to send ready event: {:?}", e);
         // We should exit since they probably didn't get the communication channel.

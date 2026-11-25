@@ -1,15 +1,25 @@
+use std::sync::atomic::AtomicBool;
+
 use dev_disp_core::host::DisplayParameters;
 use futures::{channel::mpsc, SinkExt};
 use iced::{
     color,
-    wgpu::wgc::resource::TextureDimensionError::HeightNotMultipleOf,
+    widget::shader,
     widget::{column, row},
     Element, Task,
 };
 use log::{debug, error, info, warn};
-use triple_buffer::Output;
 
-use crate::worker::{WorkerCommand, WorkerEvent, WorkerRenderContext};
+use crate::{
+    renderer::{VideoData, VideoFeed},
+    worker::{Worker, WorkerCommand, WorkerEvent, WorkerRenderContext},
+};
+
+pub enum WorkerConnectionState {
+    Disconnected,
+    Connecting,
+    Connected,
+}
 
 pub struct ScreenHostApp {
     producer_endpoint: String,
@@ -17,7 +27,9 @@ pub struct ScreenHostApp {
     canvas_size: Option<iced::Size>,
     window_id: Option<iced::window::Id>,
     image_handle: Option<iced::widget::image::Handle>,
+    worker_state: WorkerConnectionState,
     worker_render_context: Option<WorkerRenderContext>,
+    video_update: AtomicBool,
     worker_command_tx: Option<mpsc::Sender<WorkerCommand>>,
     connect_url: String,
 }
@@ -29,6 +41,7 @@ pub struct ScreenHostApp {
 pub enum InputEvent {
     SetConnectUrl(String),
     Connect,
+    Disconnect,
 }
 
 #[derive(Debug)]
@@ -52,18 +65,33 @@ impl ScreenHostApp {
             return iced::widget::space().into();
         };
 
-        if let Some(image_handle) = &self.image_handle {
-            return iced::widget::Container::new(
-                iced::widget::image(image_handle)
-                    .width(size.width)
-                    .height(size.height)
-                    .content_fit(iced::ContentFit::Contain),
-            )
-            .center(iced::Length::Shrink)
-            .into();
-        } else {
-            return iced::widget::space().into();
-        }
+        let update_available = self
+            .video_update
+            .swap(false, std::sync::atomic::Ordering::Relaxed);
+
+        let video_data = match (
+            self.worker_render_context.as_ref(),
+            update_available,
+            &self.worker_state,
+        ) {
+            // TODO: Restrict frame data against worker connected/in-use state!
+            (Some(ctx), true, _) => VideoData::Frame {
+                width: ctx.comitted_size.0,
+                height: ctx.comitted_size.1,
+                buf: ctx.buffer.output_buffer(),
+            },
+            (Some(_), false, WorkerConnectionState::Connected) => VideoData::NoUpdate,
+            (Some(_), _, _) => VideoData::NoUpdate,
+            (None, _, _) => VideoData::None,
+        };
+
+        return iced::widget::Container::new(
+            iced::widget::shader(VideoFeed::new(video_data))
+                .width(size.width)
+                .height(size.height),
+        )
+        .center(iced::Length::Shrink)
+        .into();
     }
 
     fn create_toolbar(&self) -> iced::Element<'_, Message> {
@@ -75,20 +103,37 @@ impl ScreenHostApp {
             self.window_size.map_or_default(|s| s.height)
         ));
 
+        // Show the worker's dispatched size info if we have it
+        let casting_size_info = if let Some(size) = self.worker_render_context.as_ref() {
+            iced::widget::text(format!(
+                "Canvas: {}x{}",
+                size.comitted_size.0, size.comitted_size.1
+            ))
+        } else {
+            iced::widget::text("Canvas: ?x?")
+        };
+
         let widget_url_textbox: Element<'_, InputEvent> =
             iced::widget::text_input("URL", &self.connect_url)
                 .on_input(|value| InputEvent::SetConnectUrl(value))
                 .into();
         let widget_url_textbox = widget_url_textbox.map(Message::Input);
 
-        let widget_connect_button: Element<'_, InputEvent> = iced::widget::button("Connect")
-            .on_press(InputEvent::Connect)
-            .into();
+        let widget_connect_button: Element<'_, InputEvent> = match &self.worker_state {
+            WorkerConnectionState::Connected => {
+                { iced::widget::button("Disconnect").on_press(InputEvent::Disconnect) }.into()
+            }
+            WorkerConnectionState::Disconnected => {
+                { iced::widget::button("Connect").on_press(InputEvent::Connect) }.into()
+            }
+            WorkerConnectionState::Connecting => { iced::widget::button("Connecting") }.into(),
+        };
         let widget_connect_button = widget_connect_button.map(Message::Input);
 
         let toolbar_contents = iced::widget::container(
             row![
                 widget_window_info,
+                casting_size_info,
                 widget_url_textbox,
                 widget_connect_button
             ]
@@ -113,6 +158,8 @@ impl ScreenHostApp {
             window_id: None,
             image_handle: None,
             worker_render_context: None,
+            worker_state: WorkerConnectionState::Disconnected,
+            video_update: AtomicBool::new(false),
             worker_command_tx: None,
             connect_url: String::new(),
         };
@@ -134,20 +181,14 @@ impl ScreenHostApp {
             }
             Message::AnimationFrame => {
                 // Handle animation frame updates here if needed
-                if let Some(render_context) = &mut self.worker_render_context {
-                    if !render_context.buffer.update() {
-                        return Task::none();
-                    }
-                    // Paint the latest data to our image handle
-                    let bytes = render_context.buffer.output_buffer();
-                    let (width, height) = render_context.comitted_size;
+                let video_update = if let Some(ctx) = self.worker_render_context.as_mut() {
+                    ctx.buffer.update()
+                } else {
+                    false
+                };
 
-                    self.image_handle = Some(iced::widget::image::Handle::from_rgba(
-                        width,
-                        height,
-                        Vec::from(&bytes[..(width * height * 4) as usize]),
-                    ))
-                }
+                self.video_update
+                    .store(video_update, std::sync::atomic::Ordering::Relaxed);
             }
             Message::ChangeCanvasSize(size) => {
                 self.canvas_size = Some(size);
@@ -179,6 +220,15 @@ impl ScreenHostApp {
                         error!("Worker command channel is not available");
                     }
                 }
+                InputEvent::Disconnect => {
+                    if let Some(worker_command_tx) = self.worker_command_tx.as_mut() {
+                        let mut worker_command_tx = worker_command_tx.clone();
+                        return Task::future(async move {
+                            let _ = worker_command_tx.send(WorkerCommand::Disconnect).await;
+                        })
+                        .discard();
+                    }
+                }
             },
             Message::WorkerEvent(event) => match event {
                 WorkerEvent::Ready(sender) => {
@@ -189,21 +239,21 @@ impl ScreenHostApp {
                 }
                 WorkerEvent::Connecting(url) => {
                     info!("Worker is connecting to {}", url);
+                    self.worker_state = WorkerConnectionState::Connecting;
                 }
                 WorkerEvent::Connected(url) => {
                     info!("Worker connected to {}", url);
+                    self.worker_state = WorkerConnectionState::Connected;
                 }
                 WorkerEvent::PrepareRender(render_context) => {
                     info!(
                         "Preparing render with context {:?}",
                         render_context.comitted_size
                     );
-                    let size = render_context.comitted_size;
                     self.worker_render_context = Some(render_context);
-                    //self.canvas_size = Some(size.into());
                 }
                 WorkerEvent::Disconnected => {
-                    // Idk
+                    self.worker_state = WorkerConnectionState::Disconnected;
                 }
                 WorkerEvent::RequestDisplayParameters => {
                     debug!("Worker requested display parameters");

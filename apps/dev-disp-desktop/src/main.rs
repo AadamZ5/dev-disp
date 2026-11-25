@@ -10,6 +10,7 @@ use crate::{
 };
 
 mod app;
+mod renderer;
 mod util;
 mod worker;
 

@@ -14,7 +14,7 @@ dev-disp-encoders = { path = "../../libs/dev-disp-encoders", features = [
   "ffmpeg",
 ] }
 rust-util = { path = "../../libs/rust-util" }
-iced = { version = "0.14.0", features = ["image", "tokio"] }
+iced = { version = "0.14.0", features = ["image", "tokio", "wgpu"] }
 async-tungstenite = { version = "0.35.0", features = ["tokio-runtime"] }
 futures = { version = "0.3.34", features = [
   "std",
