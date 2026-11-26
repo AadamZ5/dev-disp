@@ -26,6 +26,7 @@ log = "0.4.34"
 thiserror = "2.0.21"
 env_logger = "0.11.11"
 triple_buffer = "9.0.0"
+keepawake = "0.6.1"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

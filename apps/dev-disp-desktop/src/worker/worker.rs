@@ -6,7 +6,12 @@ use dev_disp_core::{
 };
 use dev_disp_encoders::ffmpeg::decoder::{config_file::FfmpegDecoderConfiguration, FfmpegDecoder};
 use dev_disp_transports::websocket::receiver::WsReceiver;
-use futures::{channel::mpsc, select, stream::empty, FutureExt, SinkExt, Stream, StreamExt};
+use futures::{
+    channel::{mpsc, oneshot},
+    select, select_biased,
+    stream::{empty, futures_unordered},
+    FutureExt, SinkExt, Stream, StreamExt,
+};
 use log::{debug, error, info, warn};
 use rust_util::{
     iced_worker_reactor::{iced_worker_reactor, Worker as IcedWorker},
@@ -24,7 +29,6 @@ pub struct Worker {
     display_parameters_tx: Option<mpsc::Sender<DisplayParameters>>,
 
     disconnect_tx: Option<mpsc::Sender<()>>,
-
     _command_tx: mpsc::Sender<WorkerCommand>,
 }
 
@@ -73,6 +77,9 @@ pub enum WorkerEvent {
 
     /// Hey UI please give us the display parameters.
     RequestDisplayParameters,
+
+    /// We have been selected to show screen data!
+    Selected,
 }
 
 /// A command that can be given to the worker
@@ -93,11 +100,13 @@ pub enum WorkerCommand {
 impl Worker {
     pub fn connect(&mut self, url: String) -> PinnedLocalFuture<'static, Result<(), WorkerError>> {
         let mut event_tx = self.event_tx.clone();
+        let mut event_tx_1 = self.event_tx.clone();
         self.connect_url = Some(url.clone());
 
         let (mut display_parameters_tx, display_parameters_rx) =
             mpsc::channel::<DisplayParameters>(16);
         let (disconnect_tx, mut disconnect_rx) = mpsc::channel::<()>(1);
+        let (selection_tx, selection_rx) = oneshot::channel();
 
         // If we have display parameters, send them now. If not, request them from the UI
         if let Some(display_parameters) = self.display_parameters.clone() {
@@ -126,6 +135,7 @@ impl Worker {
         self.display_parameters_tx = Some(display_parameters_tx);
         self.disconnect_tx = Some(disconnect_tx);
 
+        // The connection future
         let connection = async move {
             match event_tx.send(WorkerEvent::Connecting(url.clone())).await {
                 Ok(_) => {}
@@ -152,7 +162,8 @@ impl Worker {
                 triple_buffer::TripleBuffer::<Vec<u8>>::new(&vec![0; size]).split();
 
             let ffmpeg_decoder = FfmpegDecoder::new(FfmpegDecoderConfiguration::default());
-            let mut adapter = WsDesktopAdapter::new(display_parameters_rx, input, ffmpeg_decoder);
+            let mut adapter =
+                WsDesktopAdapter::new(display_parameters_rx, input, selection_tx, ffmpeg_decoder);
 
             // Receive the display parameters that the adapter will use, so we can tell the
             // front end what size the data will be painting as.
@@ -191,6 +202,7 @@ impl Worker {
             Ok(())
         };
 
+        // The race between setup/connection and disconnect.
         let race = async move {
             let disconnect_fut = disconnect_rx.next();
             select! {
@@ -207,7 +219,39 @@ impl Worker {
             }
         };
 
-        race.boxed_local()
+        let forward_selection = async move {
+            match selection_rx.await {
+                Ok(_) => {
+                    // The device has been selected, notify the UI
+                    match event_tx_1.send(WorkerEvent::Selected).await {
+                        Ok(_) => {}
+                        Err(e) => warn!("Failed to notify UI of selection: {:?}", e),
+                    }
+                }
+                Err(e) => {
+                    // We were probably never selected during our lifetime.
+                    info!("Device selection notification not sent: {:?}", e);
+                }
+            }
+            Ok::<(), WorkerError>(())
+        };
+
+        let composed = async move {
+            let mut set = futures_unordered::FuturesUnordered::from_iter([
+                race.boxed_local(),
+                forward_selection.boxed_local(),
+            ]);
+
+            while let Some(r) = set.next().await {
+                // We will forward any errors
+                if let Err(e) = r {
+                    return Err(e);
+                }
+            }
+            Ok(())
+        };
+
+        composed.boxed_local()
     }
 }
 
@@ -281,9 +325,10 @@ impl IcedWorker<WorkerCommand> for Worker {
             }
             WorkerCommand::Disconnect => {
                 debug!("Worker received disconnect command");
+                self.display_parameters = None;
                 match self.disconnect_tx.take() {
                     Some(mut tx) => match tx.try_send(()) {
-                        Ok(_) => debug!("Sen't disconnect notification"),
+                        Ok(_) => debug!("Sent disconnect notification"),
                         Err(e) => error!("Failed to send disconnect: {:?}", e),
                     },
                     None => {}

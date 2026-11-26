@@ -9,6 +9,7 @@ use log::{error, info};
 
 use crate::config::default_path_read_or_write_default_config_for;
 
+/// An example implementation of accepting all discovered devices automatically
 pub async fn accept_all<P, D, C, T>(provider: P, discovery: D)
 where
     P: ScreenProvider,
