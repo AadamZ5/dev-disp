@@ -52,7 +52,7 @@ fn application_subscriptions(_state: &ScreenHostApp) -> Subscription<Message> {
             .map(|(_id, size)| Message::WindowSizeChange(size))
             .into(),
         iced::window::frames()
-            .map(|_| Message::AnimationFrame)
+            .map(|i| Message::AnimationFrame(i))
             .into(),
         iced::event::listen_with(|event, _status, _id| match event {
             iced::Event::Mouse(mouse) => Some(Message::Mouse(mouse)),

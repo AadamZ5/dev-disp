@@ -1,11 +1,12 @@
-use std::sync::atomic::AtomicBool;
+use std::{sync::atomic::AtomicBool, time::Duration};
 
 use dev_disp_core::host::DisplayParameters;
 use futures::{channel::mpsc, SinkExt};
 use iced::{
+    animation::Easing,
     color,
     widget::{column, row, stack},
-    Element, Task,
+    Animation, Element, Task, Vector,
 };
 use keepawake::KeepAwake;
 use log::{debug, error, info, warn};
@@ -22,11 +23,16 @@ pub enum WorkerConnectionState {
 }
 
 const TOOLBAR_HEIGHT: f32 = 30.0;
+const TOOLBAR_CONTAINER_PADDING: f32 = 4.0;
 /// The buffer towards the top of the screen to activate the toolbar,
 /// or the buffer below the toolbar to hide it
 const TOOLBAR_HOVER_BUFFER_ZONE: f32 = 10.0;
 
+const TOOLBAR_CONTAINER_HEIGHT: f32 = TOOLBAR_HEIGHT + TOOLBAR_CONTAINER_PADDING * 2.0;
+
 pub struct ScreenHostApp {
+    /// Current time instant for animations etc.
+    now: std::time::Instant,
     /// The entire inner window size
     window_size: Option<iced::Size>,
     /// The size of the canvas that we will draw to
@@ -60,8 +66,8 @@ pub struct ScreenHostApp {
 
     /// If the toolbar is pinned (always shown)
     toolbar_pinned: bool,
-    /// If the toolbar is hidden, only relevant when not pinned
-    toolbar_hidden: bool,
+    /// The animation helper for toolbar visibility, when not pinned
+    toolbar_hidden_anim: Animation<bool>,
 }
 
 /// Cloneable input things that represent user input events.
@@ -89,7 +95,7 @@ pub enum Message {
     /// Input events that require clone, moved into their own envelope.
     Input(InputEvent),
     /// Animation frame tick
-    AnimationFrame,
+    AnimationFrame(std::time::Instant),
     /// Mouse event
     Mouse(iced::mouse::Event),
 }
@@ -136,7 +142,10 @@ impl ScreenHostApp {
     }
 
     fn create_toolbar(&self) -> iced::Element<'_, Message> {
-        if !self.toolbar_pinned && self.toolbar_hidden {
+        if !self.toolbar_pinned
+            && self.toolbar_hidden_anim.value()
+            && !self.toolbar_hidden_anim.is_animating(self.now)
+        {
             return iced::widget::space().into();
         }
 
@@ -225,15 +234,16 @@ impl ScreenHostApp {
             .align_y(iced::alignment::Vertical::Center),
         )
         .align_left(iced::Length::Fill)
-        .padding(4)
+        .padding(TOOLBAR_CONTAINER_PADDING)
         .style(|_theme| iced::widget::container::Style::default().background(color!(50, 50, 75)));
 
         column![toolbar_contents, iced::widget::rule::horizontal(1),].into()
     }
 
     fn check_toolbar_hover(&mut self, mouse: iced::mouse::Event) {
+        self.now = std::time::Instant::now();
         if self.toolbar_pinned {
-            self.toolbar_hidden = false;
+            self.toolbar_hidden_anim.go_mut(false, self.now);
             return;
         }
 
@@ -242,17 +252,17 @@ impl ScreenHostApp {
             _ => return,
         };
 
-        if self.toolbar_hidden {
+        if self.toolbar_hidden_anim.value() {
             if position.y > TOOLBAR_HOVER_BUFFER_ZONE {
-                self.toolbar_hidden = true;
+                self.toolbar_hidden_anim.go_mut(true, self.now);
             } else {
-                self.toolbar_hidden = false;
+                self.toolbar_hidden_anim.go_mut(false, self.now);
             }
         } else {
-            if position.y > TOOLBAR_HEIGHT + TOOLBAR_HOVER_BUFFER_ZONE {
-                self.toolbar_hidden = true;
+            if position.y > TOOLBAR_CONTAINER_HEIGHT + TOOLBAR_HOVER_BUFFER_ZONE {
+                self.toolbar_hidden_anim.go_mut(true, self.now);
             } else {
-                self.toolbar_hidden = false;
+                self.toolbar_hidden_anim.go_mut(false, self.now);
             }
         }
     }
@@ -298,6 +308,7 @@ impl ScreenHostApp {
 impl ScreenHostApp {
     pub fn new() -> (Self, Task<Message>) {
         let this = Self {
+            now: std::time::Instant::now(),
             window_size: None,
             canvas_size: None,
             window_id: None,
@@ -310,7 +321,9 @@ impl ScreenHostApp {
             fullscreen: false,
             selected: false,
             toolbar_pinned: true,
-            toolbar_hidden: false,
+            toolbar_hidden_anim: Animation::new(false)
+                .duration(Duration::from_millis(350))
+                .easing(Easing::EaseOutCubic),
         };
 
         let get_window_id = iced::window::latest().map(|id| Message::WindowIdChange(id));
@@ -328,8 +341,9 @@ impl ScreenHostApp {
                     return Task::none();
                 }
             }
-            Message::AnimationFrame => {
+            Message::AnimationFrame(now) => {
                 // Handle animation frame updates here if needed
+                self.now = now;
                 let video_update = if let Some(ctx) = self.worker_render_context.as_mut() {
                     ctx.buffer.update()
                 } else {
@@ -382,7 +396,12 @@ impl ScreenHostApp {
                     self.fullscreen = fs;
                     return self.update_window_settings();
                 }
-                InputEvent::ToolbarPinned(pinned) => self.toolbar_pinned = pinned,
+                InputEvent::ToolbarPinned(pinned) => {
+                    self.toolbar_pinned = pinned;
+                    // Update `now` before animation runs
+                    self.now = std::time::Instant::now();
+                    self.toolbar_hidden_anim.go_mut(pinned, self.now);
+                }
             },
             Message::WorkerEvent(event) => match event {
                 WorkerEvent::Ready(sender) => {
@@ -475,7 +494,14 @@ impl ScreenHostApp {
         if self.toolbar_pinned {
             column![self.create_toolbar(), self.create_canvas(self.canvas_size)].into()
         } else {
-            stack![self.create_canvas(self.canvas_size), self.create_toolbar()].into()
+            // Animate the toolbar when not pinned.
+            let offset =
+                self.toolbar_hidden_anim
+                    .interpolate(0.0, TOOLBAR_CONTAINER_HEIGHT + 1.0, self.now);
+            let toolbar = iced::widget::float(self.create_toolbar())
+                .translate(move |_, _| Vector::new(0.0, -offset));
+
+            stack![self.create_canvas(self.canvas_size), toolbar].into()
         }
     }
 }
