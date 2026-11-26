@@ -33,9 +33,13 @@ use tokio_stream::wrappers::{BroadcastStream, ReceiverStream, errors::BroadcastS
 /// core app logic.
 #[derive(Debug, Clone)]
 pub struct ReadyDeviceRef {
+    /// Human-readable name of the device.
     pub name: String,
-    pub discovery_id: String,
+    /// The ID of the discovery service that is used to find this device.
+    pub discovery_id: DiscoveryId,
+    /// The device ID.
     pub id: String,
+    /// Channel to take the device.
     take_tx: mpsc::Sender<()>,
 }
 
@@ -67,11 +71,17 @@ impl ReadyDeviceRef {
 /// or cancelling the current hosting session.
 #[derive(Debug, Clone)]
 pub struct InUseDeviceRef {
+    /// Human-readable name of the device.
     pub name: String,
-    pub discovery_id: String,
+    /// The ID of the discovery service that is used to find this device.
+    pub discovery_id: DiscoveryId,
+    /// The device ID.
     pub id: String,
+    /// Current status of the device.
     pub status: Arc<ArcSwap<SystemState>>,
+    /// Channel to request disconnection.
     disconnect_tx: mpsc::Sender<()>,
+    /// Channel to broadcast status updates.
     status_tx: broadcast::Sender<SystemState>,
 }
 
@@ -99,10 +109,14 @@ impl InUseDeviceRef {
 
     pub async fn disconnect(&self) -> Result<(), SendError<()>> {
         let _ = self.status_tx.send(SystemState::Stopped);
-        // TODO: Actually wait for the disconnection to complete!
+        // TODO: Actually wait for the disconnection to complete, not just
+        // that we sent disconnection!
+        //
+        // Probably send a oneshot to confirm disconnection.
         self.disconnect_tx.send(()).await
     }
 
+    /// Listen to status updates. Probably doesn't start with the current state.
     pub fn listen_status(&self) -> BroadcastStream<SystemState> {
         BroadcastStream::new(self.status_tx.subscribe())
     }
@@ -116,8 +130,11 @@ impl InUseDeviceRef {
 /// A set-up discovery method that can be used to find available devices for a particular transport.
 #[derive(Debug, Clone)]
 struct DiscoveryMethod {
+    /// ID of this discovery method
     pub id: DiscoveryId,
+    /// Human-readable name of the method.
     pub name: String,
+    /// Optional description.
     pub description: Option<String>,
     // TODO: Use this!
     stop_discovery_tx: mpsc::Sender<()>,
@@ -147,10 +164,20 @@ pub struct App<S>
 where
     S: ScreenProvider + Clone + Send + 'static,
 {
+    /// The screen provider for this app.
+    /// This provides a virtual screen integrated with the OS.
+    /// Must be a [ScreenProvider]
     screen_provider: S,
+    /// Available devices map, nested in discovery ID maps.
+    /// Keyed by discovery ID then device ID
     available_devices: Arc<RwLock<HashMap<DiscoveryId, HashMap<DisplayHostId, ReadyDeviceRef>>>>,
+    /// In-use devices map, nested in discovery ID maps.
+    /// Keyed by discovery ID then device ID
     in_use_devices: Arc<RwLock<HashMap<DiscoveryId, HashMap<DisplayHostId, InUseDeviceRef>>>>,
+    /// Discovery methods currently in use for this app instance.
     discovery_methods: Arc<RwLock<HashMap<DiscoveryId, DiscoveryMethod>>>,
+    /// Broadcasts when devices change.
+    /// TODO: Send a cheap snapshot of device info instead of just notifying.
     devices_change_tx: broadcast::Sender<()>,
 }
 
@@ -277,14 +304,17 @@ where
             let stop_discover_fut = stop_discovery_rx.recv().boxed();
             let mut discovery = discovery.take_until(stop_discover_fut);
 
+            /// Listen to the discovery updates, and copy them to available devices.
             while let Some(devices) = discovery.next().await {
                 let mut write_guard = available_devices.write().await;
 
-                let entry = write_guard
+                let discovery_device_map = write_guard
                     .entry(discovery_id.clone())
                     .or_insert_with(HashMap::new);
 
-                entry.clear();
+                // We reset every time there is a new update from the discovery method.
+                // An update is assumed to be an entire snapshot of available devices.
+                discovery_device_map.clear();
 
                 for device in devices {
                     let info = device.get_info();
@@ -294,7 +324,7 @@ where
                         info.id.clone(),
                     );
 
-                    entry.insert(device_ref.id.clone(), device_ref);
+                    discovery_device_map.insert(device_ref.id.clone(), device_ref);
 
                     let screen_provider_clone = screen_provider.clone();
                     let available_devices = available_devices.clone();
@@ -317,6 +347,7 @@ where
                         }
                         info!("Initiating device '{}'", info.name);
 
+                        // Remove from available devices
                         available_devices
                             .write()
                             .await
@@ -335,6 +366,7 @@ where
 
                         let device_status_tx = in_use_device_ref.status_tx.clone();
 
+                        // Add to in-use devices
                         in_use_devices
                             .write()
                             .await
@@ -342,6 +374,7 @@ where
                             .or_insert_with(HashMap::new)
                             .insert(info.id.clone(), in_use_device_ref);
 
+                        // Notify listeners of device list change
                         match device_change_tx.send(()) {
                             Ok(a) => {
                                 debug!("Notified {} device-list change listeners", a);
@@ -372,6 +405,8 @@ where
                                 let device_status_tx = device_status_tx_clone;
                                 let device_name = device_name_clone;
                                 let device_change_tx = device_change_tx_clone;
+
+                                // Attempt to connect, then handle the display host
                                 match device.connect().await {
                                     Ok(display) => {
                                         info!("Device '{}' initiated successfully", device_name);
@@ -422,7 +457,8 @@ where
                             })
                         });
 
-                        // This task will remain to listen for device updates
+                        // This task will remain to listen for device updates for the recently
+                        // connected device
                         let mut status_rx = BroadcastStream::new(device_status_tx.subscribe());
                         while let Some(status_res) = status_rx.next().await {
                             match status_res {
@@ -453,7 +489,7 @@ where
 
                 info!(
                     "Discovered {} device(s) on interface '{}'",
-                    entry.len(),
+                    discovery_device_map.len(),
                     discovery_name
                 );
 
@@ -529,6 +565,7 @@ where
         .boxed()
     }
 
+    /// Attempt to disconnect an in-use device, using its discovery ID and device ID.
     pub fn disconnect_device(
         &self,
         from_discovery_id: DiscoveryId,

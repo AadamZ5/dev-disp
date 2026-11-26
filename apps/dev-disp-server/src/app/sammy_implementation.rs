@@ -15,6 +15,7 @@ use crate::config;
 
 const SAMSUNG_SERIAL: &str = "0000000000";
 
+/// Test implementation for connecting with Android AOA mode, specifically to my samsung phone
 pub async fn sammy_implementation<P, D, C, T>(provider: P, discovery: D)
 where
     P: ScreenProvider,

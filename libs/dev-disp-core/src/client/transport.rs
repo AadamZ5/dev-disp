@@ -212,6 +212,11 @@ pub trait ScreenReceiverAdapter<D> {
         async { Ok(()) }.boxed_local()
     }
 
+    /// Prepare to receive screen data.
+    ///
+    /// The device has been initiated on the server, and will be used to
+    /// show screen data soon. Transport-specific setup can be done here
+    /// with the `D` typed `transport_data` provided.
     fn prepare_receive_screen_data<'s>(
         &'s mut self,
         parameters: &'s ScreenContentParameters,

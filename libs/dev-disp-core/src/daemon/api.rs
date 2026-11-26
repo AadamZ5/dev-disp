@@ -54,7 +54,7 @@ pub struct DeviceCollectionStatus {
     pub in_use_devices: Vec<DisplayHostRef>,
 }
 
-/// Represents the API for controlling and managing the dev disp application
+/// Represents the API contract for controlling and managing the dev disp application
 pub trait DevDispApi {
     fn get_devices(
         &self,

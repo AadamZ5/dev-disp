@@ -1,18 +1,19 @@
-use std::sync::atomic::AtomicBool;
+use std::{sync::atomic::AtomicBool, time::Duration};
 
 use dev_disp_core::host::DisplayParameters;
 use futures::{channel::mpsc, SinkExt};
 use iced::{
+    animation::Easing,
     color,
-    widget::shader,
-    widget::{column, row},
-    Element, Task,
+    widget::{column, row, stack},
+    Animation, Element, Task, Vector,
 };
+use keepawake::KeepAwake;
 use log::{debug, error, info, warn};
 
 use crate::{
     renderer::{VideoData, VideoFeed},
-    worker::{Worker, WorkerCommand, WorkerEvent, WorkerRenderContext},
+    worker::{WorkerCommand, WorkerEvent, WorkerRenderContext},
 };
 
 pub enum WorkerConnectionState {
@@ -21,16 +22,52 @@ pub enum WorkerConnectionState {
     Connected,
 }
 
+const TOOLBAR_HEIGHT: f32 = 30.0;
+const TOOLBAR_CONTAINER_PADDING: f32 = 4.0;
+/// The buffer towards the top of the screen to activate the toolbar,
+/// or the buffer below the toolbar to hide it
+const TOOLBAR_HOVER_BUFFER_ZONE: f32 = 10.0;
+
+const TOOLBAR_CONTAINER_HEIGHT: f32 = TOOLBAR_HEIGHT + TOOLBAR_CONTAINER_PADDING * 2.0;
+
 pub struct ScreenHostApp {
+    /// Current time instant for animations etc.
+    now: std::time::Instant,
+    /// The entire inner window size
     window_size: Option<iced::Size>,
+    /// The size of the canvas that we will draw to
     canvas_size: Option<iced::Size>,
+    /// The window ID of "this" window
     window_id: Option<iced::window::Id>,
-    image_handle: Option<iced::widget::image::Handle>,
+    /// The worker connection state (connected/disconnected)
     worker_state: WorkerConnectionState,
+    /// The worker render context, established during connection
     worker_render_context: Option<WorkerRenderContext>,
-    video_update: AtomicBool,
+    /// Flag to indicate if a new frame was received into the
+    /// triple-buffer, used during [ScreenHostApp::create_canvas].
+    ///
+    /// This is slightly different than the triple-buffer's own `updated` flag,
+    /// since we can't mutate during the draw call happening in `create_canvas`.
+    video_updated: AtomicBool,
+    /// A handle to dispatch worker commands
     worker_command_tx: Option<mpsc::Sender<WorkerCommand>>,
+    /// The URL to connect to
     connect_url: String,
+    /// The [KeepAwake] guard to keep the screen on,
+    /// set only when a connection is established.
+    keepawake: Option<KeepAwake>,
+    /// If we should fullscreen
+    fullscreen: bool,
+    /// If this client is selected and going to be used to display video.
+    ///
+    /// This is set when the worker begins initializing video parameters
+    /// before video starts, and reset when the connection is finished.
+    selected: bool,
+
+    /// If the toolbar is pinned (always shown)
+    toolbar_pinned: bool,
+    /// The animation helper for toolbar visibility, when not pinned
+    toolbar_hidden_anim: Animation<bool>,
 }
 
 /// Cloneable input things that represent user input events.
@@ -41,22 +78,32 @@ pub enum InputEvent {
     SetConnectUrl(String),
     Connect,
     Disconnect,
+    SetFullScreen(bool),
+    ToolbarPinned(bool),
 }
 
+/// An event for the [ScreenHostApp]
 #[derive(Debug)]
 pub enum Message {
+    /// An event specifically from the worker thread
     WorkerEvent(WorkerEvent),
-
-    ChangeCanvasSize(iced::Size),
+    /// The window ID change message, usually only occuring on
+    /// window creation.
     WindowIdChange(Option<iced::window::Id>),
+    /// The window size changed
     WindowSizeChange(iced::Size),
-
+    /// Input events that require clone, moved into their own envelope.
     Input(InputEvent),
-
-    AnimationFrame,
+    /// Animation frame tick
+    AnimationFrame(std::time::Instant),
+    /// Mouse event
+    Mouse(iced::mouse::Event),
 }
 
 impl ScreenHostApp {
+    /// Creates the video rendering widget, rendering video data if any is available.
+    /// Relies on [Self::video_updated] to know if we need to dispatch a redraw to the
+    /// shader. Uses the [VideoFeed] shader program to render already-decoded data.
     fn create_canvas(&self, size: Option<iced::Size>) -> iced::Element<'_, Message> {
         let size = if let Some(size) = size {
             size
@@ -65,23 +112,24 @@ impl ScreenHostApp {
         };
 
         let update_available = self
-            .video_update
+            .video_updated
             .swap(false, std::sync::atomic::Ordering::Relaxed);
 
         let video_data = match (
             self.worker_render_context.as_ref(),
             update_available,
             &self.worker_state,
+            self.selected,
         ) {
             // TODO: Restrict frame data against worker connected/in-use state!
-            (Some(ctx), true, _) => VideoData::Frame {
+            (Some(ctx), true, WorkerConnectionState::Connected, true) => VideoData::Frame {
                 width: ctx.comitted_size.0,
                 height: ctx.comitted_size.1,
                 buf: ctx.buffer.output_buffer(),
             },
-            (Some(_), false, WorkerConnectionState::Connected) => VideoData::NoUpdate,
-            (Some(_), _, _) => VideoData::NoUpdate,
-            (None, _, _) => VideoData::None,
+            (Some(_), false, WorkerConnectionState::Connected, true) => VideoData::NoUpdate,
+            (Some(_), _, _, _) => VideoData::None,
+            (None, _, _, _) => VideoData::None,
         };
 
         return iced::widget::Container::new(
@@ -94,6 +142,14 @@ impl ScreenHostApp {
     }
 
     fn create_toolbar(&self) -> iced::Element<'_, Message> {
+        if !self.toolbar_pinned
+            && self.toolbar_hidden_anim.value()
+            && !self.toolbar_hidden_anim.is_animating(self.now)
+        {
+            return iced::widget::space().into();
+        }
+
+        // Window info label
         let widget_window_info = iced::widget::text(format!(
             "Window ID: {} ({}x{})",
             self.window_id
@@ -102,22 +158,36 @@ impl ScreenHostApp {
             self.window_size.map_or_default(|s| s.height)
         ));
 
-        // Show the worker's dispatched size info if we have it
-        let casting_size_info = if let Some(size) = self.worker_render_context.as_ref() {
-            iced::widget::text(format!(
-                "Canvas: {}x{}",
-                size.comitted_size.0, size.comitted_size.1
-            ))
+        // The negotiated virtual screen size coming from the screen producer
+        let casting_size_text = if let Some(size) = self.worker_render_context.as_ref() {
+            format!("Screen: {}x{}", size.comitted_size.0, size.comitted_size.1)
         } else {
-            iced::widget::text("Canvas: ?x?")
+            "Screen: ?x?".into()
         };
+        let casting_size_info = iced::widget::text(casting_size_text);
 
+        // Connection Status
+        let status_text = match &self.worker_state {
+            WorkerConnectionState::Connected => "Connected",
+            WorkerConnectionState::Disconnected => "Disconnected",
+            WorkerConnectionState::Connecting => "Connecting",
+        };
+        let widget_connection_status = iced::widget::text(status_text);
+
+        // URL input text box
         let widget_url_textbox: Element<'_, InputEvent> =
             iced::widget::text_input("URL", &self.connect_url)
-                .on_input(|value| InputEvent::SetConnectUrl(value))
+                .on_input_maybe(
+                    if matches!(self.worker_state, WorkerConnectionState::Disconnected) {
+                        Some(InputEvent::SetConnectUrl)
+                    } else {
+                        None
+                    },
+                )
                 .into();
         let widget_url_textbox = widget_url_textbox.map(Message::Input);
 
+        // Connect/disconnect button
         let widget_connect_button: Element<'_, InputEvent> = match &self.worker_state {
             WorkerConnectionState::Connected => {
                 { iced::widget::button("Disconnect").on_press(InputEvent::Disconnect) }.into()
@@ -125,41 +195,135 @@ impl ScreenHostApp {
             WorkerConnectionState::Disconnected => {
                 { iced::widget::button("Connect").on_press(InputEvent::Connect) }.into()
             }
-            WorkerConnectionState::Connecting => { iced::widget::button("Connecting") }.into(),
+            WorkerConnectionState::Connecting => {
+                { iced::widget::button("Cancel").on_press(InputEvent::Disconnect) }.into()
+            }
         };
         let widget_connect_button = widget_connect_button.map(Message::Input);
+
+        // Fullscreen button
+        let fullscreen_text = if self.fullscreen {
+            "X Fullscreen"
+        } else {
+            "Fullscreen"
+        };
+        let widget_fullscreen_button: Element<'_, InputEvent> =
+            iced::widget::button(fullscreen_text)
+                .on_press(InputEvent::SetFullScreen(!self.fullscreen))
+                .into();
+        let widget_fullscreen_button = widget_fullscreen_button.map(Message::Input);
+
+        // Pinned toolbar button
+        let widget_toolbar_pinned: Element<'_, InputEvent> = iced::widget::button("📌")
+            .on_press(InputEvent::ToolbarPinned(!self.toolbar_pinned))
+            .into();
+        let widget_toolbar_pinned = widget_toolbar_pinned.map(Message::Input);
 
         let toolbar_contents = iced::widget::container(
             row![
                 widget_window_info,
                 casting_size_info,
+                widget_connection_status,
                 widget_url_textbox,
-                widget_connect_button
+                widget_connect_button,
+                widget_fullscreen_button,
+                widget_toolbar_pinned
             ]
             .spacing(10)
-            .height(25)
+            .height(TOOLBAR_HEIGHT)
             .align_y(iced::alignment::Vertical::Center),
         )
         .align_left(iced::Length::Fill)
-        .padding(4)
+        .padding(TOOLBAR_CONTAINER_PADDING)
         .style(|_theme| iced::widget::container::Style::default().background(color!(50, 50, 75)));
 
         column![toolbar_contents, iced::widget::rule::horizontal(1),].into()
+    }
+
+    fn check_toolbar_hover(&mut self, mouse: iced::mouse::Event) {
+        self.now = std::time::Instant::now();
+        if self.toolbar_pinned {
+            self.toolbar_hidden_anim.go_mut(false, self.now);
+            return;
+        }
+
+        let position = match mouse {
+            iced::mouse::Event::CursorMoved { position } => position,
+            _ => return,
+        };
+
+        if self.toolbar_hidden_anim.value() {
+            if position.y > TOOLBAR_HOVER_BUFFER_ZONE {
+                self.toolbar_hidden_anim.go_mut(true, self.now);
+            } else {
+                self.toolbar_hidden_anim.go_mut(false, self.now);
+            }
+        } else {
+            if position.y > TOOLBAR_CONTAINER_HEIGHT + TOOLBAR_HOVER_BUFFER_ZONE {
+                self.toolbar_hidden_anim.go_mut(true, self.now);
+            } else {
+                self.toolbar_hidden_anim.go_mut(false, self.now);
+            }
+        }
+    }
+
+    fn upsert_keepawake(&mut self) -> Result<bool, keepawake::Error> {
+        if self.keepawake.is_none() {
+            self.keepawake = Some(
+                keepawake::Builder::default()
+                    .display(true)
+                    .idle(true)
+                    .sleep(true)
+                    .reason("vdex streaming")
+                    .app_name("vdex")
+                    .create()?,
+            );
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn remove_keepawake(&mut self) {
+        self.keepawake = None;
+    }
+
+    fn update_window_settings(&self) -> Task<Message> {
+        let window_id = if let Some(id) = &self.window_id {
+            id
+        } else {
+            error!("Can't update window settings without ID");
+            return Task::none();
+        };
+
+        let window_mode = if self.fullscreen {
+            iced::window::Mode::Fullscreen
+        } else {
+            iced::window::Mode::Windowed
+        };
+        iced::window::set_mode(*window_id, window_mode)
     }
 }
 
 impl ScreenHostApp {
     pub fn new() -> (Self, Task<Message>) {
         let this = Self {
+            now: std::time::Instant::now(),
             window_size: None,
             canvas_size: None,
             window_id: None,
-            image_handle: None,
             worker_render_context: None,
             worker_state: WorkerConnectionState::Disconnected,
-            video_update: AtomicBool::new(false),
+            video_updated: AtomicBool::new(false),
             worker_command_tx: None,
             connect_url: String::new(),
+            keepawake: None,
+            fullscreen: false,
+            selected: false,
+            toolbar_pinned: true,
+            toolbar_hidden_anim: Animation::new(false)
+                .duration(Duration::from_millis(350))
+                .easing(Easing::EaseOutCubic),
         };
 
         let get_window_id = iced::window::latest().map(|id| Message::WindowIdChange(id));
@@ -177,19 +341,20 @@ impl ScreenHostApp {
                     return Task::none();
                 }
             }
-            Message::AnimationFrame => {
+            Message::AnimationFrame(now) => {
                 // Handle animation frame updates here if needed
+                self.now = now;
                 let video_update = if let Some(ctx) = self.worker_render_context.as_mut() {
                     ctx.buffer.update()
                 } else {
                     false
                 };
 
-                self.video_update
+                self.video_updated
                     .store(video_update, std::sync::atomic::Ordering::Relaxed);
             }
-            Message::ChangeCanvasSize(size) => {
-                self.canvas_size = Some(size);
+            Message::Mouse(e) => {
+                self.check_toolbar_hover(e);
             }
             Message::WindowSizeChange(size) => {
                 self.window_size = Some(size);
@@ -227,6 +392,16 @@ impl ScreenHostApp {
                         .discard();
                     }
                 }
+                InputEvent::SetFullScreen(fs) => {
+                    self.fullscreen = fs;
+                    return self.update_window_settings();
+                }
+                InputEvent::ToolbarPinned(pinned) => {
+                    self.toolbar_pinned = pinned;
+                    // Update `now` before animation runs
+                    self.now = std::time::Instant::now();
+                    self.toolbar_hidden_anim.go_mut(pinned, self.now);
+                }
             },
             Message::WorkerEvent(event) => match event {
                 WorkerEvent::Ready(sender) => {
@@ -234,14 +409,26 @@ impl ScreenHostApp {
                 }
                 WorkerEvent::Error(worker_error) => {
                     error!("Worker encountered an error: {:?}", worker_error);
+                    self.remove_keepawake();
+                    self.selected = false;
                 }
                 WorkerEvent::Connecting(url) => {
                     info!("Worker is connecting to {}", url);
+                    self.worker_render_context = None;
+                    self.selected = false;
                     self.worker_state = WorkerConnectionState::Connecting;
+                    match self.upsert_keepawake() {
+                        Ok(_) => {}
+                        Err(e) => error!("Failed to install keep-awake: {:?}", e),
+                    }
                 }
                 WorkerEvent::Connected(url) => {
                     info!("Worker connected to {}", url);
                     self.worker_state = WorkerConnectionState::Connected;
+                    match self.upsert_keepawake() {
+                        Ok(_) => {}
+                        Err(e) => error!("Failed to install keep-awake: {:?}", e),
+                    }
                 }
                 WorkerEvent::PrepareRender(render_context) => {
                     info!(
@@ -250,8 +437,14 @@ impl ScreenHostApp {
                     );
                     self.worker_render_context = Some(render_context);
                 }
+                WorkerEvent::Selected => {
+                    self.selected = true;
+                }
                 WorkerEvent::Disconnected => {
                     self.worker_state = WorkerConnectionState::Disconnected;
+                    self.remove_keepawake();
+                    self.selected = false;
+                    self.worker_render_context = None;
                 }
                 WorkerEvent::RequestDisplayParameters => {
                     debug!("Worker requested display parameters");
@@ -298,6 +491,17 @@ impl ScreenHostApp {
     pub fn view(&self) -> iced::Element<'_, Message> {
         // Implement the view logic here
 
-        column![self.create_toolbar(), self.create_canvas(self.canvas_size),].into()
+        if self.toolbar_pinned {
+            column![self.create_toolbar(), self.create_canvas(self.canvas_size)].into()
+        } else {
+            // Animate the toolbar when not pinned.
+            let offset =
+                self.toolbar_hidden_anim
+                    .interpolate(0.0, TOOLBAR_CONTAINER_HEIGHT + 1.0, self.now);
+            let toolbar = iced::widget::float(self.create_toolbar())
+                .translate(move |_, _| Vector::new(0.0, -offset));
+
+            stack![self.create_canvas(self.canvas_size), toolbar].into()
+        }
     }
 }

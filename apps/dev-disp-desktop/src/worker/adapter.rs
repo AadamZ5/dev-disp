@@ -5,14 +5,25 @@ use dev_disp_core::{
 };
 use dev_disp_encoders::toolkit::decoder::{Decoder, DecoderDirectAction};
 use dev_disp_transports::websocket::receiver::WsReceiverPrepState;
-use futures::{channel::mpsc, FutureExt, StreamExt};
+use futures::{
+    channel::{mpsc, oneshot},
+    FutureExt, SinkExt, StreamExt,
+};
 use log::{debug, trace, warn};
 use thiserror::Error;
 
 pub struct WsDesktopAdapter<D> {
+    /// Cached display parameters. Display parameters are gained during initial
+    /// WS-specific setup, and also reused during selection and codec negotiation.
     display_parameters: Option<DisplayParameters>,
+    /// Channel used to receive the display parameters from the UI
     display_parameters_rx: mpsc::Receiver<DisplayParameters>,
+    /// Channel to notify the UI that this client is selected for use, and will
+    /// be used to display screen data soon.
+    selected_tx: Option<oneshot::Sender<()>>,
+    /// The triple-buffer input end, for where we put decoded screen data.
     buffer_write: triple_buffer::Input<Vec<u8>>,
+    /// The decoder for incoming screen data.
     decoder: D,
 }
 
@@ -20,6 +31,7 @@ impl<D> WsDesktopAdapter<D> {
     pub fn new(
         display_parameters_rx: mpsc::Receiver<DisplayParameters>,
         buffer_write: triple_buffer::Input<Vec<u8>>,
+        selected_tx: oneshot::Sender<()>,
         decoder: D,
     ) -> Self
     where
@@ -29,6 +41,7 @@ impl<D> WsDesktopAdapter<D> {
             display_parameters: None,
             display_parameters_rx,
             buffer_write,
+            selected_tx: Some(selected_tx),
             decoder,
         }
     }
@@ -122,6 +135,18 @@ where
         mut transport_data: WsReceiverPrepState,
     ) -> PinnedLocalFuture<'s, Result<(), Self::Error>> {
         async move {
+            /// We can assume we've been selected, notify whoever
+            match self
+                .selected_tx
+                .take()
+                .map(|tx| tx.send(()).map_err(|_| ()))
+                .ok_or(())
+                .flatten()
+            {
+                Ok(_) => (),
+                Err(_) => warn!("Failed to notify of selection"),
+            }
+
             let possible = transport_data.get_possible_codec_options().iter().collect();
 
             let preferred = self
