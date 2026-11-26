@@ -22,7 +22,6 @@ pub enum WorkerConnectionState {
 }
 
 pub struct ScreenHostApp {
-    producer_endpoint: String,
     window_size: Option<iced::Size>,
     canvas_size: Option<iced::Size>,
     window_id: Option<iced::window::Id>,
@@ -150,9 +149,8 @@ impl ScreenHostApp {
 }
 
 impl ScreenHostApp {
-    pub fn new(producer_endpoint: String) -> (Self, Task<Message>) {
+    pub fn new() -> (Self, Task<Message>) {
         let this = Self {
-            producer_endpoint,
             window_size: None,
             canvas_size: None,
             window_id: None,

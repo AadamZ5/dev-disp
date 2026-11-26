@@ -126,8 +126,13 @@ impl Worker {
         self.display_parameters_tx = Some(display_parameters_tx);
         self.disconnect_tx = Some(disconnect_tx);
 
-        async move {
-            let (ws, _) = async_tungstenite::tokio::connect_async(url)
+        let connection = async move {
+            match event_tx.send(WorkerEvent::Connecting(url.clone())).await {
+                Ok(_) => {}
+                Err(e) => warn!("Failed to send connecting event: {:?}", e),
+            }
+
+            let (ws, _) = async_tungstenite::tokio::connect_async(url.clone())
                 .await
                 .map_err(|_| WorkerError::ConnectionFailed)?;
 
@@ -161,27 +166,48 @@ impl Worker {
                 buffer: output,
                 comitted_size: adapter_display_parameters.resolution,
             };
-            event_tx
+            match event_tx
                 .send(WorkerEvent::PrepareRender(render_context))
                 .await
-                .unwrap();
+            {
+                Ok(_) => {}
+                Err(e) => warn!("Failed to send prepare render event: {:?}", e),
+            }
 
             // Controller to handle WS transport messages
             let receiver = WsReceiver::new(ws);
 
-            // TODO: Put this on another thread?
-            // Run connection raced with disconnect
-            let disconnect_fut = disconnect_rx.next();
-            select! {
-                _ = disconnect_fut.fuse() => {},
-                _ = run_receiver_with_adapter(receiver, adapter).fuse() => {},
+            match event_tx.send(WorkerEvent::Connected(url)).await {
+                Ok(_) => {}
+                Err(e) => warn!("Failed to send connected event: {:?}", e),
             }
 
-            info!("Receiver finished");
+            // TODO: Put this on another thread?
+            run_receiver_with_adapter(receiver, adapter)
+                .await
+                .map_err(|_| WorkerError::ConnectionFailed)?;
 
+            info!("Receiver finished");
             Ok(())
-        }
-        .boxed_local()
+        };
+
+        let race = async move {
+            let disconnect_fut = disconnect_rx.next();
+            select! {
+                _result_disconnect = disconnect_fut.fuse() => {
+                    return Ok(());
+                },
+                result_connection = connection.fuse() => {
+                    if let Err(e) = result_connection {
+                        return Err(e);
+                    } else {
+                        Ok(())
+                    }
+                },
+            }
+        };
+
+        race.boxed_local()
     }
 }
 
@@ -264,7 +290,19 @@ impl IcedWorker<WorkerCommand> for Worker {
                 }
                 empty().boxed_local()
             }
-            WorkerCommand::Disconnected => empty().boxed_local(),
+            WorkerCommand::Disconnected => {
+                debug!("Worker disconnected");
+                let mut event_tx = self.event_tx.clone();
+                async move {
+                    match event_tx.send(WorkerEvent::Disconnected).await {
+                        Ok(_) => {}
+                        Err(e) => error!("Failed to send disconnected event: {:?}", e),
+                    }
+                }
+                .into_stream()
+                .filter_map(|_| async { None })
+                .boxed_local()
+            }
         }
     }
 }

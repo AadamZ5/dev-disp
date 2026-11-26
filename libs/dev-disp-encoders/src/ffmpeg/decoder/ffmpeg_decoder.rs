@@ -39,6 +39,9 @@ pub struct FfmpegDecoderState {
     video: Video,
     scaler: Option<ScalingContext>,
     frame_params: Option<FrameFormatParams>,
+    /// The expected initial resolution of the video,
+    /// found during [FfmpegDecoder::set_codec]
+    expected_size: (u32, u32),
 }
 
 #[derive(Debug, Error)]
@@ -70,11 +73,10 @@ impl DevDispDecoder for FfmpegDecoder {
             let preferred_configurations: Vec<_> = possible_configurations
                 .into_iter()
                 .filter(|config| {
-                    configuration
-                        .codec_choices
-                        .iter()
-                        .find(|ours| ours.codec_family == config.codec.family())
-                        .is_some_and(|ours| initialize_ffmpeg_decoder(ours).is_ok())
+                    configuration.codec_choices.iter().any(|ours| {
+                        ours.codec_family == config.codec.family()
+                            && initialize_ffmpeg_decoder(ours).is_ok()
+                    })
                 })
                 .collect();
 
@@ -85,7 +87,7 @@ impl DevDispDecoder for FfmpegDecoder {
 
     fn set_codec<'s>(
         &'s mut self,
-        _screen_parameters: &'s ScreenContentParameters,
+        screen_parameters: &'s ScreenContentParameters,
         option: &'s CodecOption,
     ) -> PinnedLocalFuture<'s, Result<(), Self::Error>> {
         async move {
@@ -110,6 +112,7 @@ impl DevDispDecoder for FfmpegDecoder {
                 video,
                 scaler: None,
                 frame_params: None,
+                expected_size: (screen_parameters.width, screen_parameters.height),
             });
 
             Ok(())
@@ -125,8 +128,15 @@ impl DevDispDecoder for FfmpegDecoder {
         'e: 's,
     {
         async move {
-            // TODO: Size this buffer appropriately!
-            let mut buf = vec![0; 4000 * 4000 * 4];
+            let expected_buf_size = self
+                .state
+                .as_ref()
+                .map(|s| s.expected_size)
+                .filter(|(w, h)| *w > 0 && *h > 0)
+                .map(|(w, h)| w as usize * h as usize * 4)
+                .unwrap_or(4096 * 4096 * 4);
+
+            let mut buf = vec![0; expected_buf_size];
             match self.decode_into(encoded_data, &mut buf).await {
                 DecoderDirectAction::Decoded => DecoderAction::Decode(buf),
                 DecoderDirectAction::NoFrame => DecoderAction::NoFrame,
@@ -221,7 +231,13 @@ impl DevDispDecoder for FfmpegDecoder {
                 received_frame.format(),
             );
 
-            // TODO Set up scaler.
+            // Scale to the negotiated size so the output always fits the caller's
+            // buffer, which is sized from the same parameters.
+            let (target_width, target_height) = match state.expected_size {
+                (0, _) | (_, 0) => (received_frame.width(), received_frame.height()),
+                size => size,
+            };
+
             if state.scaler.is_none()
                 || state.frame_params.is_none_or(|p| p != current_frame_format)
             {
@@ -231,8 +247,8 @@ impl DevDispDecoder for FfmpegDecoder {
                     received_frame.width(),
                     received_frame.height(),
                     received_frame.format(),
-                    received_frame.width(),
-                    received_frame.height(),
+                    target_width,
+                    target_height,
                     ffmpeg_next::format::Pixel::RGBA
                 );
                 let scaler = match ScalingContext::get(
@@ -240,8 +256,8 @@ impl DevDispDecoder for FfmpegDecoder {
                     received_frame.width(),
                     received_frame.height(),
                     ffmpeg_next::format::Pixel::RGBA,
-                    received_frame.width(),
-                    received_frame.height(),
+                    target_width,
+                    target_height,
                     ffmpeg_next::software::scaling::flag::Flags::BILINEAR,
                 ) {
                     Ok(s) => s,
@@ -258,8 +274,8 @@ impl DevDispDecoder for FfmpegDecoder {
 
             let mut scaled_frame = ffmpeg_next::frame::Video::new(
                 ffmpeg_next::format::Pixel::RGBA,
-                received_frame.width(),
-                received_frame.height(),
+                target_width,
+                target_height,
             );
 
             match scaler.run(&received_frame, &mut scaled_frame) {

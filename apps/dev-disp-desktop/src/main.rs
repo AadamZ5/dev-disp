@@ -31,7 +31,7 @@ fn main() {
         .init();
 
     let app_result = application(
-        || ScreenHostApp::new("ws://localhost:56789".to_string()),
+        || ScreenHostApp::new(),
         ScreenHostApp::update,
         ScreenHostApp::view,
     )
