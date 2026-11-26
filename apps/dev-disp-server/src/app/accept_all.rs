@@ -3,7 +3,7 @@ use dev_disp_core::{
     core::handle_display_host,
     host::{ConnectableDevice, ScreenProvider, StreamingDeviceDiscovery},
 };
-use dev_disp_encoders::ffmpeg::{FfmpegEncoderProvider, config_file::FfmpegConfiguration};
+use dev_disp_encoders::ffmpeg::encoder::config_file::FfmpegEncoderConfiguration;
 use futures_util::{StreamExt, sink, stream::empty};
 use log::{error, info};
 
@@ -19,13 +19,14 @@ where
     let mut discovery = discovery.into_stream();
 
     // TODO: Make this configuration hot-reloadable with a file watcher!
-    let ffmpeg_config = default_path_read_or_write_default_config_for::<FfmpegConfiguration>()
-        .await
-        .map_err(|e| {
-            error!("Failed to read or write FFmpeg configuration: {}", e);
-            e
-        })
-        .unwrap_or_default();
+    let ffmpeg_config =
+        default_path_read_or_write_default_config_for::<FfmpegEncoderConfiguration>()
+            .await
+            .map_err(|e| {
+                error!("Failed to read or write FFmpeg configuration: {}", e);
+                e
+            })
+            .unwrap_or_default();
 
     while let Some(devices) = discovery.next().await {
         info!("Discovered {} device(s)", devices.len());

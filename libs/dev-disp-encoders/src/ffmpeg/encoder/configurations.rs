@@ -105,7 +105,7 @@ impl FfmpegEncoderConfigurationSet {
 }
 
 impl Iterator for FfmpegEncoderConfigurationSet {
-    type Item = FfmpegEncoderConfiguration;
+    type Item = FfmpegEncoderCodecConfiguration;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Iterate over each combination of encoder options and pixel formats
@@ -129,7 +129,7 @@ impl Iterator for FfmpegEncoderConfigurationSet {
             self.encoder_option_sets[self.encoder_option_set_index].clone()
         };
 
-        let config = FfmpegEncoderConfiguration {
+        let config = FfmpegEncoderCodecConfiguration {
             codec_name: self.encoder_name.clone(),
             codec_family: self.encoder_family.clone(),
             encoder_options: options,
@@ -144,7 +144,7 @@ impl Iterator for FfmpegEncoderConfigurationSet {
 
 /// A particular FFmpeg encoder configuration.
 #[derive(Debug, Clone)]
-pub struct FfmpegEncoderConfiguration {
+pub struct FfmpegEncoderCodecConfiguration {
     /// An exact FFmpeg encoder name, e.g., "libx264".
     pub codec_name: String,
     pub codec_family: CodecFamily,
@@ -192,7 +192,7 @@ impl FfmpegEncoderBruteForceIterator {
 }
 
 impl Iterator for FfmpegEncoderBruteForceIterator {
-    type Item = FfmpegEncoderConfiguration;
+    type Item = FfmpegEncoderCodecConfiguration;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -448,7 +448,7 @@ pub fn get_encoders() -> FfmpegEncoderBruteForceIterator {
 // TODO: a more elegant way to structure this or define the contracts? Should our encoders
 // TODO: crate define the supported codecs and parameters?
 pub fn get_codec_params(
-    encoder_preset: &FfmpegEncoderConfiguration,
+    encoder_preset: &FfmpegEncoderCodecConfiguration,
     encoder: &VideoEncoder,
     input_parameters: &ScreenContentParameters,
 ) -> Option<Codec> {

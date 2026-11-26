@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use dev_disp_core::client::run_listener_with_adapter;
+use dev_disp_core::client::run_receiver_with_adapter;
 use dev_disp_transports::websocket::{
     messages::{DevDispMessageFromClient, DisplayParameters, WsMessageFromClient},
     receiver::WsReceiver,
@@ -82,7 +82,7 @@ where
     let listener = WsReceiver::new(duplex);
     let adapter = JsAdapter::new(handlers, shared_buffer);
 
-    run_listener_with_adapter(listener, adapter).await?;
+    run_receiver_with_adapter(listener, adapter).await?;
 
     debug!("WebSocket incoming message listener task ending");
 

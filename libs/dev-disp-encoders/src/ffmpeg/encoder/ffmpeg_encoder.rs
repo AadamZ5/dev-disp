@@ -12,10 +12,9 @@ use log::{debug, info, trace};
 use thiserror::Error;
 
 use crate::{
-    toolkit::{encoder::{Encoder as DevDispEncoder, CodecOptionInternal, EncoderProvider}},
-    ffmpeg::{config_file::FfmpegConfiguration, configurations::{
-        FfmpegEncoderBruteForceIterator, FfmpegEncoderConfiguration, get_codec_params
-    }, util::ffmpeg_format_from_internal_format}
+    ffmpeg::{encoder::{config_file::FfmpegEncoderConfiguration, configurations::{
+        FfmpegEncoderBruteForceIterator, FfmpegEncoderCodecConfiguration, get_codec_params
+    }}, util::ffmpeg_format_from_internal_format}, toolkit::encoder::{CodecOptionInternal, Encoder as DevDispEncoder, EncoderProvider}
 };
 
 struct FfmpegEncoderState {
@@ -52,7 +51,7 @@ pub enum FfmpegEncoderError {
     #[error("Failed to initialize scaler: {0}")]
     ScalerInitError(ffmpeg_next::util::error::Error),
     #[error("Failed to negotiate a codec")]
-    CodecNegotiationFailure(Vec<CodecOptionInternal<FfmpegEncoderConfiguration>>),
+    CodecNegotiationFailure(Vec<CodecOptionInternal<FfmpegEncoderCodecConfiguration>>),
     #[error("Encoder not initialized before trying to encode")]
     EncoderNotInitialized,
     #[error("Input buffer too small. Expected {expected}, got {got}")]
@@ -69,12 +68,12 @@ pub enum FfmpegEncoderError {
 #[derive(Debug, Default)]
 pub struct FfmpegEncoder {
     state: Option<FfmpegEncoderState>,
-    configuration: FfmpegConfiguration,
+    configuration: FfmpegEncoderConfiguration,
 }
 
-pub fn setup_ffmpeg_encoder(
+pub fn initialize_ffmpeg_encoder(
     parameters: &ScreenContentParameters,
-    configuration: &FfmpegEncoderConfiguration,
+    configuration: &FfmpegEncoderCodecConfiguration,
 ) -> Result<VideoEncoder, FfmpegEncoderError> {
     let codec = ffmpeg::encoder::find_by_name(&configuration.codec_name)
         .ok_or_else(|| FfmpegEncoderError::UnknownEncoder(configuration.codec_name.clone()))?;
@@ -101,7 +100,7 @@ pub fn setup_ffmpeg_encoder(
 
 impl FfmpegEncoder {
 
-    fn new(configuration: FfmpegConfiguration) -> Self {
+    fn new(configuration: FfmpegEncoderConfiguration) -> Self {
         FfmpegEncoder {
             state: None,
             configuration,
@@ -111,9 +110,9 @@ impl FfmpegEncoder {
     fn try_init(
         &mut self,
         parameters: &ScreenContentParameters,
-        configuration: &FfmpegEncoderConfiguration,
+        configuration: &FfmpegEncoderCodecConfiguration,
     ) -> Result<FfmpegEncoderState, FfmpegEncoderError> {
-        let encoder = setup_ffmpeg_encoder(&parameters, configuration)?;
+        let encoder = initialize_ffmpeg_encoder(&parameters, configuration)?;
 
         let src_format =
             ffmpeg_format_from_internal_format(&parameters.virtual_screen_format_parameters.format);
@@ -159,20 +158,20 @@ impl FfmpegEncoder {
 
 impl DevDispEncoder for FfmpegEncoder {
 
-    type CodecData = FfmpegEncoderConfiguration;
+    type CodecData = FfmpegEncoderCodecConfiguration;
 
     type Error = FfmpegEncoderError;
 
     fn get_supported_configurations(
         &mut self,
         parameters: &ScreenContentParameters,
-    ) -> PinnedLocalFuture<'_, Result<Vec<CodecOptionInternal<FfmpegEncoderConfiguration>>, FfmpegEncoderError>> {
+    ) -> PinnedLocalFuture<'_, Result<Vec<CodecOptionInternal<FfmpegEncoderCodecConfiguration>>, FfmpegEncoderError>> {
 
         // TODO: Try encoders in the provider, not here on every connection!
         // TODO: Make this async happen in a non-blocking way!
 
         let supported_configurations: Vec<_> = FfmpegEncoderBruteForceIterator::new(self.configuration.encoder_configurations.clone())
-            .filter_map(|config| match setup_ffmpeg_encoder(parameters, &config) {
+            .filter_map(|config| match initialize_ffmpeg_encoder(parameters, &config) {
                 Ok(encoder) => {
                     debug!(
                         "Encoder configuration {} supported",
@@ -215,13 +214,13 @@ impl DevDispEncoder for FfmpegEncoder {
     fn set_codec<'s ,'p>(
         &'s mut self,
         parameters: &'p ScreenContentParameters,
-        preferred_encoders: Option<Vec<&'p CodecOptionInternal<FfmpegEncoderConfiguration>>>,
-        offered_encoders: Vec<&'p CodecOptionInternal<FfmpegEncoderConfiguration>>,
-    ) -> PinnedLocalFuture<'s, Result<&'p CodecOptionInternal<FfmpegEncoderConfiguration>, Self::Error>> where 'p: 's {
+        preferred_encoders: Option<Vec<&'p CodecOptionInternal<FfmpegEncoderCodecConfiguration>>>,
+        offered_encoders: Vec<&'p CodecOptionInternal<FfmpegEncoderCodecConfiguration>>,
+    ) -> PinnedLocalFuture<'s, Result<&'p CodecOptionInternal<FfmpegEncoderCodecConfiguration>, Self::Error>> where 'p: 's {
         async move {
             ffmpeg::init().map_err(FfmpegEncoderError::FfmpegInitError)?;
 
-            let mut encoders: Box<dyn Iterator<Item = &CodecOptionInternal<FfmpegEncoderConfiguration>>> = match preferred_encoders {
+            let mut encoders: Box<dyn Iterator<Item = &CodecOptionInternal<FfmpegEncoderCodecConfiguration>>> = match preferred_encoders {
                 // If the client did not respond with any preference, try all offered encoders.
                 None => {
                     info!("No preferred encoders specified, will try all configured ffmpeg encoders.");
@@ -398,11 +397,11 @@ impl DevDispEncoder for FfmpegEncoder {
 
 #[derive(Debug, Clone)]
 pub struct FfmpegEncoderProvider {
-    configuration: FfmpegConfiguration,
+    configuration: FfmpegEncoderConfiguration,
 }
 
 impl FfmpegEncoderProvider {
-    pub fn new(configuration: FfmpegConfiguration) -> Self {
+    pub fn new(configuration: FfmpegEncoderConfiguration) -> Self {
         FfmpegEncoderProvider { configuration }
     }
 }

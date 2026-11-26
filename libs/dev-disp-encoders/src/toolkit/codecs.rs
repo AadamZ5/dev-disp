@@ -97,7 +97,10 @@ impl Default for Av1Parameters {
     }
 }
 
-// Well-known defined encoder families we can negotiate
+/// Well-known defined encoder families we can negotiate,
+/// with their common or required codec parameters (if any).
+///
+/// See [Self::family] to convert to just the codec family type.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Codec {
     Raw(RawParameters),
@@ -140,7 +143,7 @@ impl Codec {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum CodecFamily {
     #[default]

@@ -13,5 +13,6 @@ members = [
 	"libs/dev-disp-api",
 	"apps/dev-disp-control",
 	"libs/thread-future",
+	"apps/dev-disp-desktop",
 ]
 resolver = '3'
