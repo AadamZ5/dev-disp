@@ -54,6 +54,10 @@ fn application_subscriptions(_state: &ScreenHostApp) -> Subscription<Message> {
         iced::window::frames()
             .map(|_| Message::AnimationFrame)
             .into(),
+        iced::event::listen_with(|event, _status, _id| match event {
+            iced::Event::Mouse(mouse) => Some(Message::Mouse(mouse)),
+            _ => None,
+        }),
     ])
 }
 

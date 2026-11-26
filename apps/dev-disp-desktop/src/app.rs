@@ -4,7 +4,7 @@ use dev_disp_core::host::DisplayParameters;
 use futures::{channel::mpsc, SinkExt};
 use iced::{
     color,
-    widget::{column, row},
+    widget::{column, row, stack},
     Element, Task,
 };
 use keepawake::KeepAwake;
@@ -20,6 +20,11 @@ pub enum WorkerConnectionState {
     Connecting,
     Connected,
 }
+
+const TOOLBAR_HEIGHT: f32 = 30.0;
+/// The buffer towards the top of the screen to activate the toolbar,
+/// or the buffer below the toolbar to hide it
+const TOOLBAR_HOVER_BUFFER_ZONE: f32 = 10.0;
 
 pub struct ScreenHostApp {
     /// The entire inner window size
@@ -52,6 +57,11 @@ pub struct ScreenHostApp {
     /// This is set when the worker begins initializing video parameters
     /// before video starts, and reset when the connection is finished.
     selected: bool,
+
+    /// If the toolbar is pinned (always shown)
+    toolbar_pinned: bool,
+    /// If the toolbar is hidden, only relevant when not pinned
+    toolbar_hidden: bool,
 }
 
 /// Cloneable input things that represent user input events.
@@ -63,6 +73,7 @@ pub enum InputEvent {
     Connect,
     Disconnect,
     SetFullScreen(bool),
+    ToolbarPinned(bool),
 }
 
 /// An event for the [ScreenHostApp]
@@ -79,6 +90,8 @@ pub enum Message {
     Input(InputEvent),
     /// Animation frame tick
     AnimationFrame,
+    /// Mouse event
+    Mouse(iced::mouse::Event),
 }
 
 impl ScreenHostApp {
@@ -123,6 +136,10 @@ impl ScreenHostApp {
     }
 
     fn create_toolbar(&self) -> iced::Element<'_, Message> {
+        if !self.toolbar_pinned && self.toolbar_hidden {
+            return iced::widget::space().into();
+        }
+
         // Window info label
         let widget_window_info = iced::widget::text(format!(
             "Window ID: {} ({}x{})",
@@ -187,6 +204,12 @@ impl ScreenHostApp {
                 .into();
         let widget_fullscreen_button = widget_fullscreen_button.map(Message::Input);
 
+        // Pinned toolbar button
+        let widget_toolbar_pinned: Element<'_, InputEvent> = iced::widget::button("📌")
+            .on_press(InputEvent::ToolbarPinned(!self.toolbar_pinned))
+            .into();
+        let widget_toolbar_pinned = widget_toolbar_pinned.map(Message::Input);
+
         let toolbar_contents = iced::widget::container(
             row![
                 widget_window_info,
@@ -194,10 +217,11 @@ impl ScreenHostApp {
                 widget_connection_status,
                 widget_url_textbox,
                 widget_connect_button,
-                widget_fullscreen_button
+                widget_fullscreen_button,
+                widget_toolbar_pinned
             ]
             .spacing(10)
-            .height(30)
+            .height(TOOLBAR_HEIGHT)
             .align_y(iced::alignment::Vertical::Center),
         )
         .align_left(iced::Length::Fill)
@@ -205,6 +229,32 @@ impl ScreenHostApp {
         .style(|_theme| iced::widget::container::Style::default().background(color!(50, 50, 75)));
 
         column![toolbar_contents, iced::widget::rule::horizontal(1),].into()
+    }
+
+    fn check_toolbar_hover(&mut self, mouse: iced::mouse::Event) {
+        if self.toolbar_pinned {
+            self.toolbar_hidden = false;
+            return;
+        }
+
+        let position = match mouse {
+            iced::mouse::Event::CursorMoved { position } => position,
+            _ => return,
+        };
+
+        if self.toolbar_hidden {
+            if position.y > TOOLBAR_HOVER_BUFFER_ZONE {
+                self.toolbar_hidden = true;
+            } else {
+                self.toolbar_hidden = false;
+            }
+        } else {
+            if position.y > TOOLBAR_HEIGHT + TOOLBAR_HOVER_BUFFER_ZONE {
+                self.toolbar_hidden = true;
+            } else {
+                self.toolbar_hidden = false;
+            }
+        }
     }
 
     fn upsert_keepawake(&mut self) -> Result<bool, keepawake::Error> {
@@ -259,6 +309,8 @@ impl ScreenHostApp {
             keepawake: None,
             fullscreen: false,
             selected: false,
+            toolbar_pinned: true,
+            toolbar_hidden: false,
         };
 
         let get_window_id = iced::window::latest().map(|id| Message::WindowIdChange(id));
@@ -286,6 +338,9 @@ impl ScreenHostApp {
 
                 self.video_updated
                     .store(video_update, std::sync::atomic::Ordering::Relaxed);
+            }
+            Message::Mouse(e) => {
+                self.check_toolbar_hover(e);
             }
             Message::WindowSizeChange(size) => {
                 self.window_size = Some(size);
@@ -327,6 +382,7 @@ impl ScreenHostApp {
                     self.fullscreen = fs;
                     return self.update_window_settings();
                 }
+                InputEvent::ToolbarPinned(pinned) => self.toolbar_pinned = pinned,
             },
             Message::WorkerEvent(event) => match event {
                 WorkerEvent::Ready(sender) => {
@@ -416,6 +472,10 @@ impl ScreenHostApp {
     pub fn view(&self) -> iced::Element<'_, Message> {
         // Implement the view logic here
 
-        column![self.create_toolbar(), self.create_canvas(self.canvas_size),].into()
+        if self.toolbar_pinned {
+            column![self.create_toolbar(), self.create_canvas(self.canvas_size)].into()
+        } else {
+            stack![self.create_canvas(self.canvas_size), self.create_toolbar()].into()
+        }
     }
 }
