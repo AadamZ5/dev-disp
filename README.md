@@ -6,6 +6,8 @@ https://github.com/user-attachments/assets/accc6ad6-7b2f-4953-ae71-e9c80d9329a2
 
 _(Web PoC pictured above with low performance software encoding during recording)_
 
+[Demo Video (Youtube)](https://youtu.be/__v8rbHSIp8)
+
 ## AI Disclaimer
 
 AI has **not** been primarily used to generate code for this project. AI _has_ been used to clarify my vague questions, explore ideas, and to aid in my learning. This repo is as much a learning opportunity for me as it is a goal to complete.
@@ -52,6 +54,10 @@ Only Linux is currently supported. To run on Linux, you will need the [`evdi`](h
 
 # Building and Testing
 
+## Web Testpage
+
+There is a test web client used primarily for local testing at `apps/web-testpage`.
+
 This barebones implementation implements very loose auto codec negotiation with the server. It is fragile right now and needs a better design server-side.
 
 To build and run the project, you will need the following installed:
@@ -76,6 +82,32 @@ After dependencies, you should:
 5.  Run the control UI application with `npx nx run dev-disp-control` to see available clients
 6.  Connect a web browser to `http://localhost:4200`
 7.  View the control application, and initiate the connection for the newly connected client
+
+## Desktop Client
+
+The primary client application is being built in `apps/dev-disp-desktop`.
+
+This client uses an ffmpeg decoder to receive the video stream.
+
+To build and run the project, you will need the following installed:
+
+- [NodeJS/npm](https://nodejs.org/) (or an equivalent compatible JS runtime and package manager)
+- [Rust](https://rust-lang.org/learn/get-started/) programming language
+- [EVDI](https://github.com/DisplayLink/evdi?tab=readme-ov-file) Linux module (may be bundled for debain systems)
+- [FFmpeg](https://www.ffmpeg.org/about.html) development libraries
+  - `libavutil`
+  - `libavcodec`
+  - `libswscale`
+  - `libavformat`
+
+After dependencies, you should:
+
+1.  Install JS dependencies with `npm install`
+2.  Start the display server with `npx nx run dev-disp-server`
+3.  Run the control UI application with `npx nx run dev-disp-control` to see available clients
+4.  On any local device, start the desktop client with `npx nx run dev-disp-desktop`
+5.  On the desktop app, enter the IP address and port (currently 56789) of the device hosting the display server, as a websocket protocol. Ex: `ws://192.168.1.126:56789` Then click "Connect"
+6.  View the control application, and initiate the connection for the newly connected client
 
 # Disclaimer
 
